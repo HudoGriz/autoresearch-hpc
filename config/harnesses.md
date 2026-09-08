@@ -17,7 +17,7 @@ composed prompt; `{cwd}` with the working directory.
 | harness | non-interactive form |
 |---|---|
 | `claude`   | `claude -p "…"` |
-| `codex`    | `codex exec "…"` |
+| `codex`    | `codex exec --skip-git-repo-check "…"` |
 | `opencode` | `opencode run "…"` |
 | `gemini`   | `gemini -p "…"` |
 
@@ -44,7 +44,7 @@ harnesses = claude codex opencode
 harness_claude_cmd      = claude -p {prompt}
 harness_claude_family   = anthropic
 
-harness_codex_cmd       = codex exec {prompt}
+harness_codex_cmd       = codex exec --skip-git-repo-check {prompt}
 harness_codex_family    = openai
 
 harness_opencode_cmd    = opencode run {prompt}

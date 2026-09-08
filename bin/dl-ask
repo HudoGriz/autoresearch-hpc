@@ -89,7 +89,7 @@ set +e
 if printf '%s' "$cmd" | grep -q '{prompt}'; then
   pre=${cmd%%\{prompt\}*}; post=${cmd##*\{prompt\}}
   # shellcheck disable=SC2086
-  $runner $pre "$(cat "$prompt")" $post >> "$out" 2>"$out.err"
+  $runner $pre "$(cat "$prompt")" $post >> "$out" 2>"$out.err" </dev/null
 else
   # shellcheck disable=SC2086
   $runner $cmd < "$prompt" >> "$out" 2>"$out.err"

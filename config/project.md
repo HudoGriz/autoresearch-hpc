@@ -21,7 +21,8 @@ Add project-specific rules by dropping a new file in `rules/` and naming it here
 
 ## Pre-declaration
 
-`required_sections` lists the headings an iteration `README.md` must contain
+`required_sections` is a **comma-separated** list of headings an iteration
+`README.md` must contain
 before any result may be recorded. `dl gate predeclare` enforces this, then
 freezes the file's hash; `dl gate results` fails if the README changed after
 results appeared. This is preregistration enforced mechanically — it is the
@@ -39,7 +40,7 @@ immutable_inputs  =
 rules             = association-not-causation null-is-upper-bound negative-controls-required detection-limit-stated
 
 # Headings an iteration README must carry before results are accepted.
-required_sections = Question Estimand Instrument Acceptance criteria Negative controls Detection limit Prediction
+required_sections = Question, Estimand, Instrument, Acceptance criteria, Negative controls, Detection limit, Prediction
 
 # Refuse to conclude an iteration whose claims were never cross-checked
 # by a harness from a different model family.
