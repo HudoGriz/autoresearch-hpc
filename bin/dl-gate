@@ -67,15 +67,21 @@ case "$sub" in
       dl_ok "results/ is empty"
     fi
 
-    # required_sections is a space-separated list of heading keywords; each must
-    # appear as a heading in the README.
+    # required_sections is a comma-separated list of headings; each must appear
+    # as a heading in the README. Split on commas so multi-word names survive.
+    old_ifs=$IFS; IFS=','
     for sec in $(dl_config_get "$DL_PROJ" required_sections ""); do
-      if grep -qiE "^#{1,6}.*\b$(printf '%s' "$sec" | sed 's/[][\.*^$/]/\\&/g')" "$readme"; then
+      IFS=$old_ifs
+      sec=$(printf '%s' "$sec" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+      [ -n "$sec" ] || continue
+      if grep -qiE "^#{1,6}.*$(printf '%s' "$sec" | sed 's/[][\.*^$/]/\\&/g')" "$readme"; then
         dl_ok "section: $sec"
       else
         dl_fail "section missing: $sec"; fails=$((fails+1))
       fi
+      IFS=','
     done
+    IFS=$old_ifs
 
     # Placeholders left in the template are an incomplete pre-declaration.
     # Template placeholders open at column 0 and may wrap over several lines,
