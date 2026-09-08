@@ -1,0 +1,29 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md", "PROGRESS.md", "GOTCHAS.md"],
+  "agent": {
+    "adversary": {
+      "description": "Assume the iteration's conclusion is wrong and find out why.",
+      "mode": "subagent",
+      "prompt": "{file:./skills/cross-check/roles/adversary.md}",
+      "tools": { "write": false, "edit": false }
+    },
+    "reimplementer": {
+      "description": "Implement the analysis from its written specification alone, never reading the original code.",
+      "mode": "subagent",
+      "prompt": "{file:./skills/cross-check/roles/reimplementer.md}"
+    },
+    "estimand-auditor": {
+      "description": "Ask only whether the test measures the quantity the question asks about.",
+      "mode": "subagent",
+      "prompt": "{file:./skills/cross-check/roles/estimand-auditor.md}",
+      "tools": { "write": false, "edit": false }
+    },
+    "gotcha-scanner": {
+      "description": "Check the run against recorded silent failure modes, and look for new ones.",
+      "mode": "subagent",
+      "prompt": "{file:./skills/cross-check/roles/gotcha-scanner.md}",
+      "tools": { "write": false, "edit": false }
+    }
+  }
+}

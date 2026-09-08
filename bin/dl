@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# discovery-loop — command dispatcher.
+set -euo pipefail
+DL_HOME="${DL_HOME:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
+export DL_HOME
+
+usage() {
+  cat <<'USAGE'
+dl — automated discovery loop
+
+  dl init [dir]                 create a project (ledger, config, dirs)
+  dl claim  -t TITLE            atomically claim the next iteration number
+  dl new    -n N                scaffold iteration N from the pre-declaration template
+  dl gate   predeclare -n N     check the pre-declaration, then freeze its hash
+  dl gate   results    -n N     check results against the frozen pre-declaration
+  dl gate   rules      <file>   check a document against the standing rules
+  dl ask    --role R -n N       cross-check with a foreign harness
+  dl run    IMAGE -- CMD...     run a command in a pinned container
+  dl submit SCRIPT -n NAME      submit a job through the configured scheduler
+  dl guard  PATH...             assert paths are writable under the project
+  dl ledger [render|check]      maintain the project record
+  dl status                     show iterations, claims and gate state
+  dl doctor                     check the environment and configuration
+
+Run `dl <command> --help` for detail.
+USAGE
+}
+
+[ $# -ge 1 ] || { usage; exit 2; }
+cmd="$1"; shift
+case "$cmd" in
+  -h|--help|help) usage ;;
+  init|claim|new|gate|ask|run|submit|guard|ledger|status|doctor)
+    exec "$DL_HOME/bin/dl-$cmd" "$@" ;;
+  *) printf 'dl: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
+esac

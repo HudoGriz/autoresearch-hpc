@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Run a command inside the configured container runtime.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: dl run IMAGE -- CMD...'; exit 0; }
+dl_load_project
+. "$DL_HOME/lib/container.sh"
+image="${1:?usage: dl run IMAGE -- CMD...}"; shift
+[ "${1-}" = "--" ] && shift
+dl_ctr_run "$image" "$@"

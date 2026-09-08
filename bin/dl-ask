@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Cross-check with a foreign harness.
+#
+# The point is the *foreign* part. A model reviewing its own output checks
+# whether the work looks correctly generated, not whether it is correct — it
+# reproduces the reasoning errors it made while generating. So by default the
+# verifying harness must belong to a different model family than the producer.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+
+role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --role)         role="$2"; shift 2 ;;
+    -n|--iteration) n="$2"; shift 2 ;;
+    --harness)      harness="$2"; shift 2 ;;
+    --same-family)  same_family=1; shift ;;
+    --dry-run)      dry=1; shift ;;
+    --note)         extra="$2"; shift 2 ;;
+    -h|--help) echo 'usage: dl ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run]'; exit 0 ;;
+    *) dl_die "unexpected argument: $1" ;;
+  esac
+done
+[ -n "$n" ] || dl_die "which iteration? dl ask --role $role -n N"
+
+dl_load_project
+dir="$DL_ITERS/iteration$n"
+[ -d "$dir" ] || dl_die "no iteration $n"
+
+roledoc="$DL_HOME/skills/cross-check/roles/$role.md"
+[ -f "$roledoc" ] || dl_die "unknown role: $role (see skills/cross-check/roles/)"
+
+producer=$(dl_config_get "$DL_HARN" producer claude)
+[ -n "$harness" ] || harness=$(dl_config_get "$DL_HARN" verifier codex)
+
+pfam=$(dl_config_get "$DL_HARN" "harness_${producer}_family" unknown)
+vfam=$(dl_config_get "$DL_HARN" "harness_${harness}_family" unknown)
+if [ "$pfam" = "$vfam" ] && [ "$same_family" = 0 ]; then
+  dl_die "producer ($producer/$pfam) and verifier ($harness/$vfam) are the same model family.
+       A model does not reliably catch its own reasoning errors. Choose another
+       harness, or pass --same-family to accept the weaker check."
+fi
+
+cmd=$(dl_config_get "$DL_HARN" "harness_${harness}_cmd" "")
+[ -n "$cmd" ] || dl_die "no command configured for harness '$harness' (see .dl/config/harnesses.md)"
+command -v "${cmd%% *}" >/dev/null 2>&1 || dl_die "harness CLI not on PATH: ${cmd%% *}"
+
+prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
+{
+  cat "$roledoc"
+  printf '\n---\n\n## The work under review\n\n'
+  printf 'Project root: %s\nIteration: %s\nDirectory: %s\n\n' "$DL_ROOT" "$n" "$dir"
+  printf 'Standing rules every conclusion inherits are in %s/rules/.\n' "$DL_ROOT"
+  printf 'Recorded silent failure modes are in %s/GOTCHAS.md.\n\n' "$DL_ROOT"
+  printf '### Pre-declaration (written before any result existed)\n\n'
+  [ -f "$dir/README.md" ] && cat "$dir/README.md" || printf '(none)\n'
+  report="$dir/results/report/iteration${n}_report.md"
+  printf '\n### Report\n\n'
+  [ -f "$report" ] && cat "$report" || printf '(no report yet)\n'
+  [ -n "$extra" ] && printf '\n### Additional instruction from the operator\n\n%s\n' "$extra"
+  printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
+  printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
+} > "$prompt"
+
+out="$dir/CROSSCHECK_${role}_${harness}_$(date -u +%Y%m%dT%H%M%SZ).md"
+
+if [ "$dry" = 1 ]; then
+  printf '# dry run — would invoke: %s\n\n' "$harness"; cat "$prompt"; exit 0
+fi
+
+printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
+  "$role" "$harness" "$vfam" "$producer" "$pfam" >&2
+
+{
+  printf '# Cross-check — iteration %s\n\n' "$n"
+  printf '| field | value |\n|---|---|\n'
+  printf '| role | `%s` |\n| verifying harness | `%s` (%s) |\n' "$role" "$harness" "$vfam"
+  printf '| producing harness | `%s` (%s) |\n| same family | %s |\n' "$producer" "$pfam" \
+         "$([ "$same_family" = 1 ] && echo 'yes — WEAKER CHECK' || echo no)"
+  printf '| run | %s |\n\n---\n\n' "$(dl_now)"
+} > "$out"
+
+timeout_s=$(dl_config_get "$DL_HARN" ask_timeout 900)
+runner=""; command -v timeout >/dev/null 2>&1 && runner="timeout $timeout_s"
+
+# {prompt} is substituted with the composed prompt; the harness CLI receives it
+# as a single argument.
+set +e
+if printf '%s' "$cmd" | grep -q '{prompt}'; then
+  pre=${cmd%%\{prompt\}*}; post=${cmd##*\{prompt\}}
+  # shellcheck disable=SC2086
+  $runner $pre "$(cat "$prompt")" $post >> "$out" 2>"$out.err"
+else
+  # shellcheck disable=SC2086
+  $runner $cmd < "$prompt" >> "$out" 2>"$out.err"
+fi
+rc=$?
+set -e
+[ -s "$out.err" ] || rm -f "$out.err"
+
+if [ "$rc" -ne 0 ]; then
+  printf '\n**Harness exited %s.** See `%s`.\n' "$rc" "$(basename "$out").err" >> "$out"
+  dl_warn "harness exited $rc — partial record kept at $out"
+  exit "$rc"
+fi
+
+printf 'wrote %s\n' "$out"
+grep -m1 '^VERDICT:' "$out" || dl_warn "no VERDICT line — the record is incomplete"

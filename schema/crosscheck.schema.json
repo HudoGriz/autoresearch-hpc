@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/discovery-loop/schema/crosscheck.schema.json",
+  "title": "Cross-check record",
+  "description": "One review of an iteration by a foreign harness. The model families are recorded because a same-family check is materially weaker evidence.",
+  "type": "object",
+  "required": ["role", "verifier_harness", "verifier_family", "producer_family", "verdict", "run"],
+  "properties": {
+    "role": { "enum": ["adversary", "reimplementer", "estimand-auditor", "gotcha-scanner"] },
+    "verifier_harness": { "type": "string" },
+    "verifier_family": { "type": "string" },
+    "producer_harness": { "type": "string" },
+    "producer_family": { "type": "string" },
+    "same_family": { "type": "boolean", "default": false, "description": "True marks a weaker check: a model does not reliably catch its own reasoning errors." },
+    "verdict": { "enum": ["SOUND", "QUALIFIED", "UNSOUND"] },
+    "run": { "type": "string", "format": "date-time" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["summary", "accepted"],
+        "properties": {
+          "summary": { "type": "string" },
+          "accepted": { "type": "boolean" },
+          "reason": { "type": "string", "description": "Required for rejections. An undocumented rejection is indistinguishable from ignoring the check." },
+          "action": { "type": "string" }
+        }
+      }
+    }
+  }
+}
