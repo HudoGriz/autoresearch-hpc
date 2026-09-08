@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Acceptance gates. The protocol's teeth.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+
+sub="${1:-}"; shift || true
+case "$sub" in -h|--help|"") echo 'usage: dl gate {predeclare|results|rules} [-n N | FILE]'; exit 0 ;; esac
+
+n=""; file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="$2"; shift 2 ;;
+    *) file="$1"; shift ;;
+  esac
+done
+dl_load_project
+
+fails=0
+rule_ids() { dl_config_get "$DL_PROJ" rules ""; }
+
+# check_rules <file> <phase:predeclaration|report>
+check_rules() {
+  local doc="$1" phase="$2" r rf id sev applies forbid requires body
+  body=$(tr 'A-Z' 'a-z' < "$doc")
+  for r in $(rule_ids); do
+    rf="$DL_ROOT/rules/$r.md"
+    [ -f "$rf" ] || { dl_warn "rule file missing: $rf"; continue; }
+    applies=$(dl_config_get "$rf" applies "report")
+    case " $applies " in *" $phase "*) ;; *) continue ;; esac
+    id=$(dl_config_get "$rf" id "$r")
+    sev=$(dl_config_get "$rf" severity error)
+    forbid=$(dl_config_get "$rf" forbid "")
+    requires=$(dl_config_get "$rf" requires "")
+
+    local hit_forbid=0 hit_req=0
+    [ -n "$forbid" ]   && printf '%s' "$body" | grep -qEi -- "$forbid"   && hit_forbid=1
+    [ -n "$requires" ] && printf '%s' "$body" | grep -qEi -- "$requires" && hit_req=1
+
+    if [ -n "$forbid" ]; then
+      # Forbidden language is allowed only alongside the required qualifier.
+      if [ "$hit_forbid" = 1 ] && [ "$hit_req" = 0 ]; then
+        dl_fail "$id — uses '$forbid' language without stating '$requires'"
+        [ "$sev" = error ] && fails=$((fails+1)); continue
+      fi
+    elif [ -n "$requires" ] && [ "$hit_req" = 0 ]; then
+      dl_fail "$id — document never states: $requires"
+      [ "$sev" = error ] && fails=$((fails+1)); continue
+    fi
+    dl_ok "$id"
+  done
+}
+
+case "$sub" in
+  predeclare)
+    [ -n "$n" ] || dl_die "dl gate predeclare -n N"
+    dir="$DL_ITERS/iteration$n"
+    readme="$dir/README.md"
+    [ -f "$readme" ] || dl_die "no pre-declaration at $readme (run: dl new -n $n)"
+    printf 'gate: pre-declaration, iteration %s\n' "$n"
+
+    # Results must not exist yet. A pre-declaration written after the answer is
+    # not a pre-declaration.
+    if [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ]; then
+      dl_fail "results/ is already populated — this cannot be pre-declared"
+      fails=$((fails+1))
+    else
+      dl_ok "results/ is empty"
+    fi
+
+    # required_sections is a space-separated list of heading keywords; each must
+    # appear as a heading in the README.
+    for sec in $(dl_config_get "$DL_PROJ" required_sections ""); do
+      if grep -qiE "^#{1,6}.*\b$(printf '%s' "$sec" | sed 's/[][\.*^$/]/\\&/g')" "$readme"; then
+        dl_ok "section: $sec"
+      else
+        dl_fail "section missing: $sec"; fails=$((fails+1))
+      fi
+    done
+
+    # Placeholders left in the template are an incomplete pre-declaration.
+    # Template placeholders open at column 0 and may wrap over several lines,
+    # so anchor on the opening bracket rather than trying to match the pair.
+    if grep -qE '^<|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$readme"; then
+      dl_fail "template placeholders remain unfilled"; fails=$((fails+1))
+    else
+      dl_ok "no placeholders remain"
+    fi
+
+    check_rules "$readme" predeclaration
+
+    if [ "$fails" -gt 0 ]; then
+      printf '\ngate FAILED (%s). Nothing was frozen; fix and re-run.\n' "$fails" >&2; exit 1
+    fi
+    dl_sha256 "$readme" > "$dir/PREDECLARATION.sha256"
+    printf '%s\n' "$(dl_now)" >> "$dir/PREDECLARATION.sha256"
+    printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
+    printf 'The README is now immutable. Corrections go in a new iteration.\n'
+    ;;
+
+  results)
+    [ -n "$n" ] || dl_die "dl gate results -n N"
+    dir="$DL_ITERS/iteration$n"
+    readme="$dir/README.md"
+    frozen="$dir/PREDECLARATION.sha256"
+    printf 'gate: results, iteration %s\n' "$n"
+
+    if [ ! -f "$frozen" ]; then
+      dl_fail "no frozen pre-declaration — results were produced outside the protocol"
+      fails=$((fails+1))
+    else
+      want=$(head -1 "$frozen"); got=$(dl_sha256 "$readme")
+      if [ "$want" = "$got" ]; then
+        dl_ok "pre-declaration unchanged since freeze"
+      else
+        dl_fail "README.md CHANGED after pre-declaration was frozen"
+        dl_info "frozen: $want"
+        dl_info "now:    $got"
+        fails=$((fails+1))
+      fi
+    fi
+
+    report="$dir/results/report/iteration${n}_report.md"
+    if [ -f "$report" ]; then dl_ok "report present"; check_rules "$report" report
+    else dl_fail "no report at ${report#"$DL_ROOT"/}"; fails=$((fails+1)); fi
+
+    if [ "$(dl_config_get "$DL_PROJ" require_crosscheck true)" = true ]; then
+      if find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q .; then
+        dl_ok "cross-checked by a foreign harness"
+      else
+        dl_fail "no cross-check record (run: dl ask --role adversary -n $n)"; fails=$((fails+1))
+      fi
+    fi
+
+    [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s).\n' "$fails" >&2; exit 1; }
+    printf '\ngate PASSED. Iteration %s may be concluded in the ledger.\n' "$n"
+    ;;
+
+  rules)
+    [ -n "$file" ] || dl_die "dl gate rules FILE"
+    [ -f "$file" ] || dl_die "no such file: $file"
+    printf 'gate: standing rules, %s\n' "$file"
+    check_rules "$file" report
+    [ "$fails" -gt 0 ] && { printf '\n%s rule violation(s).\n' "$fails" >&2; exit 1; }
+    printf '\nAll standing rules satisfied.\n'
+    ;;
+  *) dl_die "unknown gate: $sub" ;;
+esac

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Check the environment against what the configuration asks for.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: dl doctor'; exit 0; }
+warn=0
+printf 'discovery-loop  DL_HOME=%s\n\n' "$DL_HOME"
+
+if DL_ROOT_TEST=$(dl_find_project 2>/dev/null); then
+  dl_load_project
+  dl_ok "project: $DL_ROOT"
+else
+  dl_warn "not inside a project — checking the framework only"
+  printf '\n'; exit 0
+fi
+
+sched=$(dl_config_get "$DL_SITE" scheduler local)
+case "$sched" in
+  slurm) command -v sbatch >/dev/null && dl_ok "scheduler slurm (sbatch present)" \
+           || { dl_fail "scheduler=slurm but sbatch not on PATH"; warn=$((warn+1)); } ;;
+  pbs)   command -v qsub >/dev/null && dl_ok "scheduler pbs (qsub present)" \
+           || { dl_fail "scheduler=pbs but qsub not on PATH"; warn=$((warn+1)); } ;;
+  local) dl_ok "scheduler local (no cluster required)" ;;
+  *)     dl_fail "unknown scheduler: $sched"; warn=$((warn+1)) ;;
+esac
+
+ctr=$(dl_config_get "$DL_SITE" container_runtime none)
+case "$ctr" in
+  apptainer|singularity|docker)
+    command -v "$ctr" >/dev/null && dl_ok "containers: $ctr" \
+      || { dl_fail "container_runtime=$ctr but $ctr not on PATH"; warn=$((warn+1)); } ;;
+  none) dl_warn "container_runtime=none — tools are unpinned, results are not reproducible"
+        dl_info "acceptable for smoke tests only" ;;
+  *) dl_fail "unknown container_runtime: $ctr"; warn=$((warn+1)) ;;
+esac
+
+printf '\nharnesses:\n'
+producer=$(dl_config_get "$DL_HARN" producer "")
+verifier=$(dl_config_get "$DL_HARN" verifier "")
+for h in $(dl_config_get "$DL_HARN" harnesses ""); do
+  c=$(dl_config_get "$DL_HARN" "harness_${h}_cmd" ""); fam=$(dl_config_get "$DL_HARN" "harness_${h}_family" '?')
+  if command -v "${c%% *}" >/dev/null 2>&1; then
+    dl_ok "$h ($fam) — ${c%% *} $(${c%% *} --version 2>/dev/null | head -1)"
+  else
+    dl_warn "$h ($fam) — ${c%% *} not installed"
+  fi
+done
+pf=$(dl_config_get "$DL_HARN" "harness_${producer}_family" a)
+vf=$(dl_config_get "$DL_HARN" "harness_${verifier}_family" b)
+if [ "$pf" = "$vf" ]; then
+  dl_fail "producer ($producer) and verifier ($verifier) share family '$pf' — cross-checks will be refused"
+  warn=$((warn+1))
+else
+  dl_ok "producer $producer ($pf) != verifier $verifier ($vf)"
+fi
+
+printf '\nrules:\n'
+for r in $(dl_config_get "$DL_PROJ" rules ""); do
+  [ -f "$DL_ROOT/rules/$r.md" ] && dl_ok "$r" || { dl_fail "$r — named in project.md, missing in rules/"; warn=$((warn+1)); }
+done
+
+printf '\n'
+[ "$warn" -gt 0 ] && { printf '%s problem(s) found.\n' "$warn"; exit 1; }
+printf 'No problems found.\n'

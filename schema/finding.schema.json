@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/discovery-loop/schema/finding.schema.json",
+  "title": "Finding",
+  "description": "One claim an iteration makes. Findings are typed so the ledger can be generated rather than hand-maintained, and so supersession is a field rather than prose.",
+  "type": "object",
+  "required": ["id", "iteration", "claim", "estimand", "status", "detection_limit"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^it[0-9]+-[a-z0-9-]+$" },
+    "iteration": { "type": "integer", "minimum": 1 },
+    "claim": { "type": "string", "description": "One sentence. What is asserted." },
+    "estimand": { "type": "string", "description": "The quantity estimated, in its own units." },
+    "effect": {
+      "type": "object",
+      "properties": {
+        "point": { "type": "number" },
+        "ci_low": { "type": "number" },
+        "ci_high": { "type": "number" },
+        "units": { "type": "string" },
+        "p": { "type": "number" },
+        "multiple_testing": { "type": "string", "description": "Correction applied, and over how many tests." }
+      }
+    },
+    "n": { "type": "integer", "description": "Units of analysis supporting the claim." },
+    "negative_controls": {
+      "type": "object",
+      "required": ["declared", "behaved"],
+      "properties": {
+        "declared": { "type": "array", "items": { "type": "string" } },
+        "behaved": { "type": "boolean", "description": "False means the pipeline was diagnosed, not the biology." }
+      }
+    },
+    "detection_limit": {
+      "type": "object",
+      "required": ["value", "units", "basis"],
+      "properties": {
+        "value": { "type": "number" },
+        "units": { "type": "string" },
+        "basis": { "type": "string", "description": "How the limit was derived. A null result IS this number." }
+      }
+    },
+    "confounders_unexcluded": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Named explicitly. An empty array is a strong claim and is rarely honest in an observational design."
+    },
+    "status": {
+      "enum": ["candidate", "supported", "superseded", "retracted"],
+      "description": "`candidate` until orthogonally validated. Most findings never leave it."
+    },
+    "superseded_by": { "type": "string", "description": "Finding id that overturned this one. The superseded record is never edited or deleted." },
+    "crosschecks": { "type": "array", "items": { "$ref": "crosscheck.schema.json" } }
+  }
+}

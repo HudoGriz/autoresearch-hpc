@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Atomically claim the next iteration number.
+#
+# The collision this prevents is real: two agents working the same project
+# independently created the same iteration directory eleven minutes apart, and
+# the numbering had to be unpicked by hand. `mkdir` is atomic on POSIX and
+# fails if the directory exists, so the directory *is* the lock — checking a
+# registry table first and creating the directory second is a race.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+
+title=""; agent=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t|--title) title="$2"; shift 2 ;;
+    -a|--agent) agent="$2"; shift 2 ;;
+    -h|--help)  echo 'usage: dl claim -t TITLE [-a AGENT]'; exit 0 ;;
+    *) dl_die "unexpected argument: $1" ;;
+  esac
+done
+[ -n "$title" ] || dl_die "a title is required: dl claim -t 'the question'"
+
+dl_load_project
+[ -n "$agent" ] || agent=$(dl_agent_name)
+mkdir -p "$DL_ITERS"
+
+# Highest number known to either the filesystem or the registry.
+n=$(
+  { ls -1 "$DL_ITERS" 2>/dev/null | sed -n 's/^iteration\([0-9]\{1,\}\)$/\1/p'
+    awk -F'\t' 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}' "$DL_REGISTRY" 2>/dev/null
+  } | sort -n | tail -1
+)
+n=$(( ${n:-0} + 1 ))
+
+# mkdir is the lock. Walk forward until one succeeds.
+dir=""
+for _ in $(seq 1 100); do
+  if mkdir "$DL_ITERS/iteration$n" 2>/dev/null; then dir="$DL_ITERS/iteration$n"; break; fi
+  n=$((n + 1))
+done
+[ -n "$dir" ] || dl_die "could not claim an iteration number after 100 attempts"
+
+cat > "$dir/CLAIM.json" <<EOF
+{
+  "iteration": $n,
+  "agent": "$(dl_agent_name)",
+  "declared_agent": "$agent",
+  "claimed": "$(dl_now)",
+  "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),
+  "status": "CLAIMED",
+  "session": "${DL_SESSION:-}"
+}
+EOF
+
+# Registry append, serialised. flock where available; mkdir-lock otherwise.
+_append_row() { printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$agent" "$(dl_now)" CLAIMED "$title" >> "$DL_REGISTRY"; }
+if command -v flock >/dev/null 2>&1; then
+  exec 9>>"$DL_REGISTRY.lock"; flock 9; _append_row; exec 9>&-
+else
+  until mkdir "$DL_REGISTRY.lock.d" 2>/dev/null; do sleep 0.2; done
+  _append_row; rmdir "$DL_REGISTRY.lock.d"
+fi
+
+mkdir -p "$dir"/{scripts,results,logs,resources,metadata}
+printf '%s\n' "$n"
+printf 'claimed iteration %s at %s\n' "$n" "$dir" >&2
+printf 'next: dl new -n %s   (writes the pre-declaration you must complete BEFORE running anything)\n' "$n" >&2

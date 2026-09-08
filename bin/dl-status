@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Show every iteration, its claim, and where it stands against the gates.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: dl status'; exit 0; }
+dl_load_project
+
+printf '%s\n' "$DL_ROOT"
+printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
+  "$(dl_config_get "$DL_SITE" scheduler local)" \
+  "$(dl_config_get "$DL_SITE" container_runtime none)" \
+  "$(dl_config_get "$DL_HARN" producer claude)" \
+  "$(dl_config_get "$DL_HARN" verifier codex)"
+
+printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
+printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
+found=0
+for d in $(ls -1 "$DL_ITERS" 2>/dev/null | sed -n 's/^iteration\([0-9]\{1,\}\)$/\1/p' | sort -n); do
+  found=1
+  dir="$DL_ITERS/iteration$d"
+  agent=$(sed -n 's/.*"declared_agent"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
+  title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
+
+  if   [ -f "$dir/PREDECLARATION.sha256" ]; then
+    if [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md" 2>/dev/null)" ]
+    then pre=frozen; else pre=ALTERED; fi
+  elif [ -f "$dir/README.md" ]; then pre=draft
+  else pre=-; fi
+
+  [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
+    || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=-; }
+
+  find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q . && xc=yes || xc=-
+
+  printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
+done
+[ "$found" = 0 ] && printf '(no iterations yet — dl claim -t "your question")\n'
+exit 0

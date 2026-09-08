@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Assert that paths are writable under the project and outside immutable inputs.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+[ $# -ge 1 ] || dl_die "usage: dl guard PATH..."
+[ "${1-}" = "--help" ] && { echo 'usage: dl guard PATH...'; exit 0; }
+dl_load_project
+dl_guard_path "$@"
+printf 'all %s path(s) writable under %s\n' "$#" "$DL_ROOT"

@@ -1,0 +1,16 @@
+# Codex CLI profile for a discovery-loop project.
+# The contract itself is AGENTS.md, which Codex reads natively.
+
+[profiles.discovery]
+approval_policy   = "on-request"
+sandbox_mode      = "workspace-write"
+
+# Cross-check roles are invoked headlessly by `dl ask`:
+#   codex exec "<composed prompt>"
+# The prompt is composed from skills/cross-check/roles/<role>.md plus the
+# iteration's pre-declaration and report.
+
+[profiles.discovery-readonly]
+# For the reimplementer role, which must never modify the project it reviews.
+approval_policy = "never"
+sandbox_mode    = "read-only"

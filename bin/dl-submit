@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Submit a job through the configured scheduler.
+set -euo pipefail
+. "${DL_HOME:?}/lib/common.sh"
+name=""; logdir=""; wait=0; script=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--name)   name="$2"; shift 2 ;;
+    -l|--logdir) logdir="$2"; shift 2 ;;
+    -w|--wait)   wait=1; shift ;;
+    -h|--help)   echo 'usage: dl submit SCRIPT [-n NAME] [-l LOGDIR] [-w]'; exit 0 ;;
+    *) script="$1"; shift ;;
+  esac
+done
+[ -n "$script" ] || dl_die "usage: dl submit SCRIPT [-n NAME]"
+[ -f "$script" ] || dl_die "no such script: $script"
+dl_load_project
+. "$DL_HOME/lib/scheduler.sh"
+[ -n "$name" ]   || name=$(basename "$script" | sed 's/\.[^.]*$//')
+[ -n "$logdir" ] || logdir="$(dirname "$script")/../logs"
+dl_guard_path "$logdir"
+jid=$(dl_sched_submit "$script" "$name" "$logdir")
+printf '%s\n' "$jid"
+printf 'submitted %s as job %s via %s\n' "$name" "$jid" "$(dl_sched_backend)" >&2
+[ "$wait" = 1 ] && { dl_sched_wait "$jid"; printf 'job %s finished\n' "$jid" >&2; }
+exit 0
