@@ -6,6 +6,7 @@
 # reproduces the reasoning errors it made while generating. So by default the
 # verifying harness must belong to a different model family than the producer.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 
 role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""

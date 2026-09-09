@@ -7,6 +7,7 @@
 # fails if the directory exists, so the directory *is* the lock — checking a
 # registry table first and creating the directory second is a race.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 
 title=""; agent=""
@@ -26,7 +27,8 @@ mkdir -p "$DL_ITERS"
 
 # Highest number known to either the filesystem or the registry.
 n=$(
-  { ls -1 "$DL_ITERS" 2>/dev/null | sed -n 's/^iteration\([0-9]\{1,\}\)$/\1/p'
+  { find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+      | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p'
     awk -F'\t' 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}' "$DL_REGISTRY" 2>/dev/null
   } | sort -n | tail -1
 )

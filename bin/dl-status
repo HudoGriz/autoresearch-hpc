@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Show every iteration, its claim, and where it stands against the gates.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 [ "${1-}" = "--help" ] && { echo 'usage: dl status'; exit 0; }
 dl_load_project
@@ -15,7 +16,9 @@ printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
 found=0
-for d in $(ls -1 "$DL_ITERS" 2>/dev/null | sed -n 's/^iteration\([0-9]\{1,\}\)$/\1/p' | sort -n); do
+iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+        | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
+for d in $iters; do
   found=1
   dir="$DL_ITERS/iteration$d"
   agent=$(sed -n 's/.*"declared_agent"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)

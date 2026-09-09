@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Submit a job through the configured scheduler.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 name=""; logdir=""; wait=0; script=""
 while [ $# -gt 0 ]; do
@@ -15,6 +16,7 @@ done
 [ -n "$script" ] || dl_die "usage: dl submit SCRIPT [-n NAME]"
 [ -f "$script" ] || dl_die "no such script: $script"
 dl_load_project
+# shellcheck source=lib/scheduler.sh
 . "$DL_HOME/lib/scheduler.sh"
 [ -n "$name" ]   || name=$(basename "$script" | sed 's/\.[^.]*$//')
 [ -n "$logdir" ] || logdir="$(dirname "$script")/../logs"

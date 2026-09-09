@@ -6,6 +6,8 @@ Versions are the **protocol** version; see `PROTOCOL.md`.
 ## [Unreleased]
 
 ### Added
+- `dl verify` — the verification track had a skill and templates but no
+  command. Its gate requires a membership-based success criterion, per §6.4.
 - `dl --version`.
 - CI on Linux and macOS, shellcheck, and JSON schema validation.
 - `CITATION.cff`, `CONTRIBUTING.md`, `SECURITY.md`, issue and PR templates.

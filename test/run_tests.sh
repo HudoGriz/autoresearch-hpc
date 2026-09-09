@@ -56,7 +56,7 @@ for p in .dl/config/site.md .dl/config/project.md .dl/config/harnesses.md \
 done
 [ -L "$PROJ/CLAUDE.md" ] && ok "CLAUDE.md symlinks to AGENTS.md" || no "CLAUDE.md symlinks to AGENTS.md"
 
-cd "$PROJ"
+cd "$PROJ" || exit 1
 check "dl doctor passes on a fresh project" 0 dl doctor
 
 # --- 3. claiming ---------------------------------------------------------
@@ -154,7 +154,7 @@ EOF
 cat > iterations/iteration1/scripts/it1_01_run.sh <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$PROJ"
+cd "$PROJ" || exit 1
 python3 iterations/iteration1/scripts/it1_01_toy.py iterations/iteration1/results/it1_01_result.tsv
 EOF
 chmod +x iterations/iteration1/scripts/it1_01_run.sh
@@ -302,7 +302,72 @@ p.write_text(p.read_text().replace("scheduler         = nonesuch", "scheduler   
 EOF
 check "doctor passes when the config matches the machine" 0 dl doctor
 
-# --- 12. harness install -------------------------------------------------
+# --- 12. verification track ---------------------------------------------
+printf '\n# verification track\n'
+check "dl verify list is empty at first"      0 dl verify list
+check "dl verify new scaffolds"               0 dl verify new panel_recalc -m recalculation
+check "dl verify new refuses a duplicate"     1 dl verify new panel_recalc
+check "dl verify new rejects a path segment"  1 dl verify new ../escape
+check "verify gate rejects an unfilled template" 1 dl verify gate panel_recalc
+cat > verification/panel_recalc/PREDECLARATION.md <<'EOF'
+# Verification pre-declaration — panel_recalc
+
+**Written before any result exists.**
+
+## What is being verified
+Iteration 1's reported difference in means. It was null at perm p = 0.87.
+
+## Mode
+Re-implementation from the written specification alone. Recalculation would only
+confirm the code runs; the claim needs independence from that code.
+
+## Analytic variant
+Within-pair label swapping rather than unrestricted permutation. Seed 20260909.
+
+## Success criterion
+Stated as membership: the same 100 pair identifiers must be retained, by name,
+and the reported difference must agree to 6 decimal places.
+
+## What a failure would mean
+Disagreement in retained pairs would show the pairing was not preserved, which
+changes the null the original test was against. A difference only in the sixth
+decimal changes nothing about the claim.
+EOF
+check "verify gate accepts a complete pre-declaration" 0 dl verify gate panel_recalc
+[ -f verification/panel_recalc/PREDECLARATION.sha256 ] \
+  && ok "verification hash frozen" || no "verification hash frozen"
+grep_ok "verify list shows frozen" "panel_recalc[[:space:]]+frozen" <(dl verify list 2>&1)
+python3 - <<'EOF'
+import pathlib
+p = pathlib.Path("verification/panel_recalc/PREDECLARATION.md")
+p.write_text(p.read_text() + "\nadded later\n")
+EOF
+grep_ok "verify list detects tampering" "panel_recalc[[:space:]]+ALTERED" <(dl verify list 2>&1)
+
+# A membership criterion is required: reproducing a set's size is not
+# reproducing the set (PROTOCOL.md 6.4).
+dl verify new counts_only >/dev/null 2>&1
+cat > verification/counts_only/PREDECLARATION.md <<'EOF'
+# Verification pre-declaration — counts_only
+
+## What is being verified
+Iteration 1's candidate set, originally 41 elements at p = 0.089.
+
+## Mode
+Recalculation.
+
+## Analytic variant
+Same code, same seed 20260909, rerun on the frozen inputs.
+
+## Success criterion
+The rerun must return 41 elements.
+
+## What a failure would mean
+A different count would indicate non-determinism in the pipeline.
+EOF
+check "verify gate rejects a count-only success criterion" 1 dl verify gate counts_only
+
+# --- 13. harness install -------------------------------------------------
 printf '\n# harness install\n'
 check "harness/install.sh runs" 0 "$DL_HOME/harness/install.sh" "$PROJ"
 for p in .claude/skills/iterate/SKILL.md .codex/config.toml opencode.json; do

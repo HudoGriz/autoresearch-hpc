@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Acceptance gates. The protocol's teeth.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 
 sub="${1:-}"; shift || true
