@@ -302,9 +302,170 @@ p.write_text(p.read_text().replace("scheduler         = nonesuch", "scheduler   
 EOF
 check "doctor passes when the config matches the machine" 0 dl doctor
 
-# --- 12. verification track ---------------------------------------------
+# --- 12. arms -------------------------------------------------------------
+printf '\n# arms\n'
+check "dl arm list on an iteration with none" 0 dl arm list -n 1
+check "dl arm new refuses before pre-declaration" 1 dl arm new -n 2 -a A -t "too early"
+check "dl arm new scaffolds"                  0 dl arm new -n 1 -a A -t "the primary route"
+check "dl arm new refuses a duplicate"        1 dl arm new -n 1 -a A
+check "dl arm new rejects a path segment"     1 dl arm new -n 1 -a ../escape
+check "arm gate rejects an unfilled template" 1 dl arm gate -n 1 -a A
+cat > iterations/iteration1/arms/A/README.md <<'EOF'
+# Iteration 1 · Arm A — the primary route
+
+## 1. What this arm tests
+Whether the difference survives when draws are matched by index.
+
+## 2. Acceptance criteria
+100 matched pairs retained; no index collisions; counts reconcile.
+
+## 3. Negative control
+Index-shuffled pairing, expected null.
+
+## 4. Fate
+PLANNED
+EOF
+check "arm gate accepts a complete arm"       0 dl arm gate -n 1 -a A
+grep_ok "arm shows as frozen" "^A[[:space:]]+frozen" <(dl arm list -n 1 2>&1)
+check "dl arm fate rejects an invalid fate"   1 dl arm fate -n 1 -a A -f MADE_UP
+check "dl arm fate records KILLED_BY_CONTROL" 0 dl arm fate -n 1 -a A -f KILLED_BY_CONTROL
+grep_ok "fate is listed" "KILLED_BY_CONTROL" <(dl arm list -n 1 2>&1)
+grep_ok "a killed arm is called a reportable result" "REPORTABLE" \
+  <(dl arm fate -n 1 -a A -f INFEASIBLE 2>&1)
+
+# --- 13. discovery DAG ----------------------------------------------------
+printf '\n# discovery DAG\n'
+check "dl dag init scaffolds"              0 dl dag init -n 1
+check "dl dag init refuses to overwrite"   1 dl dag init -n 1
+check "dag check rejects the empty template" 1 dl dag check -n 1
+cat > iterations/iteration1/DAG.md <<'EOF'
+# Discovery DAG — iteration 1
+
+## 1. Inputs
+| id | what | identity |
+|---|---|---|
+| I1 | 100 paired draws | sha256:aa11 |
+
+## 2. The graph, as it ran
+```mermaid
+flowchart TD
+    I1 --> N1
+    N1 --> N2
+    N2 --> C1
+```
+
+## 3. Nodes
+| id | operation | parameters | decision? | output |
+|---|---|---|---|---|
+| N1 | pair by index | half-open | yes | pairs |
+| N2 | mean difference | none | no | diff |
+| C1 | the claim | none | no | perm p |
+
+## 4. Branch count
+Three paths exist from I1 to C1 under the two pairing conventions and the
+two-sided rule; one was reported. The denominator is therefore 3, not 1.
+
+## 5. What falls out of the graph
+The permutation node draws from the pooled series, so the pairing established at
+N1 is discarded before the null is built. Nothing downstream restores it.
+
+## 6. Terminal claim
+The mean difference is 0.0184 raw units at permutation p = 0.87.
+EOF
+check "dag check passes on a complete DAG"  0 dl dag check -n 1
+check "dl dag freeze"                       0 dl dag freeze -n 1
+[ -f iterations/iteration1/DAG.sha256 ] && ok "DAG hash frozen" || no "DAG hash frozen"
+grep_ok "dag show reports frozen state" "frozen and unchanged" <(dl dag show -n 1 2>&1)
+
+# An orphan node is the defect the topology check exists to surface: something
+# the tables describe and the graph never connects.
+python3 - <<'EOF'
+import pathlib
+p = pathlib.Path("iterations/iteration1/DAG.md")
+p.write_text(p.read_text().replace(
+    "| C1 | the claim | none | no | perm p |",
+    "| C1 | the claim | none | no | perm p |\n| N9 | synthetic covariate | none | yes | dosage |"))
+EOF
+check "dag check catches a node with no edge" 1 dl dag check -n 1
+grep_ok "orphan is named" "N9" <(dl dag check -n 1 2>&1)
+
+# --- 14. blind replication ------------------------------------------------
+printf '\n# blind replication\n'
+check "replicate refuses while the DAG is altered" 1 dl replicate -n 1 --agents 2 --dry-run
+python3 - <<'EOF'
+import pathlib
+p = pathlib.Path("iterations/iteration1/DAG.md")
+p.write_text(p.read_text().replace(
+    "\n| N9 | synthetic covariate | none | yes | dosage |", ""))
+EOF
+check "replicate runs once the DAG matches again" 0 dl replicate -n 1 --agents 2 --dry-run
+for f in verification/replication_it1/agent1/SPEC.md verification/replication_it1/agent1/PROMPT.md \
+         verification/replication_it1/agent2/SPEC.md; do
+  [ -f "$f" ] && ok "sandbox: ${f#verification/}" || no "sandbox: ${f#verification/}"
+done
+# The firewall: the original scripts must not reach the sandbox.
+if find verification/replication_it1 -name 'it1_*' 2>/dev/null | grep -q .; then
+  no "original scripts are absent from the sandbox"
+else ok "original scripts are absent from the sandbox"; fi
+grep_ok "prompt carries the DAG"        "Discovery DAG" verification/replication_it1/agent1/PROMPT.md
+grep_ok "prompt forbids reading code"   "voids this replication" verification/replication_it1/agent1/PROMPT.md
+grep_ok "prompt asks for membership"    "BY NAME" verification/replication_it1/agent1/PROMPT.md
+grep_ok "prompt asks for ambiguities"   "ambiguities" verification/replication_it1/agent1/PROMPT.md
+
+# Membership comparison across agents: contested elements must be named.
+cat > verification/replication_it1/agent1/REPORT.md <<'EOF'
+VERDICT: QUALIFIED
+```dl-replication
+value = 0.0184
+members = e1,e2,e3
+ambiguities = 2
+```
+EOF
+cat > verification/replication_it1/agent2/REPORT.md <<'EOF'
+VERDICT: QUALIFIED
+```dl-replication
+value = 0.0191
+members = e1,e2,e4
+ambiguities = 3
+```
+EOF
+check "replicate report runs" 0 dl replicate report -n 1
+rep=$(dl replicate report -n 1 2>&1)
+printf '%s' "$rep" | grep -q "2 distinct values" && ok "divergent values are reported" \
+  || no "divergent values are reported"
+printf '%s' "$rep" | grep -q "contested: 2" && ok "contested membership is counted" \
+  || no "contested membership is counted"
+printf '%s' "$rep" | grep -q "e3" && ok "contested elements are named" || no "contested elements are named"
+printf '%s' "$rep" | grep -qi "evidence, not truth" && ok "agreement is not equated with truth" \
+  || no "agreement is not equated with truth"
+
+# The reimplementer role must work from the DAG, never the directory.
+grep_ok "reimplementer prompt carries the DAG" "frozen" \
+  <(dl ask --role reimplementer -n 1 --dry-run 2>&1)
+out=$(dl ask --role reimplementer -n 1 --dry-run 2>&1)
+printf '%s' "$out" | grep -q "it1_01_toy.py" && no "reimplementer prompt leaks the code" \
+  || ok "reimplementer prompt does not leak the code"
+check "reimplementer refuses without a frozen DAG" 1 dl ask --role reimplementer -n 2 --dry-run
+
+# --- 15. guidance and machine-readable output -----------------------------
+printf '\n# guidance and API\n'
+check "dl next runs"        0 dl next
+check "dl next -n works"    0 dl next -n 1
+check "dl status --json"    0 dl status --json
+dl status --json > "$WORK/st.json" 2>/dev/null
+python3 -c "
+import json,sys
+d=json.load(open('$WORK/st.json'))
+assert 'iterations' in d and d['iterations'], 'no iterations in json'
+i=d['iterations'][0]
+for k in ('iteration','predeclaration','results','crosschecks','dag','arms'): assert k in i, k
+assert i['dag']=='frozen', i['dag']
+assert i['arms']==1, i['arms']
+" && ok "status --json is valid and complete" || no "status --json is valid and complete"
+
+# --- 16. verification track ---------------------------------------------
 printf '\n# verification track\n'
-check "dl verify list is empty at first"      0 dl verify list
+check "dl verify list runs"                   0 dl verify list
 check "dl verify new scaffolds"               0 dl verify new panel_recalc -m recalculation
 check "dl verify new refuses a duplicate"     1 dl verify new panel_recalc
 check "dl verify new rejects a path segment"  1 dl verify new ../escape
@@ -367,7 +528,7 @@ A different count would indicate non-determinism in the pipeline.
 EOF
 check "verify gate rejects a count-only success criterion" 1 dl verify gate counts_only
 
-# --- 13. harness install -------------------------------------------------
+# --- 17. harness install -------------------------------------------------
 printf '\n# harness install\n'
 check "harness/install.sh runs" 0 "$DL_HOME/harness/install.sh" "$PROJ"
 for p in .claude/skills/iterate/SKILL.md .codex/config.toml opencode.json; do

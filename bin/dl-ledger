@@ -64,7 +64,7 @@ case "$sub" in
         && dl_ok "iteration $d" || { dl_fail "iteration $d — absent from the ledger"; fails=$((fails+1)); }
     done
     [ "$fails" -gt 0 ] && { printf '\n%s ledger problem(s).\n' "$fails" >&2; exit 1; }
-    printf '\nLedger consistent with %s iteration(s) on disk.\n' "$(printf '%s\n' $iters | grep -c . || echo 0)"
+    printf '\nLedger consistent with %s iteration(s) on disk.\n' "$(printf '%s\n' $iters | grep -c . || true)"
     ;;
   *) dl_die "unknown: $sub" ;;
 esac

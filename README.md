@@ -115,17 +115,49 @@ refused between harnesses of the same family.
 | `dl init [dir]` | create a project |
 | `dl claim -t TITLE` | atomically take the next iteration number |
 | `dl new -n N` | scaffold the pre-declaration |
+| `dl arm {new\|gate\|fate\|list}` | parallel sub-analyses that fail independently |
 | `dl gate predeclare -n N` | check it, then freeze its hash |
 | `dl gate results -n N` | verify the pre-declaration never changed |
 | `dl gate rules FILE` | check a document against the standing rules |
 | `dl ask --role R -n N` | cross-check with a foreign harness |
 | `dl verify {new\|gate\|list}` | re-examine an object an iteration produced |
+| `dl dag {init\|check\|freeze}` | reconstruct the path a result took |
+| `dl replicate [run\|report]` | N agents re-implement from the DAG, blind to the code |
 | `dl run IMAGE -- CMD` | run inside the configured container runtime |
 | `dl submit SCRIPT` | submit through the configured scheduler |
 | `dl guard PATH...` | assert paths are writable under the project |
 | `dl ledger render \| check` | maintain the record |
 | `dl status` | iterations, claims, gate state |
 | `dl doctor` | check the environment against the config |
+| `dl next` | what to do next, and why |
+| `dl status --json` | machine-readable state, for calling `dl` from code |
+
+## Blind replication from a DAG
+
+The strongest check the framework offers. Reconstruct the path a result took,
+freeze it, then have several agents re-implement it from that specification
+alone:
+
+```bash
+dl dag init -n N && dl dag freeze -n N
+dl replicate -n N --agents 3 --harnesses codex,opencode,claude
+dl replicate report -n N
+```
+
+Each agent gets a sandbox holding the frozen DAG and the pre-declaration, and
+**nothing else** — the original scripts are absent by construction, because an
+agent that reads them reproduces their choices including their mistakes.
+
+`dl dag check` fails on a node declared in the tables but absent from the graph:
+an adjacency the argument assumes and the topology does not contain. It also
+requires §4 to state how many paths exist versus how many were reported — the
+multiple-testing denominator.
+
+The report surfaces **disagreement**, which is the evidence: divergent values
+mark decisions the DAG left open, contested set membership is named element by
+element, and the ambiguity count measures the specification rather than the
+result. Agreement is not treated as confirmation — models fail in correlated
+ways, and a unanimous answer can be unanimously wrong.
 
 ## Cross-check roles
 
@@ -145,14 +177,14 @@ record the rejections with reasons.
 
 ## Skills
 
-`skills/` holds portable skill definitions — `iterate`, `verify`, `cross-check`,
-`ledger` — installed into `.claude/skills/` for Claude Code and referenced by
+`skills/` holds portable skill definitions — `iterate`, `arms`, `verify`,
+`cross-check`, `replicate`, `ledger` — installed into `.claude/skills/` for Claude Code and referenced by
 `opencode.json` for OpenCode. Codex and Cursor read `AGENTS.md` directly.
 
 ## Tests
 
 ```bash
-test/run_tests.sh          # 89 checks, no cluster or network needed
+test/run_tests.sh          # 136 checks, no cluster or network needed
 KEEP=1 test/run_tests.sh   # keep the scratch project for inspection
 ```
 

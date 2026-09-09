@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# Blind multi-agent replication from the frozen DAG.
+#
+# N agents, spread across harnesses and model families, each re-implement the
+# path from the DAG alone. None of them sees the original code. Their errors are
+# therefore independent of the original's and — mostly — of each other's.
+#
+# Agreement among agents is EVIDENCE, NOT TRUTH. Models share training data and
+# fail in correlated ways; a unanimous wrong answer is entirely possible. What
+# the fan-out buys is the disagreement: every point where agents diverge is a
+# place the specification failed to pin the result down.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${DL_HOME:?}/lib/common.sh"
+
+sub=run
+case "${1:-}" in
+  report|run) sub="$1"; shift ;;
+  -h|--help) echo 'usage: dl replicate [run|report] -n N [--agents K] [--harnesses a,b,c] [--dry-run]'; exit 0 ;;
+esac
+
+n=""; agents=3; harn_csv=""; dry=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="$2"; shift 2 ;;
+    -k|--agents)    agents="$2"; shift 2 ;;
+    --harnesses)    harn_csv="$2"; shift 2 ;;
+    --dry-run)      dry=1; shift ;;
+    *) dl_die "unexpected argument: $1" ;;
+  esac
+done
+[ -n "$n" ] || dl_die "which iteration? dl replicate -n N"
+dl_load_project
+
+dir="$DL_ITERS/iteration$n"
+[ -d "$dir" ] || dl_die "no iteration $n"
+work="$DL_VERIFY/replication_it$n"
+
+parse_block() {  # <file> <key> — read the agent's machine-readable summary
+  awk -v key="$2" '
+    /^[ \t]*```[ \t]*dl-replication[ \t]*$/ { inb=1; next }
+    /^[ \t]*```/ { inb=0; next }
+    !inb { next }
+    { n=index($0,"="); if(!n) next
+      k=substr($0,1,n-1); v=substr($0,n+1)
+      gsub(/^[ \t]+|[ \t]+$/,"",k); gsub(/^[ \t]+|[ \t]+$/,"",v)
+      if (k==key) { print v; exit } }' "$1" 2>/dev/null
+}
+
+if [ "$sub" = report ]; then
+  [ -d "$work" ] || dl_die "no replication for iteration $n (run: dl replicate -n $n)"
+  printf '# Replication report — iteration %s\n\n' "$n"
+  printf '| agent | harness | family | verdict | value | members | ambiguities |\n'
+  printf '|---|---|---|---|---|---|---|\n'
+  vals=""; memb_file=$(mktemp); trap 'rm -f "$memb_file"' EXIT
+  for a in "$work"/agent*/; do
+    [ -d "$a" ] || continue
+    id=$(basename "$a"); r="$a/REPORT.md"
+    [ -f "$r" ] || { printf '| %s | | | **no report** | | | |\n' "$id"; continue; }
+    h=$(cat "$a/HARNESS" 2>/dev/null || echo '?')
+    f=$(dl_config_get "$DL_HARN" "harness_${h}_family" '?')
+    v=$(grep -m1 '^VERDICT:' "$r" | sed 's/^VERDICT: *//' || echo '?')
+    val=$(parse_block "$r" value); mem=$(parse_block "$r" members); amb=$(parse_block "$r" ambiguities)
+    printf '| %s | %s | %s | %s | %s | %s | %s |\n' \
+      "$id" "$h" "$f" "${v:-?}" "${val:-—}" "$(printf '%s' "$mem" | tr ',' '\n' | grep -c . || true)" "${amb:-—}"
+    [ -n "$val" ] && vals="$vals $val"
+    [ -n "$mem" ] && printf '%s\t%s\n' "$id" "$mem" >> "$memb_file"
+  done
+
+  printf '\n## Agreement\n\n'
+  uniq_vals=$(printf '%s\n' $vals | grep -v '^$' | sort -u | grep -c . || true)
+  if [ "${uniq_vals:-0}" -le 1 ] && [ -n "$vals" ]; then
+    printf 'All reporting agents returned the same value.\n'
+  else
+    printf 'Agents returned **%s distinct values**:%s\n' "$uniq_vals" "$vals"
+    printf '\nDivergence is the finding. Each distinct value marks a decision the\n'
+    printf 'DAG left open, and the original made that choice without recording it.\n'
+  fi
+
+  # Membership, not counts (PROTOCOL.md 6.4).
+  if [ -s "$memb_file" ]; then
+    printf '\n## Membership\n\n'
+    python3 - "$memb_file" <<'PY'
+import sys, collections
+rows = [l.rstrip("\n").split("\t", 1) for l in open(sys.argv[1]) if "\t" in l]
+sets = {a: set(x.strip() for x in m.split(",") if x.strip()) for a, m in rows}
+if not sets: sys.exit()
+core = set.intersection(*sets.values()); union = set.union(*sets.values())
+print(f"- agreed by all {len(sets)} agents: **{len(core)}** element(s)")
+print(f"- named by at least one:          {len(union)}")
+contested = union - core
+if contested:
+    print(f"- **contested: {len(contested)}** — reproducing a set's *size* is not reproducing the set\n")
+    counts = collections.Counter(e for s in sets.values() for e in s)
+    for e in sorted(contested):
+        who = sorted(a for a, s in sets.items() if e in s)
+        print(f"  - `{e}` — {counts[e]}/{len(sets)}: {', '.join(who)}")
+else:
+    print("- no contested elements")
+PY
+  fi
+  printf '\n> Agreement is evidence, not truth. Models fail in correlated ways, so a\n'
+  printf '> unanimous answer can still be wrong. Read the disagreements first.\n'
+  exit 0
+fi
+
+# ---------------------------------------------------------------- run --------
+dag="$dir/DAG.md"
+[ -f "$dag" ]           || dl_die "iteration $n has no DAG (dl dag init -n $n)"
+[ -f "$dir/DAG.sha256" ] || dl_die "the DAG is not frozen (dl dag freeze -n $n)"
+[ "$(head -1 "$dir/DAG.sha256")" = "$(dl_sha256 "$dag")" ] \
+  || dl_die "the DAG changed after it was frozen — replication would target a moving specification"
+
+# Spread agents across harnesses so families differ where possible.
+if [ -n "$harn_csv" ]; then hs=$(printf '%s' "$harn_csv" | tr ',' ' ')
+else hs=$(dl_config_get "$DL_HARN" harnesses "codex"); fi
+avail=""
+for h in $hs; do
+  c=$(dl_config_get "$DL_HARN" "harness_${h}_cmd" "")
+  [ -n "$c" ] && command -v "${c%% *}" >/dev/null 2>&1 && avail="$avail $h"
+done
+[ -n "$avail" ] || dl_die "no configured harness CLI is installed"
+set -- $avail; navail=$#
+
+mkdir -p "$work"
+printf 'replicating iteration %s with %s agent(s) across:%s\n' "$n" "$agents" "$avail" >&2
+
+i=1
+while [ "$i" -le "$agents" ]; do
+  idx=$(( (i - 1) % navail + 1 ))
+  h=$(eval "printf '%s' \"\${$idx}\"")
+  a="$work/agent$i"
+  if [ -d "$a" ]; then dl_warn "agent$i already exists, skipping"; i=$((i+1)); continue; fi
+  mkdir -p "$a/results"
+
+  # The sandbox. The DAG and the pre-declaration, and nothing else. The original
+  # scripts are deliberately absent — that is the entire mechanism.
+  cp "$dag" "$a/SPEC.md"
+  [ -f "$dir/README.md" ] && cp "$dir/README.md" "$a/PREDECLARATION.md"
+  printf '%s' "$h" > "$a/HARNESS"
+
+  fam=$(dl_config_get "$DL_HARN" "harness_${h}_family" unknown)
+  cat > "$a/PROMPT.md" <<EOF
+$(cat "$DL_HOME/skills/cross-check/roles/reimplementer.md")
+
+---
+
+## Your sandbox
+
+You are agent $i of $agents independently replicating iteration $n.
+
+\`SPEC.md\` is the frozen discovery DAG — the path the original result took. It
+is your **only** specification. The original implementation is deliberately not
+provided and you must not go looking for it: it is under
+\`$dir/scripts/\` and reading it voids this replication.
+
+Other agents are replicating the same specification in parallel. Do not consult
+their directories either. The value of this exercise is that your errors are
+independent of theirs.
+
+Write your work under \`$a/\`. Then write \`$a/REPORT.md\`, beginning with:
+
+    VERDICT: SOUND | QUALIFIED | UNSOUND
+
+and ending with a machine-readable summary in this exact form:
+
+\`\`\`dl-replication
+value = <the number you reproduced, or NA>
+members = <comma-separated element names, if the object is a set; else NA>
+ambiguities = <how many choices you had to make that SPEC.md left open>
+\`\`\`
+
+Where the object is a set, report which elements you got **BY NAME**.
+Reproducing the *size* of a set is not reproducing the set: a count that matches
+while the membership differs is a failed replication that looks like a success.
+
+The ambiguities are the most important number you will report. Each one is a
+place the specification failed to pin the result down, and the original made
+that choice without recording it. List them in full before the summary block.
+
+---
+
+## SPEC.md — the frozen discovery DAG
+
+$(cat "$dag")
+EOF
+
+  if [ "$dry" = 1 ]; then
+    dl_info "agent$i -> $h ($fam)  [dry run, prompt at ${a#"$DL_ROOT"/}/PROMPT.md]"
+  else
+    cmd=$(dl_config_get "$DL_HARN" "harness_${h}_cmd" "")
+    to=$(dl_config_get "$DL_HARN" ask_timeout 900)
+    runner=""; command -v timeout >/dev/null 2>&1 && runner="timeout $to"
+    pre=${cmd%%\{prompt\}*}; post=${cmd##*\{prompt\}}
+    dl_info "agent$i -> $h ($fam) dispatching"
+    # shellcheck disable=SC2086
+    ( $runner $pre "$(cat "$a/PROMPT.md")" $post > "$a/REPORT.md" 2> "$a/stderr.log" </dev/null \
+        || printf '\n**Harness exited non-zero.** See stderr.log\n' >> "$a/REPORT.md" ) &
+  fi
+  i=$((i+1))
+done
+
+[ "$dry" = 1 ] && { printf '\ndry run — %s sandbox(es) prepared under %s\n' "$agents" "${work#"$DL_ROOT"/}"; exit 0; }
+printf 'waiting for %s agent(s)...\n' "$agents" >&2
+wait
+printf '\ndone. Collect with:  dl replicate report -n %s\n' "$n" >&2

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Tell the operator what to do next.
+#
+# The protocol has ordering constraints that are easy to trip over — you cannot
+# record results before freezing a pre-declaration, cannot replicate before
+# freezing a DAG. This reads the project's actual state and names the one
+# command that comes next, with the reason.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${DL_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: dl next [-n N]'; exit 0; }
+
+n=""
+while [ $# -gt 0 ]; do
+  case "$1" in -n|--iteration) n="$2"; shift 2 ;; *) shift ;; esac
+done
+dl_load_project
+
+say() { printf '\n  \033[1m%s\033[0m\n' "$1"; }
+why() { printf '  %s\n' "$1"; }
+
+iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+        | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
+
+# Configuration first — a project whose config does not match the machine will
+# fail late and confusingly.
+if ! dl doctor >/dev/null 2>&1; then
+  printf 'Your configuration does not match this machine.\n'
+  say "dl doctor"
+  why "fix what it reports before starting an iteration"
+  exit 0
+fi
+
+if [ -z "$iters" ]; then
+  printf 'This project has no iterations yet.\n'
+  say 'dl claim -t "the question, stated as a question"'
+  why "claiming is atomic; never mkdir an iteration by hand"
+  exit 0
+fi
+
+[ -n "$n" ] || n=$(printf '%s\n' $iters | tail -1)
+dir="$DL_ITERS/iteration$n"
+[ -d "$dir" ] || dl_die "no iteration $n"
+title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
+printf 'Iteration %s — %s\n' "$n" "${title:-(untitled)}"
+
+if [ ! -f "$dir/README.md" ]; then
+  say "dl new -n $n"
+  why "scaffold the pre-declaration; nothing may run until it is complete"
+  exit 0
+fi
+
+if [ ! -f "$dir/PREDECLARATION.sha256" ]; then
+  say "dl gate predeclare -n $n"
+  why "complete every section of $dir/README.md first"
+  why "the gate freezes its hash — after that the design is fixed"
+  exit 0
+fi
+
+if [ "$(head -1 "$dir/PREDECLARATION.sha256")" != "$(dl_sha256 "$dir/README.md")" ]; then
+  printf '\n  \033[1mThe pre-declaration was edited after it was frozen.\033[0m\n'
+  why "restore it, or conclude this iteration and claim a new one for the"
+  why "changed design. A correction is a new iteration, never an edit."
+  exit 0
+fi
+
+# Arms, if this iteration uses them.
+if [ -d "$dir/arms" ]; then
+  for a in "$dir/arms"/*/; do
+    [ -d "$a" ] || continue
+    id=$(basename "$a")
+    if [ ! -f "$a/PREDECLARATION.sha256" ]; then
+      say "dl arm gate -n $n -a $id"; why "arm $id is not frozen yet"; exit 0
+    fi
+    if [ ! -f "$a/FATE" ] && [ -n "$(find "$a/results" -type f 2>/dev/null | head -1)" ]; then
+      say "dl arm fate -n $n -a $id -f CONCLUDED|NULL|INFEASIBLE|KILLED_BY_CONTROL"
+      why "arm $id has results but no recorded fate"; exit 0
+    fi
+  done
+fi
+
+if [ -z "$(find "$dir/results" -type f 2>/dev/null | head -1)" ]; then
+  say "write $dir/scripts/, then: dl submit ..."
+  why "check the acceptance criteria before interpreting anything"
+  exit 0
+fi
+
+report="$dir/results/report/iteration${n}_report.md"
+if [ ! -f "$report" ]; then
+  say "write $report"
+  why "template: $DL_HOME/templates/iteration/REPORT.md"
+  why "report the number you pre-declared; a null is an upper bound"
+  exit 0
+fi
+
+if ! find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q .; then
+  say "dl ask --role adversary -n $n"
+  why "cross-check by a different model family before concluding"
+  why "add --role estimand-auditor if the estimand has a filter in front of it"
+  exit 0
+fi
+
+if [ ! -f "$dir/DAG.md" ]; then
+  say "dl dag init -n $n     (optional, but the strongest check available)"
+  why "reconstruct the path, then dl dag freeze and dl replicate"
+  why "skip only if this result is not load-bearing"
+fi
+
+if [ -f "$dir/DAG.md" ] && [ ! -f "$dir/DAG.sha256" ]; then
+  say "dl dag check -n $n && dl dag freeze -n $n"
+  why "freezing makes the DAG the sole input to blind replication"
+  exit 0
+fi
+
+if [ -f "$dir/DAG.sha256" ] && [ ! -d "$DL_VERIFY/replication_it$n" ]; then
+  say "dl replicate -n $n --agents 3"
+  why "N agents re-implement from the DAG alone, never seeing your code"
+  exit 0
+fi
+
+if ! dl gate results -n "$n" >/dev/null 2>&1; then
+  say "dl gate results -n $n"
+  why "it is currently failing — run it to see what remains"
+  exit 0
+fi
+
+say "dl ledger render && dl ledger check"
+why "then add iteration $n to PROGRESS.md section 4: the claim, its strongest"
+why "limit, and what it supersedes. Then: dl claim -t '<the next question>'"

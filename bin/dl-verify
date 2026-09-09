@@ -92,6 +92,7 @@ case "$sub" in
       printf '%-28s %-9s %s\n' "$name" "$st" "$res"
     done
     [ "$found" = 0 ] && printf '(no verifications yet — dl verify new <object>)\n'
+    exit 0
     ;;
   *) dl_die "unknown: $sub" ;;
 esac
