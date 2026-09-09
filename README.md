@@ -221,6 +221,7 @@ the next step.
 | [`PROTOCOL.md`](PROTOCOL.md) | the normative spec — what conformance means |
 | [`AGENTS.md`](AGENTS.md) | the contract an agent reads on entering a project |
 | [`docs/related-work.md`](docs/related-work.md) | what this is not, and where the design came from |
+| [`docs/prior-art.md`](docs/prior-art.md) | frameworks to learn from, standards to target, graph-store options |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | the bar for a change, and shell style |
 | [`CHANGELOG.md`](CHANGELOG.md) | versioned protocol changes |
 
