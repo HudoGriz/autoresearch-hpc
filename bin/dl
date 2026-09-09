@@ -17,17 +17,21 @@ dl — automated discovery loop
   dl init [dir]                 create a project (ledger, config, dirs)
   dl claim  -t TITLE            atomically claim the next iteration number
   dl new    -n N                scaffold iteration N from the pre-declaration template
+  dl arm    {new|gate|fate|list} parallel sub-analyses within one iteration
   dl gate   predeclare -n N     check the pre-declaration, then freeze its hash
   dl gate   results    -n N     check results against the frozen pre-declaration
   dl gate   rules      <file>   check a document against the standing rules
   dl ask    --role R -n N       cross-check with a foreign harness
   dl verify {new|gate|list}     re-examine an object an iteration produced
+  dl dag    {init|check|freeze} reconstruct the path a result took
+  dl replicate [run|report]     N agents re-implement from the DAG, blind to the code
   dl run    IMAGE -- CMD...     run a command in a pinned container
   dl submit SCRIPT -n NAME      submit a job through the configured scheduler
   dl guard  PATH...             assert paths are writable under the project
   dl ledger [render|check]      maintain the project record
   dl status                     show iterations, claims and gate state
   dl doctor                     check the environment and configuration
+  dl next                       what to do next, and why
 
 Run `dl <command> --help` for detail.
 USAGE
@@ -42,7 +46,7 @@ case "$cmd" in
       "$(cat "$DL_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The discovery-loop protocol, v//p' "$DL_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|claim|new|gate|ask|verify|run|submit|guard|ledger|status|doctor)
+  init|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|guard|ledger|status|doctor|next)
     exec "$DL_HOME/bin/dl-$cmd" "$@" ;;
   *) printf 'dl: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

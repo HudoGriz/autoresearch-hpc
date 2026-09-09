@@ -29,7 +29,8 @@ jobs:
           # PROTOCOL.md §10 names seven clauses that MUST be refused, not warned.
           # Each is asserted by the suite; fail loudly if one stops being covered.
           for c in "concurrent claims" "unfilled" "results exist" \
-                   "tampering" "frozen hash" "outside" "same-family"; do
+                   "tampering" "frozen hash" "outside" "same-family" \
+                   "does not leak the code"; do
             grep -qi -- "$c" test/run_tests.sh || { echo "uncovered: $c"; exit 1; }
           done
 

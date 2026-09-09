@@ -3,8 +3,41 @@
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
-[ "${1-}" = "--help" ] && { echo 'usage: dl status'; exit 0; }
+json=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1; shift ;;
+    --help) echo 'usage: dl status [--json]'; exit 0 ;;
+    *) shift ;;
+  esac
+done
 dl_load_project
+
+# Machine-readable form, so `dl` is a usable API and callers need not scrape text.
+if [ "$json" = 1 ]; then
+  iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+          | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
+  printf '{\n  "project": "%s",\n  "iterations": [' "$DL_ROOT"
+  first=1
+  for d in $iters; do
+    dir="$DL_ITERS/iteration$d"
+    if [ -f "$dir/PREDECLARATION.sha256" ]; then
+      [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md" 2>/dev/null)" ] \
+        && pre=frozen || pre=altered
+    elif [ -f "$dir/README.md" ]; then pre=draft; else pre=none; fi
+    [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
+      || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=none; }
+    xc=$(find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -c . || true)
+    if [ -f "$dir/DAG.sha256" ]; then dag=frozen
+    elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
+    narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
+    [ "$first" = 1 ] && first=0 || printf ','
+    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s}' \
+      "$d" "$pre" "$res" "$xc" "$dag" "$narms"
+  done
+  printf '\n  ]\n}\n'
+  exit 0
+fi
 
 printf '%s\n' "$DL_ROOT"
 printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \

@@ -46,10 +46,36 @@ cmd=$(dl_config_get "$DL_HARN" "harness_${harness}_cmd" "")
 [ -n "$cmd" ] || dl_die "no command configured for harness '$harness' (see .dl/config/harnesses.md)"
 command -v "${cmd%% *}" >/dev/null 2>&1 || dl_die "harness CLI not on PATH: ${cmd%% *}"
 
+# Roles that must not see the original implementation. For these the prompt
+# carries the frozen DAG and nothing else — the firewall is enforced here, not
+# requested in the prompt text.
+blind=0
+case "$role" in reimplementer) blind=1 ;; esac
+
 prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
 {
   cat "$roledoc"
   printf '\n---\n\n## The work under review\n\n'
+  if [ "$blind" = 1 ]; then
+    dag="$dir/DAG.md"
+    [ -f "$dag" ] || dl_die "role '$role' works from the frozen DAG, and iteration $n has none.
+       Run: dl dag init -n $n, complete it, then dl dag freeze -n $n"
+    [ -f "$dir/DAG.sha256" ] || dl_die "iteration $n has a DAG but it is not frozen (dl dag freeze -n $n)"
+    printf 'You are working from the discovery DAG ALONE. The original code is\n'
+    printf 'deliberately not provided, and you must not go looking for it: it is\n'
+    printf 'under %s/scripts/ and reading it voids this check.\n\n' "$dir"
+    printf 'Project root: %s   Iteration: %s\n\n' "$DL_ROOT" "$n"
+    printf '### Discovery DAG (frozen %s)\n\n' "$(head -1 "$dir/DAG.sha256")"
+    cat "$dag"
+    printf '\n### Pre-declaration\n\n'
+    [ -f "$dir/README.md" ] && cat "$dir/README.md" || printf '(none)\n'
+    [ -n "$extra" ] && printf '\n### Additional instruction\n\n%s\n' "$extra"
+    printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
+    printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
+    printf '\nThen give, under clear headings: the ambiguities you had to resolve to\n'
+    printf 'make the specification runnable; your reproduced value; and — where the\n'
+    printf 'object is a set — which elements you got, BY NAME.\n'
+  else
   printf 'Project root: %s\nIteration: %s\nDirectory: %s\n\n' "$DL_ROOT" "$n" "$dir"
   printf 'Standing rules every conclusion inherits are in %s/rules/.\n' "$DL_ROOT"
   printf 'Recorded silent failure modes are in %s/GOTCHAS.md.\n\n' "$DL_ROOT"
@@ -61,6 +87,7 @@ prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
   [ -n "$extra" ] && printf '\n### Additional instruction from the operator\n\n%s\n' "$extra"
   printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
   printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
+  fi
 } > "$prompt"
 
 out="$dir/CROSSCHECK_${role}_${harness}_$(date -u +%Y%m%dT%H%M%SZ).md"

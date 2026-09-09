@@ -96,6 +96,12 @@ and MUST mark a same-family check as materially weaker. A model reviewing its
 own output verifies that the work looks correctly generated, not that it is
 correct.
 
+6.2a **The different-family requirement is a heuristic, not a proof.** It
+reduces correlated error; it does not eliminate it, and a cross-family reviewer
+can still hallucinate a plausible constraint or miss a real defect. A passing
+cross-check is evidence that no reviewer found a problem — never evidence that
+none exists.
+
 6.3 A `reimplementer` MUST NOT read the original implementation. Agreement
 reached by reading the same code is not independent evidence.
 
@@ -105,6 +111,47 @@ size of a candidate set is not reproducing the set.
 6.5 A cross-check verdict is evidence, not a ruling. Each finding MUST be
 evaluated on its merits, and rejections MUST be recorded with reasons. An
 undocumented rejection is indistinguishable from ignoring the check.
+
+## 6b. Arms
+
+6b.1 An iteration MAY be divided into arms — parallel routes to its one
+question. An arm MUST carry its own acceptance criteria and its own negative
+control; it inherits neither from a sibling.
+
+6b.2 Every arm MUST be assigned exactly one fate: `CONCLUDED`, `NULL`,
+`INFEASIBLE`, `KILLED_BY_CONTROL` or `ABANDONED`.
+
+6b.3 `INFEASIBLE`, `KILLED_BY_CONTROL` and `ABANDONED` are results and MUST be
+reported. Arms that did not work MUST NOT be omitted: ten arms with one hit is a
+different claim from one arm with one hit, and only the arm record distinguishes
+them.
+
+## 6c. The discovery DAG and blind replication
+
+6c.1 A load-bearing result SHOULD have its path reconstructed as a discovery
+DAG: inputs, nodes, the decisions taken at each, and the terminal claim.
+
+6c.2 The DAG MUST state how many distinct paths exist from inputs to claim and
+how many were reported. The difference is the multiple-testing denominator.
+
+6c.3 A node declared in the DAG's tables but absent from its graph MUST be
+reported. An adjacency an argument assumes and the topology does not contain is
+a defect invisible in any narrative report.
+
+6c.4 Once frozen, **the DAG is the only permitted specification for a
+replication**, and the original implementation MUST NOT be provided to the
+replicating agent. An implementation MUST enforce this by construction rather
+than by instructing the agent, because an agent that reads the original code
+reproduces its choices, including its mistakes.
+
+6c.5 Replication MAY fan out across several agents and harnesses. An
+implementation MUST report divergence — differing values, contested set
+membership, and the count of ambiguities each agent had to resolve.
+
+6c.6 **Agreement among replicating agents MUST NOT be reported as confirmation.**
+Models share training data and fail in correlated ways; a unanimous answer can be
+unanimously wrong, and a majority vote among agents is not a measurement. The
+evidential content of a fan-out is its disagreement.
 
 ## 7. Reporting
 
@@ -145,8 +192,8 @@ part of the scientific record.
 
 ## 10. Conformance
 
-An implementation conforms if it enforces §2.1, §3.1, §3.5, §3.6, §3.7, §4.1 and
-§5.2 mechanically — refusing the operation, not merely warning. The remainder
+An implementation conforms if it enforces §2.1, §3.1, §3.5, §3.6, §3.7, §4.1,
+§5.2 and §6c.4 mechanically — refusing the operation, not merely warning. The remainder
 MAY be enforced by review.
 
-`test/run_tests.sh` asserts each of those seven.
+`test/run_tests.sh` asserts each of those eight.

@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# The discovery DAG — the path a result actually took, and the firewall that
+# makes blind replication possible.
+#
+# The DAG is the ONLY place an iteration's code may be read. Once frozen it is
+# the sole input handed to replication agents, so a replication's errors are
+# independent of the original's.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${DL_HOME:?}/lib/common.sh"
+
+sub="${1:-}"; shift || true
+case "$sub" in -h|--help|"") echo 'usage: dl dag {init|check|freeze|show} -n N'; exit 0 ;; esac
+n=""
+while [ $# -gt 0 ]; do
+  case "$1" in -n|--iteration) n="$2"; shift 2 ;; *) dl_die "unexpected argument: $1" ;; esac
+done
+[ -n "$n" ] || dl_die "which iteration? dl dag $sub -n N"
+dl_load_project
+dir="$DL_ITERS/iteration$n"
+[ -d "$dir" ] || dl_die "no iteration $n"
+dag="$dir/DAG.md"
+
+case "$sub" in
+  init)
+    [ -f "$dag" ] && dl_die "$dag already exists — a DAG is written once, like a pre-declaration"
+    sed -e "s|{{N}}|$n|g" -e "s|{{DATE}}|$(dl_today)|g" "$DL_HOME/templates/iteration/DAG.md" > "$dag"
+    printf 'wrote %s\n\n' "${dag#"$DL_ROOT"/}"
+    printf 'Reconstruct the path from the code, then:  dl dag check -n %s\n' "$n"
+    printf 'This is the only place the iteration code may be read.\n'
+    ;;
+
+  check|freeze)
+    [ -f "$dag" ] || dl_die "no DAG at ${dag#"$DL_ROOT"/} (run: dl dag init -n $n)"
+    printf 'dag: iteration %s\n' "$n"
+    fails=0
+
+    grep -q '```mermaid' "$dag" && dl_ok "graph block present" \
+      || { dl_fail "no mermaid graph block"; fails=$((fails+1)); }
+
+    for sec in "Inputs" "Nodes" "Branch count" "What falls out" "Terminal claim"; do
+      grep -qiF "$sec" "$dag" && dl_ok "section: $sec" \
+        || { dl_fail "section missing: $sec"; fails=$((fails+1)); }
+    done
+
+    if grep -qE '^<|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$dag"; then
+      dl_fail "template placeholders remain unfilled"; fails=$((fails+1))
+    else
+      dl_ok "no placeholders remain"
+    fi
+
+    # Node ids declared in the tables vs. ids appearing in the graph. A node
+    # with no edge is exactly the defect that is invisible in every report:
+    # two things the argument treats as connected, with nothing joining them.
+    graph=$(awk '/^```mermaid/{f=1;next} /^```/{f=0} f' "$dag")
+    declared=$(awk -F'|' '/^\| *[A-Z][0-9]+ *\|/ {gsub(/ /,"",$2); print $2}' "$dag" | sort -u)
+    orphans=""
+    for id in $declared; do
+      # does the id appear on either side of an arrow anywhere in the graph?
+      printf '%s' "$graph" | grep -qE "(^|[^A-Za-z0-9])$id([^A-Za-z0-9]|$)" || orphans="$orphans $id"
+    done
+    if [ -n "$orphans" ]; then
+      dl_fail "declared but absent from the graph:$orphans"
+      dl_info "a node the tables describe and the graph never connects is the"
+      dl_info "structural defect this check exists to surface"
+      fails=$((fails+1))
+    else
+      [ -n "$declared" ] && dl_ok "every declared node appears in the graph" \
+        || { dl_fail "no nodes declared in the tables"; fails=$((fails+1)); }
+    fi
+
+    edges=$(printf '%s' "$graph" | grep -cE '\-\->' || true)
+    nodes=$(printf '%s\n' $declared | grep -c . || true)
+    dl_info "nodes: $nodes   edges: $edges"
+
+    # The denominator problem: branches must be counted, in writing.
+    if grep -qiE 'branch|path' "$dag" && grep -qE '[0-9]' "$dag"; then
+      dl_ok "branch count is addressed"
+    else
+      dl_fail "§4 must state how many paths exist and how many were reported"
+      fails=$((fails+1))
+    fi
+
+    [ "$fails" -gt 0 ] && { printf '\ndag check FAILED (%s).\n' "$fails" >&2; exit 1; }
+    printf '\ndag check PASSED (%s nodes, %s edges).\n' "$nodes" "$edges"
+
+    if [ "$sub" = freeze ]; then
+      dl_sha256 "$dag" > "$dir/DAG.sha256"
+      printf '%s\n' "$(dl_now)" >> "$dir/DAG.sha256"
+      printf 'frozen: %s\n\n' "$(head -1 "$dir/DAG.sha256")"
+      printf 'This DAG is now the sole input to replication:\n'
+      printf '  dl replicate -n %s --agents 3\n' "$n"
+    fi
+    ;;
+
+  show)
+    [ -f "$dag" ] || dl_die "no DAG for iteration $n"
+    if [ -f "$dir/DAG.sha256" ]; then
+      [ "$(head -1 "$dir/DAG.sha256")" = "$(dl_sha256 "$dag")" ] \
+        && printf 'DAG frozen and unchanged\n' || printf 'DAG ALTERED since freeze\n'
+    else printf 'DAG draft (not frozen)\n'; fi
+    awk '/^```mermaid/{f=1} f{print} /^```$/{if(f&&!c){c=1;next}}' "$dag" | head -40
+    ;;
+  *) dl_die "unknown: $sub" ;;
+esac
