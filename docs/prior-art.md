@@ -298,12 +298,8 @@ So the niche holds. But these projects are far ahead of us on provenance
 *capture*, and the honest framing is that we are a governance layer to sit on
 top of that stack — not a replacement for it.
 
-## 6. Priority
+## 6. Proposals arising
 
-1. Rule waivers (§2.2) — the current design actively encourages quiet deletion
-2. Timestamping (§2.3) — makes the central claim actually true
-3. Typed DAG nodes and edges (§2.1)
-4. Execution-time provenance capture in `dl submit` (§2.4)
-5. `dl graph build` — RDF out, Cypher load script, static Cytoscape.js page (§4.8)
-6. RO-Crate export, then nanopublications (§3)
-7. Standing rules re-expressed as SHACL shapes over the findings graph (§4.6)
+Every action this research implies is tracked in
+[`proposals.md`](proposals.md) — the single register — rather than duplicated
+here. Nothing is committed to.

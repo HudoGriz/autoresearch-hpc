@@ -210,9 +210,10 @@ its `dl-config` block. Name it in `project.md`.
 ## Status
 
 Working, tested, and pre-1.0: the protocol version is `0.1.0` and the config
-format may still change. `schema/` types claims, findings and cross-checks —
-generating the ledger from typed findings rather than maintaining it by hand is
-the next step.
+format may still change. `schema/` types claims, findings and cross-checks.
+
+Open proposals — none of them committed to — are in
+[`docs/proposals.md`](docs/proposals.md).
 
 ## Documentation
 
@@ -221,6 +222,7 @@ the next step.
 | [`PROTOCOL.md`](PROTOCOL.md) | the normative spec — what conformance means |
 | [`AGENTS.md`](AGENTS.md) | the contract an agent reads on entering a project |
 | [`docs/related-work.md`](docs/related-work.md) | what this is not, and where the design came from |
+| [`docs/proposals.md`](docs/proposals.md) | **everything proposed and not yet decided** |
 | [`docs/prior-art.md`](docs/prior-art.md) | frameworks to learn from, standards to target, graph-store options |
 | [`docs/knowledge-graph-design.md`](docs/knowledge-graph-design.md) | the concrete graph stack: PROV-O + CiTO, Morph-KGC, OpenAlex, Oxigraph |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | the bar for a change, and shell style |
