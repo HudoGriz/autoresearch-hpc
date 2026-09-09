@@ -119,6 +119,7 @@ refused between harnesses of the same family.
 | `dl gate results -n N` | verify the pre-declaration never changed |
 | `dl gate rules FILE` | check a document against the standing rules |
 | `dl ask --role R -n N` | cross-check with a foreign harness |
+| `dl verify {new\|gate\|list}` | re-examine an object an iteration produced |
 | `dl run IMAGE -- CMD` | run inside the configured container runtime |
 | `dl submit SCRIPT` | submit through the configured scheduler |
 | `dl guard PATH...` | assert paths are writable under the project |
@@ -151,7 +152,7 @@ record the rejections with reasons.
 ## Tests
 
 ```bash
-test/run_tests.sh          # 78 checks, no cluster or network needed
+test/run_tests.sh          # 89 checks, no cluster or network needed
 KEEP=1 test/run_tests.sh   # keep the scratch project for inspection
 ```
 

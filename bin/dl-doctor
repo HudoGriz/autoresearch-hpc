@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Check the environment against what the configuration asks for.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 [ "${1-}" = "--help" ] && { echo 'usage: dl doctor'; exit 0; }
 warn=0

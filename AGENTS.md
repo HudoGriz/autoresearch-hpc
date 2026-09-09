@@ -37,6 +37,14 @@ dl gate results -n N                # verifies the pre-declaration never changed
 dl ledger render && dl ledger check
 ```
 
+To re-examine a result an iteration already produced — rather than claim a new
+analysis — use the verification track instead:
+
+```bash
+dl verify new <object> -m re-implementation
+dl verify gate <object>
+```
+
 ## Rules that are not negotiable
 
 1. **Claim before you create.** `dl claim` is the only way to take an iteration

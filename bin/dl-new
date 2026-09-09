@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Scaffold an iteration's pre-declaration from the template.
 set -euo pipefail
+# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
 
 n=""; title=""
