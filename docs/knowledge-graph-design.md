@@ -1,7 +1,9 @@
-# Knowledge graph: the concrete design
+# Knowledge graph: design sketch
 
-**Decision, September 2026.** Not a survey — see [`prior-art.md`](prior-art.md)
-for the options considered. This is what to build.
+**Proposal P7, not a decision.** Tracked in
+[`proposals.md`](proposals.md#p7) and not committed to. Options considered are
+in [`prior-art.md`](prior-art.md) §4; this file is the detail behind the
+proposal — what it would look like if built.
 
 ## The short answer
 
