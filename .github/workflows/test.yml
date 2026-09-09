@@ -1,0 +1,56 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    name: suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is not decoration: the tooling avoids GNU-only readlink -m,
+        # readlink -f and `sed -i`, and this is what proves it.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versions
+        run: |
+          bash --version | head -1
+          python3 --version
+      - name: Test suite
+        run: test/run_tests.sh
+      - name: Protocol conformance is actually enforced
+        run: |
+          # PROTOCOL.md §10 names seven clauses that MUST be refused, not warned.
+          # Each is asserted by the suite; fail loudly if one stops being covered.
+          for c in "concurrent claims" "unfilled" "results exist" \
+                   "tampering" "frozen hash" "outside" "same-family"; do
+            grep -qi -- "$c" test/run_tests.sh || { echo "uncovered: $c"; exit 1; }
+          done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning --shell=bash \
+            bin/dl bin/dl-* lib/*.sh harness/install.sh test/run_tests.sh
+
+  schemas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JSON is valid
+        run: |
+          python3 - <<'EOF'
+          import json, glob, sys
+          for f in sorted(glob.glob('schema/*.json') + glob.glob('harness/**/*.json', recursive=True)):
+              json.load(open(f)); print('ok', f)
+          EOF

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # discovery-loop — command dispatcher.
 set -euo pipefail
-DL_HOME="${DL_HOME:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
+# Resolve through a symlink without GNU readlink -f (absent on macOS/BSD).
+_dl_self="${BASH_SOURCE[0]}"
+while [ -L "$_dl_self" ]; do
+  _dl_link=$(ls -ld -- "$_dl_self" | sed 's/.* -> //')
+  case "$_dl_link" in /*) _dl_self="$_dl_link" ;; *) _dl_self="$(dirname "$_dl_self")/$_dl_link" ;; esac
+done
+DL_HOME="${DL_HOME:-$(cd "$(dirname "$_dl_self")/.." && pwd)}"
 export DL_HOME
 
 usage() {
@@ -30,6 +36,11 @@ USAGE
 cmd="$1"; shift
 case "$cmd" in
   -h|--help|help) usage ;;
+  -V|--version|version)
+    printf 'discovery-loop %s (protocol %s)\n' \
+      "$(cat "$DL_HOME/VERSION" 2>/dev/null || echo unknown)" \
+      "$(sed -n 's/^# The discovery-loop protocol, v//p' "$DL_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
+    ;;
   init|claim|new|gate|ask|run|submit|guard|ledger|status|doctor)
     exec "$DL_HOME/bin/dl-$cmd" "$@" ;;
   *) printf 'dl: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;

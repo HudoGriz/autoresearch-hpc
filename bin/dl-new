@@ -43,7 +43,9 @@ if [ -n "$rule_lines" ]; then
       "$dir/README.md" > "$dir/README.md.new" && mv "$dir/README.md.new" "$dir/README.md"
   rm -f "$tmp"
 else
-  sed -i 's/{{RULES}}//' "$dir/README.md"
+  # No `sed -i`: the GNU and BSD forms are incompatible.
+  sed 's/{{RULES}}//' "$dir/README.md" > "$dir/README.md.new"
+  mv "$dir/README.md.new" "$dir/README.md"
 fi
 
 printf 'wrote %s\n' "$dir/README.md"

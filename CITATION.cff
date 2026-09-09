@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: If you use this framework, please cite it.
+title: "discovery-loop: an auditable, self-correcting protocol for automated research on HPC"
+abstract: >-
+  A domain-agnostic framework for running automated research as an append-only
+  loop across multiple agent harnesses. It enforces atomic iteration claiming,
+  hash-frozen pre-declaration, append-only correction, and cross-checking by a
+  harness from a different model family, on the grounds that a model reviewing
+  its own output verifies that the work looks correctly generated rather than
+  that it is correct.
+type: software
+license: MIT
+version: 0.1.0
+date-released: "2026-09-09"
+repository-code: "https://github.com/<you>/discovery-loop"
+keywords:
+  - reproducible research
+  - research software engineering
+  - autonomous agents
+  - pre-registration
+  - high-performance computing
+  - provenance
+authors:
+  - family-names: "<your surname>"
+    given-names: "<your given name>"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
