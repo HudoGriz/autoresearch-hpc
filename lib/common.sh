@@ -72,6 +72,16 @@ dl_load_project() {
 dl_now()   { date -u +%Y-%m-%dT%H:%M:%SZ; }
 dl_today() { date -u +%Y-%m-%d; }
 
+# Portable `readlink -m`: absolutise and normalise a path that need not exist.
+# BSD/macOS readlink has no -m, so fall back to python3 (already a dependency).
+dl_abspath() {
+  if readlink -m / >/dev/null 2>&1; then
+    readlink -m -- "$1"
+  else
+    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"
+  fi
+}
+
 dl_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
   elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
@@ -97,7 +107,7 @@ dl_guard_path() {   # <path...>
   local p abs immutable
   immutable=$(dl_config_get "$DL_PROJ" immutable_inputs "")
   for p in "$@"; do
-    abs=$(readlink -m -- "$p")
+    abs=$(dl_abspath "$p")
     case "$abs" in
       "$DL_ROOT"/*) ;;
       *) dl_die "refusing write outside project root: $abs" ;;

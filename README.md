@@ -1,5 +1,9 @@
 # discovery-loop
 
+[![test](https://github.com/<you>/discovery-loop/actions/workflows/test.yml/badge.svg)](https://github.com/<you>/discovery-loop/actions/workflows/test.yml)
+[![protocol 0.1.0](https://img.shields.io/badge/protocol-0.1.0-blue)](PROTOCOL.md)
+[![licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+
 A framework for running **automated research on HPC** as an auditable,
 self-correcting loop — a set of skills and instructions that any agent harness
 (Claude Code, Codex, OpenCode, Cursor, Copilot) can execute against the same
@@ -33,7 +37,8 @@ None of those are fixed by a better model. They are fixed by a protocol:
 ## Install
 
 ```bash
-git clone <this-repo> discovery-loop
+git clone https://github.com/<you>/discovery-loop.git
+cd discovery-loop
 export PATH="$PWD/discovery-loop/bin:$PATH"
 dl doctor
 ```
@@ -176,6 +181,20 @@ format may still change. `schema/` types claims, findings and cross-checks —
 generating the ledger from typed findings rather than maintaining it by hand is
 the next step.
 
+## Documentation
+
+| file | what it is |
+|---|---|
+| [`PROTOCOL.md`](PROTOCOL.md) | the normative spec — what conformance means |
+| [`AGENTS.md`](AGENTS.md) | the contract an agent reads on entering a project |
+| [`docs/related-work.md`](docs/related-work.md) | what this is not, and where the design came from |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | the bar for a change, and shell style |
+| [`CHANGELOG.md`](CHANGELOG.md) | versioned protocol changes |
+
+## Citing
+
+`CITATION.cff` — GitHub renders a "Cite this repository" button from it.
+
 ## Licence
 
-MIT — see `LICENSE`.
+MIT — see [`LICENSE`](LICENSE).

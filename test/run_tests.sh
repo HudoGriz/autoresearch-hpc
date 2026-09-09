@@ -239,7 +239,9 @@ p = pathlib.Path("iterations/iteration1/README.md")
 lines = p.read_text().splitlines(True)
 p.write_text("".join(lines[:-2]))
 EOF
-now=$(sha256sum iterations/iteration1/README.md | awk '{print $1}')
+now=$(if command -v sha256sum >/dev/null 2>&1
+      then sha256sum iterations/iteration1/README.md
+      else shasum -a 256 iterations/iteration1/README.md; fi | awk '{print $1}')
 [ "$now" = "$frozen" ] && ok "restored README matches the frozen hash" \
   || no "restored README matches the frozen hash"
 check "results gate passes again after restore" 0 dl gate results -n 1
