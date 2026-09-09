@@ -222,6 +222,7 @@ the next step.
 | [`AGENTS.md`](AGENTS.md) | the contract an agent reads on entering a project |
 | [`docs/related-work.md`](docs/related-work.md) | what this is not, and where the design came from |
 | [`docs/prior-art.md`](docs/prior-art.md) | frameworks to learn from, standards to target, graph-store options |
+| [`docs/knowledge-graph-design.md`](docs/knowledge-graph-design.md) | the concrete graph stack: PROV-O + CiTO, Morph-KGC, OpenAlex, Oxigraph |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | the bar for a change, and shell style |
 | [`CHANGELOG.md`](CHANGELOG.md) | versioned protocol changes |
 
