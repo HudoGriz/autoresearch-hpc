@@ -22,11 +22,15 @@ while [ $# -gt 0 ]; do
     *) dl_die "unexpected argument: $1" ;;
   esac
 done
+case "$n" in ""|*[!0-9]*) dl_die "iteration must be numeric" ;; esac
+case "$role:$harness" in *..*|*/*) dl_die "invalid role or harness" ;; esac
 [ -n "$n" ] || dl_die "which iteration? dl ask --role $role -n N"
 
 dl_load_project
 dir="$DL_ITERS/iteration$n"
 [ -d "$dir" ] || dl_die "no iteration $n"
+[ -f "$dir/PREDECLARATION.sha256" ] || dl_die "iteration is not frozen"
+[ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md")" ] || dl_die "pre-declaration altered"
 
 roledoc="$DL_HOME/skills/cross-check/roles/$role.md"
 [ -f "$roledoc" ] || dl_die "unknown role: $role (see skills/cross-check/roles/)"
@@ -34,25 +38,30 @@ roledoc="$DL_HOME/skills/cross-check/roles/$role.md"
 producer=$(dl_config_get "$DL_HARN" producer claude)
 [ -n "$harness" ] || harness=$(dl_config_get "$DL_HARN" verifier codex)
 
+case "$producer:$harness" in *..*|*/*) dl_die "invalid configured harness name" ;; esac
+
 pfam=$(dl_config_get "$DL_HARN" "harness_${producer}_family" unknown)
 vfam=$(dl_config_get "$DL_HARN" "harness_${harness}_family" unknown)
+case "$pfam:$vfam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) dl_die "configure concrete producer and verifier model families" ;; esac
 if [ "$pfam" = "$vfam" ] && [ "$same_family" = 0 ]; then
   dl_die "producer ($producer/$pfam) and verifier ($harness/$vfam) are the same model family.
        A model does not reliably catch its own reasoning errors. Choose another
-       harness, or pass --same-family to accept the weaker check."
+       harness, or pass --same-family to record a weaker check that cannot satisfy the results gate."
 fi
 
 cmd=$(dl_config_get "$DL_HARN" "harness_${harness}_cmd" "")
 [ -n "$cmd" ] || dl_die "no command configured for harness '$harness' (see .dl/config/harnesses.md)"
-command -v "${cmd%% *}" >/dev/null 2>&1 || dl_die "harness CLI not on PATH: ${cmd%% *}"
-
 # Roles that must not see the original implementation. For these the prompt
-# carries the frozen DAG and nothing else — the firewall is enforced here, not
-# requested in the prompt text.
+# carries the frozen DAG without the implementation. Filesystem isolation must
+# be provided externally; prompt omission alone is a cooperative boundary.
 blind=0
 case "$role" in reimplementer) blind=1 ;; esac
 
-prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
+dl_guard_path "$dir"
+prompt=$(mktemp "$dir/logs/prompt.XXXXXX")
+lock=""
+cleanup() { rm -f "$prompt"; [ -z "$lock" ] || rmdir "$lock"; }
+trap cleanup EXIT
 {
   cat "$roledoc"
   printf '\n---\n\n## The work under review\n\n'
@@ -61,6 +70,7 @@ prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
     [ -f "$dag" ] || dl_die "role '$role' works from the frozen DAG, and iteration $n has none.
        Run: dl dag init -n $n, complete it, then dl dag freeze -n $n"
     [ -f "$dir/DAG.sha256" ] || dl_die "iteration $n has a DAG but it is not frozen (dl dag freeze -n $n)"
+    [ "$(head -1 "$dir/DAG.sha256")" = "$(dl_sha256 "$dag")" ] || dl_die "DAG altered"
     printf 'You are working from the discovery DAG ALONE. The original code is\n'
     printf 'deliberately not provided, and you must not go looking for it: it is\n'
     printf 'under %s/scripts/ and reading it voids this check.\n\n' "$dir"
@@ -70,7 +80,8 @@ prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
     printf '\n### Pre-declaration\n\n'
     [ -f "$dir/README.md" ] && cat "$dir/README.md" || printf '(none)\n'
     [ -n "$extra" ] && printf '\n### Additional instruction\n\n%s\n' "$extra"
-    printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
+    printf '\nDo not use the declared prediction as evidence for your verdict.\n'
+  printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
     printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
     printf '\nThen give, under clear headings: the ambiguities you had to resolve to\n'
     printf 'make the specification runnable; your reproduced value; and — where the\n'
@@ -85,14 +96,31 @@ prompt=$(mktemp); trap 'rm -f "$prompt"' EXIT
   printf '\n### Report\n\n'
   [ -f "$report" ] && cat "$report" || printf '(no report yet)\n'
   [ -n "$extra" ] && printf '\n### Additional instruction from the operator\n\n%s\n' "$extra"
+  printf '\nDo not use the declared prediction as evidence for your verdict.\n'
   printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
   printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
   fi
+  printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(dl_config_get "$DL_HARN" ask_output_words 500)"
 } > "$prompt"
+max_input=$(dl_config_get "$DL_HARN" ask_max_input_bytes 24000)
+max_rounds=$(dl_config_get "$DL_HARN" ask_max_rounds 2)
+if [ "$dry" = 0 ]; then
+  lock="$dir/.review-lock"
+  mkdir "$lock" 2>/dev/null || { lock=""; dl_die "another review is running"; }
+fi
+cached=$(python3 "$DL_HOME/lib/harness.py" budget "$dir" "$prompt" "$cmd" "$role" "$harness" "$pfam" "$vfam" "$max_input" "$max_rounds" "$extra" "$dry")
+if [ -n "$cached" ] && [ "$dry" = 0 ]; then
+  printf 'reused unchanged review (no model call): %s\n' "$cached"
+  grep -m1 '^VERDICT:' "$cached"
+  exit 0
+fi
 
-out="$dir/CROSSCHECK_${role}_${harness}_$(date -u +%Y%m%dT%H%M%SZ).md"
+out=$(mktemp "$dir/CROSSCHECK_${role}_${harness}_$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
+mv "$out" "$out.md"
+out="$out.md"
 
 if [ "$dry" = 1 ]; then
+  rm -f "$out"
   printf '# dry run — would invoke: %s\n\n' "$harness"; cat "$prompt"; exit 0
 fi
 
@@ -109,28 +137,18 @@ printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
 } > "$out"
 
 timeout_s=$(dl_config_get "$DL_HARN" ask_timeout 900)
-runner=""; command -v timeout >/dev/null 2>&1 && runner="timeout $timeout_s"
-
-# {prompt} is substituted with the composed prompt; the harness CLI receives it
-# as a single argument.
+# Parse quoted arguments without shell expansion; timeout is portable.
 set +e
-if printf '%s' "$cmd" | grep -q '{prompt}'; then
-  pre=${cmd%%\{prompt\}*}; post=${cmd##*\{prompt\}}
-  # shellcheck disable=SC2086
-  $runner $pre "$(cat "$prompt")" $post >> "$out" 2>"$out.err" </dev/null
-else
-  # shellcheck disable=SC2086
-  $runner $cmd < "$prompt" >> "$out" 2>"$out.err"
-fi
+python3 "$DL_HOME/lib/harness.py" run "$cmd" "$prompt" "$DL_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" "$(dl_config_get "$DL_HARN" ask_max_output_bytes 8000)"
 rc=$?
 set -e
+cp "$prompt" "$out.prompt"
 [ -s "$out.err" ] || rm -f "$out.err"
 
 if [ "$rc" -ne 0 ]; then
-  printf '\n**Harness exited %s.** See `%s`.\n' "$rc" "$(basename "$out").err" >> "$out"
   dl_warn "harness exited $rc — partial record kept at $out"
   exit "$rc"
 fi
 
 printf 'wrote %s\n' "$out"
-grep -m1 '^VERDICT:' "$out" || dl_warn "no VERDICT line — the record is incomplete"
+grep -m1 '^VERDICT:' "$out"

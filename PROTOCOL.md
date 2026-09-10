@@ -197,3 +197,20 @@ An implementation conforms if it enforces §2.1, §3.1, §3.5, §3.6, §3.7, §4
 MAY be enforced by review.
 
 `test/run_tests.sh` asserts each of those eight.
+
+## Unreleased hardening amendment
+
+A required cross-check MUST have a successful invocation record, exactly one
+recognized verdict, distinct concrete producer/verifier model-family declarations,
+and matching hashes for its review text, pre-declaration and report. A same-family
+override MUST NOT satisfy a required foreign check. This validates completion of
+review, not agreement with its verdict. Existing evidence MUST be preserved;
+legacy Markdown-only reviews require a new invocation to satisfy this amendment.
+
+A pre-declaration gate MUST NOT overwrite an existing freeze. Missing configured
+standing-rule files MUST fail the gate. Non-smoke container execution MUST require
+a declared content digest. Local waited jobs MUST propagate execution failure.
+
+These are cooperative filesystem checks, not trusted timestamps or an operating
+system security boundary. Blind-review directories alone do not prevent agents
+from accessing the original implementation. See `docs/migration-hardening.md`.

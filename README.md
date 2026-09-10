@@ -1,237 +1,212 @@
-# discovery-loop
+<div align="center">
 
-[![test](https://github.com/<you>/discovery-loop/actions/workflows/test.yml/badge.svg)](https://github.com/<you>/discovery-loop/actions/workflows/test.yml)
-[![protocol 0.1.0](https://img.shields.io/badge/protocol-0.1.0-blue)](PROTOCOL.md)
-[![licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+# AutoResearch HPC
 
-A framework for running **automated research on HPC** as an auditable,
-self-correcting loop — a set of skills and instructions that any agent harness
-(Claude Code, Codex, OpenCode, Cursor, Copilot) can execute against the same
-project, plus the tooling that enforces the rules.
+**AI research on your cluster. Every experiment leaves a record.**
 
-It is domain-agnostic. Nothing here knows what you are studying. Scheduler,
-container runtime, tool images, immutable inputs and standing rules are all
-configured per project, in Markdown you edit.
+Multiple agent harnesses · Nextflow execution · Singularity tasks · Auditable research
 
-## Why this exists
+[![Tests](https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml/badge.svg)](https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](docs/validation.md)
+[![Protocol](https://img.shields.io/badge/protocol-0.1.0-blue)](PROTOCOL.md)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Autonomous discovery systems are good at generating results and bad at knowing
-when they are wrong. The documented failure modes are consistent: agents pick
-the analysis after seeing the answer, report a null as an absence, defend a
-conclusion their own data contradicts, and pass their own review because a model
-checking its own output verifies that the work *looks* correctly generated
-rather than that it is correct.
+[Quick start](#quick-start) · [How it works](#how-it-works) · [HPC setup](docs/hpc-execution.md) · [Validation](docs/validation.md) · [Contributing](CONTRIBUTING.md)
 
-None of those are fixed by a better model. They are fixed by a protocol:
+</div>
 
-| Mechanism | What it blocks |
+Give your coding agent a research question, a declared experiment and access to
+your existing compute cluster. AutoResearch HPC provides the protocol and CLI
+for running that work as an auditable loop: freeze the plan, execute the
+workflow, preserve the outcome and request a review from another model family.
+
+The agent works through the `dl` CLI and portable Markdown instructions.
+Nextflow handles scheduling and caching. Singularity runs scientific tasks.
+You keep the question, controls, failed attempts and review together.
+
+> **Experimental, pre-1.0.** Local and real Slurm execution have been exercised.
+> Review verdicts are evidence to assess; scientific claims still need independent
+> validation. See [tested behavior and limitations](docs/validation.md).
+
+## Why AutoResearch HPC?
+
+| Capability | What you get |
 |---|---|
-| Claim before create | two agents silently occupying the same iteration |
-| Pre-declaration, hash-frozen | choosing the analysis after seeing the answer |
-| Append-only iterations | quietly rewriting history to look right |
-| Standing rules as gates | causal language, bare nulls, missing controls |
-| Cross-harness verification | a model passing its own reasoning errors |
-| Gotchas as assertions | silent failures that exit zero |
-| Detection limit required | thresholds discarding the events you seek |
+| **Use your cluster** | A host Nextflow controller with access to Slurm; Singularity on compute nodes |
+| **Choose your harness** | Portable instructions and configurable Claude Code, Codex and OpenCode integrations |
+| **Declare before running** | Atomic iteration claims and a hash-frozen experiment plan |
+| **Keep the evidence** | Iteration-owned results, execution traces, run receipts and review records |
+| **Spend model calls deliberately** | Deterministic status/context, bounded reviews and reuse of unchanged eligible reviews |
+| **Preserve corrections** | Append-only iterations retain failed attempts and superseded conclusions |
 
-## Install
+## How it works
 
-```bash
-git clone https://github.com/<you>/discovery-loop.git
-cd discovery-loop
-export PATH="$PWD/discovery-loop/bin:$PATH"
-dl doctor
+```mermaid
+flowchart LR
+    A[Research question] --> B[Claim iteration]
+    B --> C[Declare and freeze plan]
+    C --> D[Nextflow on host]
+    D --> E[Slurm or local executor]
+    E --> F[Singularity tasks]
+    F --> G[Results and evidence]
+    G --> H[Foreign-family review]
+    H --> I[Gate and ledger]
+    I --> A
 ```
 
-Requires bash, `awk`, `sed`, `python3` and `sha256sum`. Everything else —
-SLURM, Apptainer, agent CLIs — is optional and configured per project.
+**The controller stays on the host.** Its versioned micromamba environment
+provides Nextflow and Java while preserving the site's scheduler access.
+Scientific dependencies run inside the configured task container, optionally
+using a read-only mounted task environment. Shared paths and site policy are
+configured in Markdown. [Execution details →](docs/hpc-execution.md)
 
 ## Quick start
 
+You need Linux, Bash/basic shell tools, Python for bootstrap, a micromamba binary
+and Singularity (or an Apptainer installation providing the `singularity` command).
+Cluster execution also needs Slurm clients and shared storage. Model review
+requires an authenticated verifier CLI from a different family than the producer.
+
+### 1. Install and configure
+
 ```bash
-dl init my-study && cd my-study
-$EDITOR .dl/config/site.md        # scheduler, containers, images
-$EDITOR .dl/config/project.md     # immutable inputs, standing rules
+git clone https://github.com/HudoGriz/autoresearch-hpc.git
+cd autoresearch-hpc
+export PATH="$PWD/bin:$PATH"
+
+dl init /shared/my-study
+scripts/setup-nextflow.sh /shared/my-study /absolute/path/to/micromamba
+scripts/setup-runtime.sh /shared/my-study /shared/images/runtime.sif
+```
+
+Stage a compatible runtime SIF first; the tested bootstrap image is
+`docker://mambaorg/micromamba:2.8.1`. Setup records its local digest and resolved
+package lists. Add your domain dependencies before using it for scientific work.
+See the [complete HPC setup guide](docs/hpc-execution.md).
+
+```bash
+cd /shared/my-study
+# Edit .dl/config/site.md: scheduler, partition, account and resources.
+# Edit .dl/config/project.md: immutable inputs and standing rules.
+# Edit .dl/config/harnesses.md: producer and foreign-family verifier.
 dl doctor
+```
 
-N=$(dl claim -t "Does X differ between A and B?")
-dl new -n $N                      # scaffold the pre-declaration
-$EDITOR iterations/iteration$N/README.md
-dl gate predeclare -n $N          # freezes the hash — results now permitted
+### 2. Run a declared experiment
 
-# ... write scripts/, then ...
-dl submit iterations/iteration$N/scripts/it${N}_01_run.sh -n it${N}_01 -w
-dl ask --role adversary -n $N     # cross-check with a foreign harness
-dl gate results -n $N             # fails if the pre-declaration changed
+```bash
+N=$(dl claim -t "Does the proposed method improve the declared metric?")
+dl new -n "$N"
+# Complete every section of iterations/iterationN/README.md first.
+dl gate predeclare -n "$N"
+
+# Write your native Nextflow workflow under this iteration's scripts/.
+dl submit "iterations/iteration${N}/scripts/experiment.nf" -n experiment
+
+# Write results/report/iterationN_report.md, including controls and limits.
+dl ask --role adversary -n "$N"
+dl gate results -n "$N"
 dl ledger render && dl ledger check
 ```
 
-Install harness-native wiring:
+Native workflows can use `--resume` to reuse unchanged tasks. Legacy `.sh`
+submission is supported as a migration adapter and is deliberately not cached.
+Complete results before review; modifying reviewed evidence invalidates that review.
+
+### 3. Work with your agent
+
+From the source checkout, install optional harness wiring:
 
 ```bash
-../discovery-loop/harness/install.sh . claude codex opencode
+harness/install.sh /shared/my-study claude codex opencode
 ```
 
-## What a project looks like
+Then open your agent in the study and ask:
 
-```
+> Read PROGRESS.md and AGENTS.md. Propose one experiment for this question,
+> declare its metric and negative controls, and follow the discovery loop.
+> Use the configured Nextflow/Singularity runtime and keep the evidence in its iteration.
+
+The instructions guide the agent; you supply the scientific question, data and
+site configuration. There is no separate always-running research daemon.
+
+## Keep model calls focused
+
+Execution, polling, cache reuse, ledger checks and `dl context -n N` use no LLM.
+The default review policy limits submitted prompt bytes to **24,000**, captured
+output to **8,000 bytes**, and attempts to **two per iteration**. Further reviews
+require a concrete unresolved issue; unchanged eligible reviews are reused.
+
+These are operational bounds, not exact token or billing caps. Harness system
+prompts and internal work can add cost. External model services receive the
+context supplied to them; local compute does not imply air-gapped inference.
+
+## Your research record
+
+```text
 my-study/
-  PROGRESS.md              the record — every agent reads this first
-  AGENTS.md                the contract  (CLAUDE.md -> AGENTS.md)
-  GOTCHAS.md               silent failure modes, each with an assertion
-  rules/                   standing rules every iteration inherits
-  .dl/config/              site.md · project.md · harnesses.md
-  iterations/iterationN/
-    CLAIM.json             who holds this number
-    README.md              the pre-declaration
-    PREDECLARATION.sha256  proof it predates the results
-    scripts/ results/ logs/ resources/ metadata/
-    CROSSCHECK_*.md        foreign-harness reviews
-  verification/            independent re-examination of existing results
+├── PROGRESS.md                  # resume point and ledger
+├── AGENTS.md                    # agent contract
+├── .dl/config/                  # site, study and harness settings
+├── rules/                       # standing research rules
+├── iterations/iterationN/
+│   ├── CLAIM.json
+│   ├── README.md                # declared before results
+│   ├── PREDECLARATION.sha256
+│   ├── scripts/  resources/  metadata/
+│   ├── results/  logs/
+│   └── CROSSCHECK_*.md          # hash-bound foreign reviews
+└── verification/                # re-examination of existing results
 ```
 
-## Configuration
-
-Config files are Markdown. Machine-readable settings live in fenced
-` ```dl-config ` blocks as `key = value`; everything else on the page is
-documentation for whoever reads it next.
-
-**`.dl/config/site.md`** — this machine. `scheduler` is `slurm`, `pbs` or
-`local`; `container_runtime` is `apptainer`, `singularity`, `docker` or `none`.
-Declare images as `image_<name> = <path or docker:// URI>`. Moving a project to
-a different cluster means editing this one file.
-
-**`.dl/config/project.md`** — this study. Immutable input paths, which standing
-rules apply, which sections a pre-declaration must carry.
-
-**`.dl/config/harnesses.md`** — which agent CLIs exist, how to invoke each
-non-interactively, and which **model family** each belongs to. Cross-checks are
-refused between harnesses of the same family.
-
-## Commands
-
-| command | does |
+| Command | Purpose |
 |---|---|
-| `dl init [dir]` | create a project |
-| `dl claim -t TITLE` | atomically take the next iteration number |
-| `dl new -n N` | scaffold the pre-declaration |
-| `dl arm {new\|gate\|fate\|list}` | parallel sub-analyses that fail independently |
-| `dl gate predeclare -n N` | check it, then freeze its hash |
-| `dl gate results -n N` | verify the pre-declaration never changed |
-| `dl gate rules FILE` | check a document against the standing rules |
-| `dl ask --role R -n N` | cross-check with a foreign harness |
-| `dl verify {new\|gate\|list}` | re-examine an object an iteration produced |
-| `dl dag {init\|check\|freeze}` | reconstruct the path a result took |
-| `dl replicate [run\|report]` | N agents re-implement from the DAG, blind to the code |
-| `dl run IMAGE -- CMD` | run inside the configured container runtime |
-| `dl submit SCRIPT` | submit through the configured scheduler |
-| `dl guard PATH...` | assert paths are writable under the project |
-| `dl ledger render \| check` | maintain the record |
-| `dl status` | iterations, claims, gate state |
-| `dl doctor` | check the environment against the config |
-| `dl next` | what to do next, and why |
-| `dl status --json` | machine-readable state, for calling `dl` from code |
+| `dl status` / `dl next` | Inspect state and the next protocol action |
+| `dl context -n N` | Generate a compact deterministic handoff |
+| `dl run IMAGE -- CMD` | Execute a tool in a declared container |
+| `dl guard PATH` | Check a proposed output path |
+| `dl verify new OBJECT` | Start a verification of an existing result |
+| `dl dag init -n N` | Describe the path from inputs to conclusions |
+| `dl replicate --help` | Explore specification-based replication |
 
-## Blind replication from a DAG
+Run `dl --help` for the full CLI. Blind review is a cooperative protocol;
+separate permissions are needed when access must be technically prevented.
 
-The strongest check the framework offers. Reconstruct the path a result took,
-freeze it, then have several agents re-implement it from that specification
-alone:
+## Validation and development
+
+The local validation baseline passed **137 core checks and 31 boundary
+regressions**, with real Slurm success/failure, native cache reuse and an
+immutable-input container probe. A bounded Claude review returned **QUALIFIED**;
+five focused follow-up probes passed. [Evidence scope and retained limits →](docs/validation.md)
 
 ```bash
-dl dag init -n N && dl dag freeze -n N
-dl replicate -n N --agents 3 --harnesses codex,opencode,claude
-dl replicate report -n N
+export DL_TEST_SITE=/absolute/path/to/configured/local/site.md
+test/run_tests.sh
+python3 test/test_hardening.py
 ```
 
-Each agent gets a sandbox holding the frozen DAG and the pre-declaration, and
-**nothing else** — the original scripts are absent by construction, because an
-agent that reads them reproduces their choices including their mistakes.
+CI provisions the Linux execution boundary and runs integration tests, shell
+lint and schema validation. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
-`dl dag check` fails on a node declared in the tables but absent from the graph:
-an adjacency the argument assumes and the topology does not contain. It also
-requires §4 to state how many paths exist versus how many were reported — the
-multiple-testing denominator.
+## Built on existing work
 
-The report surfaces **disagreement**, which is the evidence: divergent values
-mark decisions the DAG left open, contested set membership is named element by
-element, and the ambiguity count measures the specification rather than the
-result. Agreement is not treated as confirmation — models fail in correlated
-ways, and a unanimous answer can be unanimously wrong.
+- **[Nextflow](https://www.nextflow.io/):** execution, scheduling and caching.
+- **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep):** a
+  pinned, adapted adversarial review rubric. The full ARIS autonomous workflow
+  is not bundled; attribution and license are in [third_party/aris](third_party/aris).
+- **[autoresearch](https://github.com/karpathy/autoresearch):** inspiration for
+  making agent-driven experimentation understandable and accessible.
 
-## Cross-check roles
-
-`dl ask --role <role> -n N` composes a prompt from the role, the frozen
-pre-declaration and the report, then dispatches it to a foreign harness.
-
-- **`adversary`** — assume the conclusion is wrong; find out why.
-- **`reimplementer`** — build it from the written spec alone, never reading the
-  original code. Every ambiguity it had to resolve is a finding.
-- **`estimand-auditor`** — does the test measure the quantity the question asks
-  about? Catches the error class where every step is correct and the number
-  answers a different question.
-- **`gotcha-scanner`** — check the run against recorded silent failure modes.
-
-A verdict is evidence, not a ruling. Evaluate each finding on its merits and
-record the rejections with reasons.
-
-## Skills
-
-`skills/` holds portable skill definitions — `iterate`, `arms`, `verify`,
-`cross-check`, `replicate`, `ledger` — installed into `.claude/skills/` for Claude Code and referenced by
-`opencode.json` for OpenCode. Codex and Cursor read `AGENTS.md` directly.
-
-## Tests
-
-```bash
-test/run_tests.sh          # 136 checks, no cluster or network needed
-KEEP=1 test/run_tests.sh   # keep the scratch project for inspection
-```
-
-The suite builds a real project, runs a generic toy analysis through the whole
-loop, and asserts the protocol actually bites: concurrent claims never collide,
-an unfilled pre-declaration is rejected, results before pre-declaration are
-rejected, a README edited after freezing is caught, causal language and bare
-nulls are refused, and same-family cross-checks are blocked.
-
-## Extending
-
-**A new standing rule** — drop a file in `rules/`, declare `id`, `severity`,
-`applies` (`predeclaration` and/or `report`), and `forbid`/`requires` regexes in
-its `dl-config` block. Name it in `project.md`.
-
-**A new harness** — three keys in `harnesses.md` (`harness_<n>_cmd`,
-`harness_<n>_family`, and the name in `harnesses`), plus native config under
-`harness/` if it needs any.
-
-**A new scheduler or container runtime** — add a case to `lib/scheduler.sh` or
-`lib/container.sh`. Both are small and have one job each.
-
-## Status
-
-Working, tested, and pre-1.0: the protocol version is `0.1.0` and the config
-format may still change. `schema/` types claims, findings and cross-checks.
-
-Open proposals — none of them committed to — are in
-[`docs/proposals.md`](docs/proposals.md).
+AutoResearch HPC is an independent project, not an official Karpathy or ARIS
+release. Its `dl` CLI implements the discovery-loop protocol.
 
 ## Documentation
 
-| file | what it is |
-|---|---|
-| [`PROTOCOL.md`](PROTOCOL.md) | the normative spec — what conformance means |
-| [`AGENTS.md`](AGENTS.md) | the contract an agent reads on entering a project |
-| [`docs/related-work.md`](docs/related-work.md) | what this is not, and where the design came from |
-| [`docs/proposals.md`](docs/proposals.md) | **everything proposed and not yet decided** |
-| [`docs/prior-art.md`](docs/prior-art.md) | frameworks to learn from, standards to target, graph-store options |
-| [`docs/knowledge-graph-design.md`](docs/knowledge-graph-design.md) | the concrete graph stack: PROV-O + CiTO, Morph-KGC, OpenAlex, Oxigraph |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | the bar for a change, and shell style |
-| [`CHANGELOG.md`](CHANGELOG.md) | versioned protocol changes |
+[HPC setup](docs/hpc-execution.md) · [Protocol](PROTOCOL.md) ·
+[Agent contract](AGENTS.md) · [Validation](docs/validation.md) ·
+[Migration](docs/migration-hardening.md) · [Framework review](docs/framework-review.md) ·
+[Positioning](docs/positioning.md) · [Proposals](docs/proposals.md)
 
-## Citing
+## License
 
-`CITATION.cff` — GitHub renders a "Cite this repository" button from it.
-
-## Licence
-
-MIT — see [`LICENSE`](LICENSE).
+[MIT](LICENSE). Citation metadata is available in [CITATION.cff](CITATION.cff).

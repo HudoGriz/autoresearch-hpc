@@ -1,0 +1,5 @@
+{
+  "nextflow": {"version": "26.04.6", "channel": "bioconda"},
+  "python": {"version": "3.12", "channel": "conda-forge"},
+  "runtime_image": "docker://mambaorg/micromamba:2.8.1"
+}

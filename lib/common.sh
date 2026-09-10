@@ -115,7 +115,14 @@ dl_guard_path() {   # <path...>
     local ip
     for ip in $immutable; do
       [ -n "$ip" ] || continue
+      case "$ip" in /*) ;; *) ip="$DL_ROOT/$ip" ;; esac
+      ip=$(dl_abspath "$ip")
       case "$abs" in "$ip"/*|"$ip") dl_die "immutable input path: $abs" ;; esac
     done
   done
+}
+
+# Count only successful, foreign-family reviews bound to current artifacts.
+dl_crosschecks() {
+  python3 "$DL_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
 }

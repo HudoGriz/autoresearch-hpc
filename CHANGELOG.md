@@ -58,3 +58,15 @@ First working version: protocol, tooling and harness wiring.
 - `codex exec` needs `--skip-git-repo-check` outside a git repo, and blocked on
   stdin when the prompt was passed as an argument. Both surfaced on the first
   live dispatch; neither was reachable from the stubbed test suite.
+
+## Unreleased — protocol hardening
+
+- Require hash-bound successful foreign-family cross-check records across gates,
+  status, ledger and guidance; reject unknown families and malformed verdicts.
+- Preserve freezes, fail missing rules, parse harness arguments without a shell,
+  enforce portable timeouts and allocate unique review artifacts.
+- Verify declared container digests; normalize relative immutable paths.
+- Gate submission on frozen plans and propagate local job failures with metadata.
+- Add protocol regression tests, framework comparison and proposal decisions.
+- Migration: see `docs/migration-hardening.md`; older evidence is retained but
+  Markdown-only reviews no longer satisfy the strengthened results gate.

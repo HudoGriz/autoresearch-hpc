@@ -8,22 +8,30 @@ on:
 
 jobs:
   suite:
-    name: suite (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS is not decoration: the tooling avoids GNU-only readlink -m,
-        # readlink -f and `sed -i`, and this is what proves it.
-        os: [ubuntu-latest, macos-latest]
+    name: Singularity integration (Linux)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Versions
+      - uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.6
+      - name: Configure driver and task runtime
         run: |
-          bash --version | head -1
-          python3 --version
+          mkdir -p "$PWD/.ci/bin"
+          ln -s "$(command -v apptainer)" "$PWD/.ci/bin/singularity"
+          export PATH="$PWD/.ci/bin:$PATH"
+          echo "$PWD/.ci/bin" >> "$GITHUB_PATH"
+          bin/dl init "$PWD/.ci/study"
+          singularity pull "$PWD/.ci/runtime.sif" docker://mambaorg/micromamba:2.8.1
+          singularity exec "$PWD/.ci/runtime.sif" cat /bin/micromamba > "$PWD/.ci/bin/micromamba"
+          chmod +x "$PWD/.ci/bin/micromamba"
+          scripts/setup-nextflow.sh "$PWD/.ci/study" "$PWD/.ci/bin/micromamba"
+          scripts/setup-runtime.sh "$PWD/.ci/study" "$PWD/.ci/runtime.sif"
       - name: Test suite
-        run: test/run_tests.sh
+        run: |
+          export DL_TEST_SITE="$PWD/.ci/study/.dl/config/site.md"
+          test/run_tests.sh
+          python3 test/test_hardening.py
       - name: Protocol conformance is actually enforced
         run: |
           # PROTOCOL.md §10 names seven clauses that MUST be refused, not warned.

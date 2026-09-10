@@ -15,7 +15,7 @@ outside the block is documentation and is ignored.
 |---|---|---|---|
 | `slurm` | `sbatch --parsable` | `squeue` | the usual HPC case |
 | `pbs`   | `qsub`              | `qstat` | best-effort |
-| `local` | detached `bash`     | `kill -0` | laptops, CI, the test suite |
+| `local` | Nextflow local     | Nextflow trace | laptops, CI, the test suite |
 
 The `slurm_*` keys become `sbatch` flags. `slurm_extra` is passed through
 verbatim, so anything not modelled here (`--gres=gpu:1`, `--qos=...`, a
@@ -36,7 +36,15 @@ Declare images as `image_<name> = <path or URI>`, then refer to them by
 
 ```dl-config
 scheduler         = local
-container_runtime = none
+container_runtime = singularity
+
+# Host controller: scripts/setup-nextflow.sh PROJECT MICROMAMBA_BINARY
+nextflow_prefix =
+# Task container: scripts/setup-runtime.sh PROJECT IMAGE.sif
+runtime_image =
+runtime_sha256 =
+runtime_prefix =
+nextflow_version = 26.04.6
 
 # --- SLURM (used when scheduler = slurm) --------------------------------
 slurm_partition   =
@@ -52,9 +60,14 @@ pbs_queue         =
 # --- containers ---------------------------------------------------------
 image_dir         = .dl/images
 # image_samtools  = /opt/images/samtools_1.21.sif
-# image_python    = docker://python:3.11-slim
+# image_samtools_sha256 = <sha256 of that file>
+# image_python    = docker://python@sha256:<64 lowercase hexadecimal digits>
 
 # Extra bind mounts, space-separated, in the runtime's own syntax
 # (apptainer "src:dst[:ro]", docker "src:dst[:ro]").
 extra_binds       =
 ```
+
+Non-smoke runs require a declared image and an expected content digest. Local
+image files use `image_<name>_sha256`; remote references require `@sha256:...`.
+Changing a local image without changing its declared digest fails before execution.

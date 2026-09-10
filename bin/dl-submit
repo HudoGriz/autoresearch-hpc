@@ -1,28 +1,8 @@
 #!/usr/bin/env bash
-# Submit a job through the configured scheduler.
+# Nextflow owns scheduling; this adapter checks the research plan.
 set -euo pipefail
-# shellcheck source=lib/common.sh
 . "${DL_HOME:?}/lib/common.sh"
-name=""; logdir=""; wait=0; script=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -n|--name)   name="$2"; shift 2 ;;
-    -l|--logdir) logdir="$2"; shift 2 ;;
-    -w|--wait)   wait=1; shift ;;
-    -h|--help)   echo 'usage: dl submit SCRIPT [-n NAME] [-l LOGDIR] [-w]'; exit 0 ;;
-    *) script="$1"; shift ;;
-  esac
-done
-[ -n "$script" ] || dl_die "usage: dl submit SCRIPT [-n NAME]"
-[ -f "$script" ] || dl_die "no such script: $script"
+case "${1-}" in -h|--help) echo 'usage: dl submit WORKFLOW.nf [-n NAME] [--params FILE] [--resume] [-w]'; exit 0 ;; esac
 dl_load_project
-# shellcheck source=lib/scheduler.sh
-. "$DL_HOME/lib/scheduler.sh"
-[ -n "$name" ]   || name=$(basename "$script" | sed 's/\.[^.]*$//')
-[ -n "$logdir" ] || logdir="$(dirname "$script")/../logs"
-dl_guard_path "$logdir"
-jid=$(dl_sched_submit "$script" "$name" "$logdir")
-printf '%s\n' "$jid"
-printf 'submitted %s as job %s via %s\n' "$name" "$jid" "$(dl_sched_backend)" >&2
-[ "$wait" = 1 ] && { dl_sched_wait "$jid"; printf 'job %s finished\n' "$jid" >&2; }
-exit 0
+[ "${DL_IN_RUNTIME:-0}" != 1 ] || dl_die "run the Nextflow controller on the host for scheduler access"
+exec python3 "$DL_HOME/lib/nextflow.py" "$@"
