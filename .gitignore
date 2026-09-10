@@ -1,6 +1,26 @@
 *.lock
 *.lock.d/
 .dl/images/
+**/.dl/envs/
+**/.dl/mamba/
+**/.dl/home/
+**/.dl/tmp/
+**/.dl/nextflow/
+**/.dl/container-cache/
+**/resources/cache/
+.audit-study/iterations/iteration3/resources/nextflow
+*.sif
 __pycache__/
 *.pyc
 .DS_Store
+
+**/.dl/mamba-host/
+**/.dl/bin/
+
+.ci/
+
+# Local audit records and machine-specific runtime state are not published.
+/.audit-study/
+.env
+.env.*
+!.env.example

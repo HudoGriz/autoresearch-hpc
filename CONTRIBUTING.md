@@ -12,21 +12,24 @@ that make an existing project non-conforming need a migration note.
 
 ## Running the tests
 
+Follow [HPC setup](docs/hpc-execution.md) to configure a local test site first.
+
 ```bash
-test/run_tests.sh          # 78 checks, no cluster or network
-KEEP=1 test/run_tests.sh   # keep the scratch project to inspect
+export DL_TEST_SITE=/absolute/path/to/local/site.md
+test/run_tests.sh
+python3 test/test_hardening.py
+KEEP=1 test/run_tests.sh   # preserve the scratch project
 ```
 
-CI additionally runs the suite on macOS and lints with shellcheck. The macOS job
-is not decoration: `readlink -m`, `readlink -f` and `sed -i` are GNU-only, and
-the first of those once made the immutable-input guard fail outright — a safety
-check silently not running is worse than an error.
+CI provisions Nextflow and Singularity on Linux, runs the integration suite,
+validates schemas and lints shell scripts. macOS container integration is not
+supported.
 
 ## Shell style
 
 - `set -euo pipefail`, quoted expansions, explicit paths.
 - **POSIX-portable, bash 3.2 compatible.** No `mapfile`, no `declare -A`, no
-  `${var,,}`. macOS ships bash 3.2 and CI will catch you.
+  `${var,,}`. Keep the protocol shell portable where practical.
 - No GNU-only flags. Where one is unavoidable, feature-detect and fall back —
   `dl_abspath` in `lib/common.sh` is the pattern.
 - Commands live in `bin/dl-<name>` and are dispatched by `bin/dl`. Shared code
@@ -48,8 +51,8 @@ Adversarial roles that only ever return `SOUND` are worse than none.
 `harness_<n>_family`, plus the name in `harnesses`) and any native config under
 `harness/`. Get the model family right; the same-family refusal depends on it.
 
-**A scheduler or container runtime** — a case in `lib/scheduler.sh` or
-`lib/container.sh`. Both are small and do one job each; keep them that way.
+**A scheduler** — configure a Nextflow executor in `lib/nextflow.py`.
+Direct container commands are implemented in `lib/container.sh`.
 
 ## Reporting a defect in the protocol itself
 
@@ -65,3 +68,10 @@ thirteen months, worked concurrently by more than one harness. Every mechanism
 exists because something went wrong without it. It is nonetheless one project,
 one lab, one domain — evidence that it generalises is welcome, and so is
 evidence that it does not.
+
+Integration tests need Linux, a configured host Nextflow environment and a task SIF.
+Follow [HPC setup](docs/hpc-execution.md), set `scheduler = local` in the test site,
+then run `DL_TEST_SITE=/absolute/site.md test/run_tests.sh` and
+`DL_TEST_SITE=/absolute/site.md python3 test/test_hardening.py`. The controller
+tests run on the host and their submitted work runs in Singularity. CI provisions
+this boundary on Linux; macOS container integration is not supported.

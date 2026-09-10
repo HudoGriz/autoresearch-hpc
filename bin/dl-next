@@ -93,7 +93,7 @@ if [ ! -f "$report" ]; then
   exit 0
 fi
 
-if ! find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q .; then
+if ! dl_crosschecks "$dir" | grep -q .; then
   say "dl ask --role adversary -n $n"
   why "cross-check by a different model family before concluding"
   why "add --role estimand-auditor if the estimand has a filter in front of it"

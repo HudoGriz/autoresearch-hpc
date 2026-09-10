@@ -25,7 +25,7 @@ check_rules() {
   body=$(tr 'A-Z' 'a-z' < "$doc")
   for r in $(rule_ids); do
     rf="$DL_ROOT/rules/$r.md"
-    [ -f "$rf" ] || { dl_warn "rule file missing: $rf"; continue; }
+    [ -f "$rf" ] || { dl_fail "rule file missing: $rf"; fails=$((fails+1)); continue; }
     applies=$(dl_config_get "$rf" applies "report")
     case " $applies " in *" $phase "*) ;; *) continue ;; esac
     id=$(dl_config_get "$rf" id "$r")
@@ -57,11 +57,13 @@ case "$sub" in
     dir="$DL_ITERS/iteration$n"
     readme="$dir/README.md"
     [ -f "$readme" ] || dl_die "no pre-declaration at $readme (run: dl new -n $n)"
+    dl_guard_path "$dir/PREDECLARATION.sha256"
+    [ ! -e "$dir/PREDECLARATION.sha256" ] || dl_die "already frozen; corrections require a new iteration"
     printf 'gate: pre-declaration, iteration %s\n' "$n"
 
     # Results must not exist yet. A pre-declaration written after the answer is
     # not a pre-declaration.
-    if [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ]; then
+    if [ -n "$(find "$dir/results" \( -type f -o -type l \) 2>/dev/null | head -1)" ]; then
       dl_fail "results/ is already populated — this cannot be pre-declared"
       fails=$((fails+1))
     else
@@ -87,7 +89,7 @@ case "$sub" in
     # Placeholders left in the template are an incomplete pre-declaration.
     # Template placeholders open at column 0 and may wrap over several lines,
     # so anchor on the opening bracket rather than trying to match the pair.
-    if grep -qE '^<|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$readme"; then
+    if grep -qE '^<[[:alpha:]]|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$readme"; then
       dl_fail "template placeholders remain unfilled"; fails=$((fails+1))
     else
       dl_ok "no placeholders remain"
@@ -98,10 +100,9 @@ case "$sub" in
     if [ "$fails" -gt 0 ]; then
       printf '\ngate FAILED (%s). Nothing was frozen; fix and re-run.\n' "$fails" >&2; exit 1
     fi
-    dl_sha256 "$readme" > "$dir/PREDECLARATION.sha256"
-    printf '%s\n' "$(dl_now)" >> "$dir/PREDECLARATION.sha256"
+    ( set -C; { dl_sha256 "$readme"; dl_now; } > "$dir/PREDECLARATION.sha256" ) || dl_die "freeze already exists"
     printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
-    printf 'The README is now immutable. Corrections go in a new iteration.\n'
+    printf 'The README hash is frozen; later edits will fail validation. Corrections go in a new iteration.\n'
     ;;
 
   results)
@@ -131,10 +132,13 @@ case "$sub" in
     else dl_fail "no report at ${report#"$DL_ROOT"/}"; fails=$((fails+1)); fi
 
     if [ "$(dl_config_get "$DL_PROJ" require_crosscheck true)" = true ]; then
-      if find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q .; then
-        dl_ok "cross-checked by a foreign harness"
+      if dl_crosschecks "$dir" | grep -q .; then
+        dl_ok "completed foreign review(s); verdicts are evidence, not endorsement"
+        python3 "$DL_HOME/lib/harness.py" describe "$dir"
       else
-        dl_fail "no cross-check record (run: dl ask --role adversary -n $n)"; fails=$((fails+1))
+        dl_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
+        python3 "$DL_HOME/lib/harness.py" describe "$dir"
+        fails=$((fails+1))
       fi
     fi
 

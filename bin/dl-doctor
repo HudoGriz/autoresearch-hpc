@@ -7,7 +7,7 @@ set -euo pipefail
 warn=0
 printf 'discovery-loop  DL_HOME=%s\n\n' "$DL_HOME"
 
-if DL_ROOT_TEST=$(dl_find_project 2>/dev/null); then
+if (dl_find_project) >/dev/null 2>&1; then
   dl_load_project
   dl_ok "project: $DL_ROOT"
 else
@@ -28,7 +28,7 @@ esac
 ctr=$(dl_config_get "$DL_SITE" container_runtime none)
 case "$ctr" in
   apptainer|singularity|docker)
-    command -v "$ctr" >/dev/null && dl_ok "containers: $ctr" \
+    { [ "${DL_IN_RUNTIME:-0}" = 1 ] || command -v "$ctr" >/dev/null; } && dl_ok "containers: $ctr" \
       || { dl_fail "container_runtime=$ctr but $ctr not on PATH"; warn=$((warn+1)); } ;;
   none) dl_warn "container_runtime=none — tools are unpinned, results are not reproducible"
         dl_info "acceptable for smoke tests only" ;;

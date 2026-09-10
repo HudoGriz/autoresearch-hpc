@@ -1,6 +1,8 @@
 # Proposals
 
-**Everything proposed and not yet decided, in one place.** Nothing here is
+**Original proposal register.** Updated decisions and implementation status are
+in [the 2026-09-09 review](framework-review.md#proposal-by-proposal-decisions).
+The original proposals below are preserved as design history. Nothing here is
 committed to. Evidence for each is in [`prior-art.md`](prior-art.md);
 positioning is in [`related-work.md`](related-work.md).
 
@@ -135,7 +137,7 @@ have done exactly this for years. `prior-art.md` §2.4.
 per-rule containers, no provenance.
 
 **Proposal.** `runner = slurm | snakemake | nextflow` in `site.md`.
-`lib/scheduler.sh` is already pluggable, so this is additive.
+Scheduling is now delegated to Nextflow; extend its site configuration rather than adding a custom scheduler.
 
 **Note.** Nextflow is the obvious choice here given you already run nf-core
 pipelines; Snakemake has the better built-in reporting.
@@ -314,7 +316,7 @@ agreeing.
 
 Blocked on information only you have:
 
-- `README.md:3,40` — `<you>` → your GitHub handle (badge + clone URL)
+- Repository badge and clone URL now target `HudoGriz/autoresearch-hpc`.
 - `CITATION.cff:15` — `repository-code` URL
 - `CITATION.cff:24-25` — your name, ORCID if you have one
 - `LICENSE:3` — copyright holder

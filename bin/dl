@@ -10,6 +10,21 @@ done
 DL_HOME="${DL_HOME:-$(cd "$(dirname "$_dl_self")/.." && pwd)}"
 export DL_HOME
 
+# The controller stays on the host so Nextflow sees the site's scheduler.
+# Use the pinned environment directly, without shell activation.
+if [ "${1-}" != init ]; then
+  . "$DL_HOME/lib/common.sh"
+  if (dl_find_project) >/dev/null 2>&1; then
+    dl_load_project
+    driver_prefix=$(dl_config_get "$DL_SITE" nextflow_prefix "")
+    if [ -n "$driver_prefix" ]; then
+      [ -x "$driver_prefix/bin/python3" ] || dl_die "driver environment missing: $driver_prefix"
+      export PATH="$driver_prefix/bin:$PATH"
+      export JAVA_HOME="$driver_prefix"
+    fi
+  fi
+fi
+
 usage() {
   cat <<'USAGE'
 dl — automated discovery loop
@@ -29,6 +44,7 @@ dl — automated discovery loop
   dl submit SCRIPT -n NAME      submit a job through the configured scheduler
   dl guard  PATH...             assert paths are writable under the project
   dl ledger [render|check]      maintain the project record
+  dl context -n N               compact deterministic handoff; no model call
   dl status                     show iterations, claims and gate state
   dl doctor                     check the environment and configuration
   dl next                       what to do next, and why
@@ -46,7 +62,7 @@ case "$cmd" in
       "$(cat "$DL_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The discovery-loop protocol, v//p' "$DL_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|guard|ledger|status|doctor|next)
+  init|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|guard|ledger|status|doctor|next|context)
     exec "$DL_HOME/bin/dl-$cmd" "$@" ;;
   *) printf 'dl: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

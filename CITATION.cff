@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: If you use this framework, please cite it.
-title: "discovery-loop: an auditable, self-correcting protocol for automated research on HPC"
+title: "AutoResearch HPC: an auditable, self-correcting protocol for automated research on HPC"
 abstract: >-
   A domain-agnostic framework for running automated research as an append-only
   loop across multiple agent harnesses. It enforces atomic iteration claiming,
@@ -12,7 +12,7 @@ type: software
 license: MIT
 version: 0.1.0
 date-released: "2026-09-09"
-repository-code: "https://github.com/<you>/discovery-loop"
+repository-code: "https://github.com/HudoGriz/autoresearch-hpc"
 keywords:
   - reproducible research
   - research software engineering
@@ -21,6 +21,4 @@ keywords:
   - high-performance computing
   - provenance
 authors:
-  - family-names: "<your surname>"
-    given-names: "<your given name>"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"
+  - name: "AutoResearch HPC contributors"

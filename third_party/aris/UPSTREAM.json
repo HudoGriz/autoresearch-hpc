@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep",
+  "commit": "ba0ff54aa837d60163776901d5c7fbffe2cec677",
+  "source": "skills/research-review/SKILL.md",
+  "source_sha256": "41df82cf9e5aa392388282d515df6b9e848189171bd73aa8b34816eae055e108",
+  "integration": "selected rubric adapted in skills/cross-check/roles/adversary.md; full upstream multi-round orchestration is not installed"
+}

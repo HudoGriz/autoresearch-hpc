@@ -9,4 +9,20 @@ dl_load_project
 . "$DL_HOME/lib/container.sh"
 image="${1:?usage: dl run IMAGE -- CMD...}"; shift
 [ "${1-}" = "--" ] && shift
+if [ "$image" = runtime ]; then
+  runtime_image=$(dl_config_get "$DL_SITE" runtime_image "")
+  prefix=$(dl_config_get "$DL_SITE" runtime_prefix "")
+  digest=$(dl_config_get "$DL_SITE" runtime_sha256 "")
+  [ -f "$runtime_image" ] && [ -n "$digest" ] && [ "$(dl_sha256 "$runtime_image")" = "$digest" ] || dl_die "runtime SIF missing or digest mismatch"
+  args=(exec --cleanenv --containall --bind "$DL_HOME:$DL_HOME:ro" --bind "$DL_ROOT:$DL_ROOT:rw" --pwd "$DL_ROOT")
+  if [ -n "$prefix" ]; then
+    args+=(--bind "$prefix:$prefix:ro" --env "PATH=$prefix/bin:/usr/local/bin:/usr/bin:/bin")
+  fi
+  for input in $(dl_config_get "$DL_PROJ" immutable_inputs ""); do
+    case "$input" in /*) ;; *) input="$DL_ROOT/$input" ;; esac
+    args+=(--bind "$input:$input:ro")
+  done
+  exec singularity "${args[@]}" "$runtime_image" "$@"
+fi
+
 dl_ctr_run "$image" "$@"

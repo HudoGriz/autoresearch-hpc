@@ -5,6 +5,7 @@
 #   test/run_tests.sh            run in a temp dir, clean up
 #   KEEP=1 test/run_tests.sh     keep the scratch project for inspection
 set -uo pipefail
+: "${DL_TEST_SITE:?Set DL_TEST_SITE to a configured local Nextflow/Singularity site.md}"
 
 DL_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export DL_HOME PATH="$DL_HOME/bin:$PATH"
@@ -49,6 +50,7 @@ for f in sorted(glob.glob('$DL_HOME/schema/*.json')): json.load(open(f))
 # --- 2. init -------------------------------------------------------------
 printf '\n# init\n'
 check "dl init creates a project"          0 dl init "$PROJ"
+if [ -n "${DL_TEST_SITE:-}" ]; then cp "$DL_TEST_SITE" "$PROJ/.dl/config/site.md"; fi
 check "dl init refuses to re-init"         1 dl init "$PROJ"
 for p in .dl/config/site.md .dl/config/project.md .dl/config/harnesses.md \
          PROGRESS.md AGENTS.md GOTCHAS.md rules/null-is-upper-bound.md .dl/registry.tsv; do
@@ -166,7 +168,7 @@ for _ in $(seq 1 50); do [ -s iterations/iteration1/results/it1_01_result.tsv ] 
 [ -s iterations/iteration1/results/it1_01_result.tsv ] \
   && ok "job produced results" || no "job produced results"
 grep_ok "results reconcile to n=100" "^n[[:space:]]+100" iterations/iteration1/results/it1_01_result.tsv
-check "dl run works with container_runtime=none" 0 dl run any -- true
+check "dl run uses the configured Singularity runtime" 0 dl run runtime -- true
 
 # --- 6. guard ------------------------------------------------------------
 printf '\n# immutable-input guard\n'
@@ -226,6 +228,17 @@ cat > "iterations/iteration1/CROSSCHECK_adversary_codex_20260908T000000Z.md" <<'
 VERDICT: SOUND
 No findings; the null is reported as an upper bound.
 EOF
+python3 - "$DL_HOME" <<'PYTEST'
+import sys, json
+from pathlib import Path
+sys.path.insert(0, sys.argv[1] + '/lib')
+from harness import digest
+p=Path('iterations/iteration1/CROSSCHECK_adversary_codex_20260908T000000Z.md')
+data=dict(exit_code=0, verdict='SOUND', producer_family='anthropic', verifier_family='openai', same_family_override=False,
+          review_sha256=digest(p), report_sha256=digest('iterations/iteration1/results/report/iteration1_report.md'),
+          predeclaration_sha256=digest('iterations/iteration1/README.md'))
+Path(str(p)+'.json').write_text(json.dumps(data))
+PYTEST
 check "results gate passes when cross-checked" 0 dl gate results -n 1
 
 # The core mechanism: editing the pre-declaration after results must be caught.
@@ -286,6 +299,11 @@ p.write_text(p.read_text() + "\ntampered\n")
 EOF
 check "ledger check catches an altered pre-declaration" 1 dl ledger check
 grep_ok "ledger names the altered iteration" "iteration 1 — README.md altered" <(dl ledger check 2>&1)
+python3 - <<'RESTORE'
+from pathlib import Path
+p = Path('iterations/iteration1/README.md')
+p.write_text(p.read_text().removesuffix('\ntampered\n'))
+RESTORE
 
 # --- 11. config ----------------------------------------------------------
 printf '\n# configuration\n'

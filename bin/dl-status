@@ -17,7 +17,8 @@ dl_load_project
 if [ "$json" = 1 ]; then
   iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
           | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
-  printf '{\n  "project": "%s",\n  "iterations": [' "$DL_ROOT"
+  jsonroot=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$DL_ROOT")
+  printf '{\n  "project": %s,\n  "iterations": [' "$jsonroot"
   first=1
   for d in $iters; do
     dir="$DL_ITERS/iteration$d"
@@ -27,7 +28,7 @@ if [ "$json" = 1 ]; then
     elif [ -f "$dir/README.md" ]; then pre=draft; else pre=none; fi
     [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
       || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=none; }
-    xc=$(find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -c . || true)
+    xc=$(dl_crosschecks "$dir" | grep -c . || true)
     if [ -f "$dir/DAG.sha256" ]; then dag=frozen
     elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
     narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
@@ -66,7 +67,7 @@ for d in $iters; do
   [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
     || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=-; }
 
-  find "$dir" -name 'CROSSCHECK_*.md' -type f 2>/dev/null | grep -q . && xc=yes || xc=-
+  dl_crosschecks "$dir" | grep -q . && xc=yes || xc=-
 
   printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
 done
