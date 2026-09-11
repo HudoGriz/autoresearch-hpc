@@ -51,8 +51,9 @@ if [ -n "$prefix" ] && [ -x "$prefix/bin/nextflow" ]; then
   arh_ok "pinned host Nextflow: $prefix/bin/nextflow"
 else
   arh_fail "host Nextflow environment is not configured"
-  if command -v micromamba >/dev/null 2>&1; then arh_info "fix: $ARH_HOME/scripts/setup-nextflow.sh $ARH_ROOT $(command -v micromamba)"
-  else arh_info "fix: provide micromamba, then run scripts/setup-nextflow.sh PROJECT MICROMAMBA"; fi
+  arh_info "fix: $ARH_HOME/scripts/setup-nextflow.sh $ARH_ROOT"
+  arh_info "     this bootstraps a checksum-pinned project-local micromamba if needed"
+  arh_info "     offline/custom: scripts/setup-nextflow.sh PROJECT /path/to/micromamba"
   warn=$((warn+1))
 fi
 

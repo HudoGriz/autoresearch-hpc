@@ -22,6 +22,18 @@ cd /shared/study
 arh doctor
 ```
 
+For the normal automated setup, add `--bootstrap`:
+
+```bash
+arh init /shared/study --bootstrap
+```
+
+You do **not** need to install micromamba system-wide. The bootstrap logic uses a
+matching micromamba already on `PATH` when possible; otherwise it downloads the
+pinned standalone binary, verifies its SHA-256 checksum, and caches it inside the
+project under `.arh/tools/micromamba/`. No shell initialization or global PATH
+change is required.
+
 The task runtime is a micromamba image. Pull it once; point `APPTAINER_CACHEDIR`
 somewhere with space so the layer cache does not land in your home quota:
 
@@ -30,12 +42,10 @@ export APPTAINER_CACHEDIR=/shared/images/.cache
 singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
 ```
 
-If micromamba and the task SIF are already staged, initialization can configure
-the runtime in one step:
+With the task SIF staged, configure both pieces in one step:
 
 ```bash
 arh init /shared/study --bootstrap \
-  --micromamba "$(command -v micromamba)" \
   --runtime /shared/images/runtime.sif
 ```
 
@@ -43,9 +53,24 @@ The setup helpers remain available independently. They serialise their edits to
 `site.md`, so they are safe to run concurrently:
 
 ```bash
+# Normal path: automatically obtain/use the pinned standalone micromamba.
+scripts/setup-nextflow.sh /shared/study
+
+# Offline or explicit override: use a binary you staged yourself.
 scripts/setup-nextflow.sh /shared/study /absolute/path/to/micromamba
+
 scripts/setup-runtime.sh /shared/study /shared/images/runtime.sif
 ```
+
+The exact micromamba release and per-platform checksums are pinned in
+`config/dependencies.json`. The selected binary and its digest are recorded in
+`.arh/micromamba.lock`, while the explicit package list for the host Nextflow
+environment is recorded in `.arh/nextflow-host-explicit.lock`.
+
+Automatic micromamba bootstrap currently supports Linux x86-64, ARM64 and
+ppc64le. On a restricted/offline HPC, stage the binary yourself and pass its path
+as the second argument to `scripts/setup-nextflow.sh` or with
+`arh init --bootstrap --micromamba /path/to/micromamba`.
 
 `nextflow_prefix` is the host controller environment. `runtime_image` plus
 `runtime_sha256` identify the task SIF. The optional `runtime_prefix` is a task

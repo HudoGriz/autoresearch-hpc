@@ -5,7 +5,7 @@ Versions are protocol/tooling versions; see `PROTOCOL.md`.
 
 ## [Unreleased]
 
-Fixes found by running AutoResearch HPC on a real study: nine iterations of an
+Most fixes below were found by running AutoResearch HPC on a real study: nine iterations of an
 exome structural-variant project on a Slurm + Singularity cluster, with Codex as
 the foreign reviewer.
 
@@ -70,6 +70,10 @@ the foreign reviewer.
   `test_live_owner_lock_is_kept`.
 
 ### Changed
+- Host bootstrap no longer requires micromamba to be installed beforehand. The
+  pinned standalone binary is downloaded on demand, SHA-256 verified, cached
+  under the project `.arh/tools/` directory, and recorded in `micromamba.lock`.
+  Explicit `--micromamba` / staged-binary use remains available for offline HPCs.
 - The README uses the full-resolution banner (`docs/assets/banner.png`). The
   low-resolution JPEG and the unreferenced WebP are gone. Setup steps are
   numbered consistently, and the README documents SSH cloning and

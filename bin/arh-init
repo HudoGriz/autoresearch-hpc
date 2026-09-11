@@ -10,9 +10,9 @@ usage: arh init [dir] [options]
 
 Options:
   --scheduler auto|local|slurm|pbs  scheduler written to site.md (default: auto)
-  --micromamba PATH                 micromamba binary for host Nextflow setup
+  --micromamba PATH                 optional micromamba override for host Nextflow setup
   --runtime IMAGE.sif               task runtime image to configure
-  --bootstrap                       build the host Nextflow environment now
+  --bootstrap                       build the host Nextflow environment now; downloads a pinned project-local micromamba if needed
   -h, --help                        show this help
 
 Without flags, `arh init` discovers the scheduler/container command and creates
@@ -83,10 +83,12 @@ for key,value in {'scheduler':sys.argv[2], 'container_runtime':sys.argv[3]}.item
 p.write_text(text)
 PY
 
-if [ -z "$micromamba" ] && command -v micromamba >/dev/null 2>&1; then micromamba=$(command -v micromamba); fi
 if [ "$bootstrap" = 1 ]; then
-  [ -n "$micromamba" ] || arh_die "--bootstrap needs micromamba on PATH or --micromamba PATH"
-  "$ARH_HOME/scripts/setup-nextflow.sh" "$target" "$micromamba"
+  if [ -n "$micromamba" ]; then
+    "$ARH_HOME/scripts/setup-nextflow.sh" "$target" "$micromamba"
+  else
+    "$ARH_HOME/scripts/setup-nextflow.sh" "$target"
+  fi
 fi
 if [ -n "$runtime" ]; then "$ARH_HOME/scripts/setup-runtime.sh" "$target" "$runtime"; fi
 
@@ -96,6 +98,6 @@ printf '  detected container command: %s\n' "$runtime_cmd"
 printf '\nNext:\n  cd %q\n  arh doctor\n' "$target"
 if [ "$bootstrap" = 0 ]; then
   printf '\nTo prepare the pinned host Nextflow environment automatically:\n'
-  if [ -n "$micromamba" ]; then printf '  %s/scripts/setup-nextflow.sh %q %q\n' "$ARH_HOME" "$target" "$micromamba"
-  else printf '  install/provide micromamba, then run scripts/setup-nextflow.sh (doctor will show details)\n'; fi
+  printf '  %s/scripts/setup-nextflow.sh %q\n' "$ARH_HOME" "$target"
+  printf '  (a pinned standalone micromamba is cached under .arh/tools if needed)\n'
 fi

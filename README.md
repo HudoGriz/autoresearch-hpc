@@ -99,9 +99,9 @@ https://github.com/HudoGriz/autoresearch-hpc
 
 and ask:
 
-> Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, configure the required host-side tools and harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
+> Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, run the automatic bootstrap, configure the harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
 
-The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. You stay in control of any installation or system-level change it proposes.
+The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. The host bootstrap does **not** require a pre-installed Conda or micromamba environment.
 
 **By hand:**
 
@@ -110,20 +110,28 @@ git clone https://github.com/HudoGriz/autoresearch-hpc.git   # or: git@github.co
 cd autoresearch-hpc
 export PATH="$PWD/bin:$PATH"
 
-arh init /shared/my-study
+arh init /shared/my-study --bootstrap
 cd /shared/my-study
 arh doctor
 ```
 
-`arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. `arh doctor` reports what still needs configuration.
+`arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. With `--bootstrap`, it also prepares the pinned host-side Nextflow/Python environment. `arh doctor` reports what still needs configuration.
 
-**Micromamba is not a protocol requirement.** The automated bootstrap uses a standalone micromamba binary to create a pinned host-side Nextflow/Python environment; it does not need a system-wide install. With that path, one command configures the study:
+**You do not need to install micromamba yourself.** Micromamba is a standalone executable. AutoResearch HPC first reuses its own pinned project-local copy, then a matching version already on `PATH`; if neither exists it downloads the pinned binary, verifies its SHA-256 checksum, and caches it under `.arh/tools/micromamba/`. It does not run `micromamba shell init` or modify your shell configuration.
+
+If your HPC cannot access GitHub, stage a micromamba binary once and provide it explicitly:
+
+```bash
+arh init /shared/my-study --bootstrap \
+  --micromamba /shared/tools/micromamba
+```
+
+To configure the task runtime at the same time, pull its image once and pass it in:
 
 ```bash
 singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
 
 arh init /shared/my-study --bootstrap \
-  --micromamba "$(command -v micromamba)" \
   --runtime /shared/images/runtime.sif
 ```
 

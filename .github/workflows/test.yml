@@ -22,11 +22,10 @@ jobs:
           export PATH="$PWD/.ci/bin:$PWD/bin:$PATH"
           echo "$PWD/.ci/bin" >> "$GITHUB_PATH"
           echo "$PWD/bin" >> "$GITHUB_PATH"
-          bin/arh init "$PWD/.ci/study"
+          bin/arh init "$PWD/.ci/study" --bootstrap
+          test -x "$PWD/.ci/study/.arh/tools/micromamba/2.8.1-0/linux-64/micromamba"
+          grep -q '^source=downloaded$' "$PWD/.ci/study/.arh/micromamba.lock"
           singularity pull "$PWD/.ci/runtime.sif" docker://mambaorg/micromamba:2.8.1
-          singularity exec "$PWD/.ci/runtime.sif" cat /bin/micromamba > "$PWD/.ci/bin/micromamba"
-          chmod +x "$PWD/.ci/bin/micromamba"
-          scripts/setup-nextflow.sh "$PWD/.ci/study" "$PWD/.ci/bin/micromamba"
           scripts/setup-runtime.sh "$PWD/.ci/study" "$PWD/.ci/runtime.sif"
           bin/arh --version
           bin/arh --help >/dev/null
@@ -52,7 +51,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning --shell=bash \
-            bin/arh bin/arh-* lib/*.sh harness/install.sh test/run_tests.sh
+            bin/arh bin/arh-* lib/*.sh harness/install.sh scripts/setup-nextflow.sh test/run_tests.sh
 
   schemas:
     runs-on: ubuntu-latest
