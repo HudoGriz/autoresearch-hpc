@@ -2,7 +2,7 @@
 
 Adapted from ARIS research-review's initial review rubric; revision and MIT
 license are recorded in third_party/aris/. This bounded role retains the research
-questions and delegates call limits/evidence handling to discovery-loop.
+questions and delegates call limits/evidence handling to AutoResearch HPC.
 
 Start from the possibility that the work is broken. Check the supplied evidence:
 1. Logical gaps or unjustified claims.

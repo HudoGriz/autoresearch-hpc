@@ -1,4 +1,4 @@
-# Codex CLI profile for a discovery-loop project.
+# Codex CLI profile for an AutoResearch HPC project.
 # The contract itself is AGENTS.md, which Codex reads natively.
 
 [profiles.discovery]

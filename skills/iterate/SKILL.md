@@ -55,6 +55,17 @@ arh ask --role estimand-auditor -n N
 
 Evaluate findings on their merits. A verdict is evidence, not a ruling.
 
+**Where to record it.** A review is bound to the report's sha256 and to every
+file under `results/`. Editing the report, or adding a file under `results/`,
+after the review makes it ineligible. So:
+
+- write the report's *Cross-check* section before `arh ask`, as a pointer;
+- put your evaluation in `iterations/iterationN/REVIEW_RESPONSE.md` — at the
+  iteration root, outside `results/`, and not named `CROSSCHECK_*` (that glob
+  counts review attempts);
+- if a finding needs new computation, do it through `arh verify`, not by
+  changing the iteration, and append the outcome to the response file.
+
 ## 6. Conclude
 
 ```bash

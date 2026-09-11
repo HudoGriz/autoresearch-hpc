@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# discovery-loop test suite. Exercises the whole loop end to end with a generic
+# AutoResearch HPC test suite. Exercises the whole loop end to end with a generic
 # toy study — no domain tools, no cluster, no network.
 #
 #   test/run_tests.sh            run in a temp dir, clean up
@@ -32,7 +32,7 @@ grep_ok() { # <desc> <pattern> <file>
 cleanup() { [ -n "${KEEP:-}" ] && printf '\nkept: %s\n' "$WORK" || rm -rf "$WORK"; }
 trap cleanup EXIT
 
-printf '# discovery-loop test suite\n# scratch: %s\n\n' "$WORK"
+printf '# AutoResearch HPC test suite\n# scratch: %s\n\n' "$WORK"
 
 # --- 1. framework --------------------------------------------------------
 printf '# framework\n'

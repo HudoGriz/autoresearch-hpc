@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/autoresearch-hpc-banner.jpg" alt="AutoResearch HPC — auditable AI-assisted research on HPC" width="100%">
+  <img src="docs/assets/banner.png" alt="autoresearch-hpc — auditable AI-assisted research on HPC. An agent pre-declares an experiment (arh claim, arh new, arh gate predeclare), executes it through Nextflow, Slurm/PBS and Apptainer, then reviews and records it: append-only, reproducible, auditable." width="100%">
 </p>
 
 <p align="center">
@@ -19,16 +19,25 @@
   <a href="#skills-and-cli">Skills + CLI</a> ·
   <a href="docs/hpc-execution.md">HPC setup</a> ·
   <a href="PROTOCOL.md">Protocol</a> ·
-  <a href="docs/validation.md">Validation</a>
+  <a href="docs/validation.md">Validation</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 ---
 
-AutoResearch HPC (`arh`) is a small research-protocol layer for **AI-assisted experimentation on infrastructure you already own**. A coding agent can propose and implement an experiment, while `arh` makes the important boundaries mechanical: claim an iteration, pre-declare it before results exist, execute through the configured HPC stack, preserve failures, request a review from another model family, and write the outcome into an append-only research record.
+AutoResearch HPC (`arh`) is a small research-protocol layer for **AI-assisted experimentation on infrastructure you already own**. A coding agent can propose and implement an experiment. `arh` makes the important boundaries mechanical:
 
-It is deliberately **not** another scheduler, workflow engine, or autonomous research daemon. Nextflow handles workflow execution and caching; Slurm/PBS/local provide compute; Singularity/Apptainer provides pinned task environments. AutoResearch HPC sits above those pieces and makes the *research process* inspectable.
+- claim an iteration;
+- pre-declare it before results exist;
+- execute it through the configured HPC stack;
+- preserve failures;
+- have a model from another family review it;
+- write the outcome into an append-only research record.
 
-> **Two layers, one workflow:** **skills** tell an agent *how to conduct the research task*; the **`arh` CLI** enforces the parts that should not depend on an agent remembering the rules.
+It is deliberately **not** another scheduler, workflow engine or autonomous research daemon. Nextflow handles workflow execution and caching; Slurm/PBS/local provide compute; Singularity/Apptainer provides pinned task environments. AutoResearch HPC sits above those pieces and makes the *research process* inspectable.
+
+> [!NOTE]
+> **Two layers, one workflow.** **Skills** tell an agent *how to conduct the research task*; the **`arh` CLI** enforces the parts that should not depend on an agent remembering the rules.
 
 ## The research loop
 
@@ -47,10 +56,10 @@ Each phase has a concrete protocol meaning:
 | Phase | What happens | Core interface | Durable evidence |
 |---|---|---|---|
 | **1 · Pre-declare** | Claim one question, define the estimand, controls, detection limit and acceptance criteria, then freeze the plan | `arh claim` · `arh new` · `arh gate predeclare` | `CLAIM.json` · `README.md` · `PREDECLARATION.sha256` |
-| **2 · Execute** | Run the declared workflow with pinned scientific tooling on the configured compute backend | `arh submit` · `arh run` | scripts · workflow metadata · logs · results |
-| **3 · Review & record** | Report the declared quantity, cross-check it, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · `PROGRESS.md` |
+| **2 · Execute** | Run the declared workflow with pinned scientific tooling on the configured compute backend | `arh submit` · `arh run` | scripts · workflow metadata · run receipts · logs · results |
+| **3 · Review & record** | Report the declared quantity, cross-check it, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · review response · `PROGRESS.md` |
 
-The execution path underneath phase 2 is the infrastructure you already know:
+Phase 2 runs on infrastructure you already know:
 
 ```text
 Nextflow controller  →  Slurm / PBS / local  →  Singularity / Apptainer tasks
@@ -60,9 +69,9 @@ The controller stays on the host so it can see the site's scheduler. Scientific 
 
 ## Skills and CLI
 
-Yes — **the workflow can be invoked as a skill**, but the skills and commands are not the same thing.
+You can drive the workflow as a **skill**, but skills and commands are not the same thing.
 
-**Skills are high-level agent playbooks.** They describe how to approach a research action and which checks matter. **`arh` commands are deterministic operations.** They create state, freeze declarations, launch execution, validate gates, and maintain the record.
+**Skills are high-level agent playbooks.** They describe how to approach a research action and which checks matter. **`arh` commands are deterministic operations.** They create state, freeze declarations, launch execution, validate gates and maintain the record.
 
 | Skill / workflow | What the agent is being asked to do | Main `arh` machinery underneath |
 |---|---|---|
@@ -74,30 +83,30 @@ Yes — **the workflow can be invoked as a skill**, but the skills and commands 
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
 | **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
 
-For **Claude Code**, `harness/install.sh` copies the skills into `.claude/skills/`, where they appear as skills such as `/iterate`, `/verify`, `/cross-check` and `/ledger`. Other harnesses consume the same project contract and skill material through their adapters. The portable source of truth remains the files in `skills/` and `AGENTS.md`.
+For **Claude Code**, `harness/install.sh` copies the skills into `.claude/skills/`, where they appear as `/iterate`, `/verify`, `/cross-check` and `/ledger`. Other harnesses read the same project contract and skill material through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
 
-That separation is important: an agent may choose to *use the Iterate skill*, but `arh gate predeclare` is what actually refuses a late or altered pre-declaration.
+The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
 ## Quick start
 
-### Easiest: ask your AI harness to set it up
+### 1. Set up
 
-If you are already using **Claude Code, Codex, OpenCode, Cursor, Copilot, or another coding agent**, you do not need to copy the setup commands by hand. Give the agent this repository:
+**Easiest: ask your coding agent.** If you use Claude Code, Codex, OpenCode, Cursor, Copilot or another coding agent, give it this repository:
 
 ```text
 https://github.com/HudoGriz/autoresearch-hpc
 ```
 
-and ask it:
+and ask:
 
 > Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, configure the required host-side tools and harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
 
-The repository ships `AGENTS.md`, reusable skills, and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. You remain in control of any installation or system-level change it proposes.
+The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. You stay in control of any installation or system-level change it proposes.
 
-### Manual setup
+**By hand:**
 
 ```bash
-git clone https://github.com/HudoGriz/autoresearch-hpc.git
+git clone https://github.com/HudoGriz/autoresearch-hpc.git   # or: git@github.com:HudoGriz/autoresearch-hpc.git
 cd autoresearch-hpc
 export PATH="$PWD/bin:$PATH"
 
@@ -108,9 +117,11 @@ arh doctor
 
 `arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. `arh doctor` reports what still needs configuration.
 
-**Micromamba is not a protocol requirement.** The current automated bootstrap uses a standalone micromamba binary to create a pinned host-side Nextflow/Python environment. It does not need to be installed system-wide. If you use that bootstrap path:
+**Micromamba is not a protocol requirement.** The automated bootstrap uses a standalone micromamba binary to create a pinned host-side Nextflow/Python environment; it does not need a system-wide install. With that path, one command configures the study:
 
 ```bash
+singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
+
 arh init /shared/my-study --bootstrap \
   --micromamba "$(command -v micromamba)" \
   --runtime /shared/images/runtime.sif
@@ -123,6 +134,9 @@ Project state lives under `.arh/`:
 .arh/config/project.md     immutable inputs and standing project rules
 .arh/config/harnesses.md   producer / verifier harnesses and model families
 ```
+
+> [!TIP]
+> `arh` finds the study by walking up from the working directory. Agent harnesses often reset the shell's directory between commands, so `export ARH_PROJECT=/shared/my-study` to make every command resolve the study from anywhere.
 
 ### 2. Run one declared experiment
 
@@ -151,7 +165,7 @@ arh next
 arh context -n N
 ```
 
-`PROGRESS.md` is the authoritative project state. The goal is that a project can be resumed cold from what is on disk rather than from an old chat transcript.
+`PROGRESS.md` is the authoritative project state. A project should be resumable cold from what is on disk rather than from an old chat transcript.
 
 ## What gets recorded
 
@@ -167,8 +181,9 @@ my-study/
 │       ├── README.md                pre-declaration written before results
 │       ├── PREDECLARATION.sha256    frozen declaration hash
 │       ├── scripts/  resources/  metadata/
-│       ├── results/  logs/
-│       └── CROSSCHECK_*.md
+│       ├── results/  logs/          results, run receipts, traces
+│       ├── CROSSCHECK_*.md          foreign-family reviews
+│       └── REVIEW_RESPONSE.md       what was done about each finding
 └── verification/                    re-examinations of existing results
 ```
 
@@ -176,7 +191,7 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 
 ## Beyond the basic loop
 
-The top-level diagram above is a **research loop**, not the discovery DAG. `arh dag` is an advanced feature used when a load-bearing result needs its actual dependency path reconstructed from inputs to claim.
+The diagram above is a **research loop**, not the discovery DAG. `arh dag` is an advanced feature, used when a load-bearing result needs its actual dependency path reconstructed from inputs to claim.
 
 ```bash
 arh arm new ...             # parallel sub-analysis inside one iteration
@@ -201,7 +216,9 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. The current validation baseline passes **137 core checks and 31 boundary regressions**, including real Slurm success/failure, native cache reuse and an immutable-input container probe.
+AutoResearch HPC is **experimental and pre-1.0**. The current baseline passes **137 core checks and 37 boundary regressions**. Earlier validation runs added real Slurm success/failure, native cache reuse and an immutable-input container probe.
+
+It has also been used on a real nine-iteration exome structural-variant study on a Slurm + Singularity cluster. The review, submission and provenance defects that study surfaced are fixed; see the [changelog](CHANGELOG.md).
 
 ```bash
 export ARH_TEST_SITE=/absolute/path/to/configured/local/site.md
@@ -219,11 +236,12 @@ The protocol is a cooperative research-integrity system, not a hostile-code sand
 |---|---|
 | **Protocol** | [Normative protocol v0.2.0](PROTOCOL.md) |
 | **Agent contract** | [AGENTS.md](AGENTS.md) |
-| **HPC execution** | [Nextflow, schedulers and containers](docs/hpc-execution.md) |
+| **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
-| **Migration / hardening** | [Implementation notes](docs/migration-hardening.md) |
+| **Migration / hardening** | [Moving a 0.1 study to 0.2, and implementation notes](docs/migration-hardening.md) |
 | **Positioning** | [What this project is — and is not](docs/positioning.md) |
+| **Changes** | [CHANGELOG.md](CHANGELOG.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Built on existing work

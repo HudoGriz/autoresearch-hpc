@@ -3,8 +3,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -186,6 +189,33 @@ ask_timeout = {timeout}
         self.call('ask', '-n', '1', '--note', 'Third check exceeds budget', good=False)
         self.assertEqual(len(list(self.it.glob('CROSSCHECK_*.md.json'))), 2)
 
+    def test_provider_error_does_not_consume_round(self):
+        # codex exec printed this and exited 0 on a real cluster (2026-09-10).
+        self.configure("print(\"ERROR: You've hit your usage limit. Try again at 4:13 PM.\")")
+        result = self.ask(good=False)
+        self.assertIn('did not consume a review round', result.stderr)
+        self.assertIn('PROVIDER ERROR', self.call('gate', 'results', '-n', '1', good=False).stdout)
+        self.configure()
+        self.ask()                                   # first real round: no --note required
+        self.call('ask', '-n', '1', '--note', 'Concrete second check')
+        self.assertEqual(len(list(self.it.glob('CROSSCHECK_*.md.json'))), 3)
+        self.gate()
+
+    def test_rule_violation_blocks_review_before_dispatch(self):
+        # A report the results gate will reject must not be sent for review: fixing it afterwards
+        # invalidates the review and costs a round (2026-09-11).
+        # Violates detection-limit-stated (it never states one); every other rule is satisfied.
+        self.report.write_text('Negative controls reject failures. Candidate only.\n')
+        result = self.ask(good=False)
+        self.assertIn('standing rules', result.stderr)
+        self.assertFalse(list(self.it.glob('CROSSCHECK_*.md.json')))
+
+    def test_verbose_stderr_does_not_abort_review(self):
+        # codex exec echoes the entire prompt to stderr; a 16 KB stderr cap killed every real
+        # review (exit 66) before the model answered (2026-09-11).
+        self.configure("import sys; sys.stderr.write('x' * 40000); print('VERDICT: SOUND')")
+        self.ask(); self.gate()
+
     def test_input_budget_prevents_dispatch(self):
         self.call('ask', '-n', '1', '--note', 'x'*25000, good=False)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*.md.json')))
@@ -205,6 +235,44 @@ ask_timeout = {timeout}
         script=self.it/'scripts/it1_01_busy.nf'; script.write_text('workflow {}')
         result=self.call('submit',str(script),'-n','busy',good=False)
         self.assertIn('already running',result.stderr)
+
+    def test_live_owner_lock_is_kept(self):
+        lock=self.it/'metadata/nextflow/busy/.launch-lock'; lock.mkdir(parents=True)
+        (lock/'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': os.getpid()}))
+        script=self.it/'scripts/it1_01_busy.nf'; script.write_text('workflow {}')
+        result=self.call('submit',str(script),'-n','busy',good=False)
+        self.assertIn('already running',result.stderr); self.assertTrue(lock.is_dir())
+
+    def test_dead_owner_lock_reclaimed_and_scripts_hashed(self):
+        # A wrapper killed before its `finally` left .launch-lock behind and every later submit
+        # under that name refused; the receipt also hashed the workflow but not the scripts it
+        # calls (2026-09-11).
+        dead=subprocess.Popen(['true']); dead.wait()
+        lock=self.it/'metadata/nextflow/ok/.launch-lock'; lock.mkdir(parents=True)
+        (lock/'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': dead.pid}))
+        (self.it/'scripts/it1_00_helper.py').write_text('print(1)\n')
+        script=self.it/'scripts/it1_01_ok.sh'; script.write_text('set -euo pipefail\nexit 0\n')
+        result=self.call('submit',str(script),'-n','ok')
+        self.assertIn('reclaimed a launch lock',result.stderr); self.assertFalse(lock.exists())
+        record=json.loads(next((self.it/'logs/nextflow/ok').glob('attempt-*/run.json')).read_text())
+        self.assertIn('iterations/iteration1/scripts/it1_00_helper.py',record['script_sha256'])
+
+    def test_sigterm_to_wrapper_releases_lock(self):
+        # Stopping a submit by signalling its wrapper left the lock behind (2026-09-11). The
+        # wrapper now forwards the signal to Nextflow, records it, and releases the lock.
+        script=self.it/'scripts/it1_01_slow.sh'; script.write_text('sleep 300\n')
+        proc=subprocess.Popen([str(ROOT/'bin/arh'),'submit',str(script),'-n','slow'],env=self.env,cwd=self.root,
+                              stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        work=self.it/'metadata/nextflow/slow/work'; deadline=time.time()+120
+        while proc.poll() is None and time.time()<deadline and not list(work.glob('*/*/.command.begin')):
+            time.sleep(0.5)
+        if proc.poll() is not None:     # build the message only on failure: communicate() blocks
+            self.fail('submit ended before its task started: '+proc.communicate()[1][-2000:])
+        proc.send_signal(signal.SIGTERM); out,err=proc.communicate(timeout=120)
+        self.assertNotEqual(proc.returncode,0,err)
+        self.assertFalse((self.it/'metadata/nextflow/slow/.launch-lock').exists())
+        record=json.loads(next((self.it/'logs/nextflow/slow').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(record['signal'],'SIGTERM')
 
 
 if __name__ == '__main__':

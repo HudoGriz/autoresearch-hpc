@@ -35,6 +35,18 @@ dir="$ARH_ITERS/iteration$n"
 roledoc="$ARH_HOME/skills/cross-check/roles/$role.md"
 [ -f "$roledoc" ] || arh_die "unknown role: $role (see skills/cross-check/roles/)"
 
+# Standing rules are enforced again by `arh gate results`, but only after the review. A report
+# that fails them then has to be edited, which invalidates the hash-bound review and costs a
+# round. Check first, while fixing the report is still free.
+report_file="$dir/results/report/iteration${n}_report.md"
+if [ "$role" != reimplementer ] && [ -f "$report_file" ]; then
+  if ! rule_out=$("$ARH_HOME/bin/arh" gate rules "$report_file" 2>&1); then
+    printf '%s\n' "$rule_out" | grep -E 'FAIL' >&2 || true
+    arh_die "the report fails the standing rules; fix it before review (arh gate rules ${report_file#"$ARH_ROOT"/}).
+       Editing a report after its review invalidates the review."
+  fi
+fi
+
 producer=$(arh_config_get "$ARH_HARN" producer claude)
 [ -n "$harness" ] || harness=$(arh_config_get "$ARH_HARN" verifier codex)
 
@@ -145,6 +157,11 @@ set -e
 cp "$prompt" "$out.prompt"
 [ -s "$out.err" ] || rm -f "$out.err"
 
+if [ "$rc" -eq 75 ]; then
+  arh_warn "verifier unavailable: the provider refused the call (quota, rate limit or auth).
+       This attempt did not consume a review round; record kept at $out"
+  exit "$rc"
+fi
 if [ "$rc" -ne 0 ]; then
   arh_warn "harness exited $rc — partial record kept at $out"
   exit "$rc"

@@ -4,7 +4,7 @@ The useful core is a portable research protocol with executable gates. Keep it s
 
 ## Existing frameworks: checked against primary sources
 
-| System | What it supplies | Implication for discovery-loop |
+| System | What it supplies | Implication for AutoResearch HPC |
 |---|---|---|
 | [ARIS](https://github.com/wanshuiyin/auto-claude-code-research-in-sleep) | Markdown skills, research workflows and cross-model reviews usable across agent harnesses | Closest match. Portable prompts and cross-model review alone are not a differentiator; explicit estimands, frozen plans, negative controls and durable evidence checks are the useful focus here. |
 | [AI Scientist v2](https://github.com/SakanaAI/AI-Scientist-v2) | Automated ideation, experiment execution and manuscript production, with experiment search | A reference for research automation, not a drop-in HPC protocol or proof that generated conclusions are reliable. |

@@ -47,7 +47,8 @@ arh_find_project() {
     [ -d "$d/.arh" ] && { printf '%s' "$d"; return 0; }
     d=$(dirname "$d")
   done
-  arh_die "not inside an AutoResearch HPC project (no .arh/ found). Run: arh init <dir>"
+  arh_die "not inside an AutoResearch HPC project (no .arh/ found from ${ARH_PROJECT:-$PWD}).
+       Run: arh init <dir>, or export ARH_PROJECT=<study> to work from any directory"
 }
 
 arh_load_project() {

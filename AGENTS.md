@@ -21,6 +21,7 @@ iterations/iterationN/
   results/report/iterationN_report.md
   logs/
   CROSSCHECK_<role>_<harness>_<ts>.md
+  REVIEW_RESPONSE.md            your evaluation of each review finding
 ```
 
 Project/runtime configuration lives under `.arh/config/`.
@@ -38,6 +39,14 @@ arh ask --role adversary -n N        # foreign-family cross-check
 arh gate results -n N                # verifies the declaration stayed frozen
 arh ledger render && arh ledger check
 ```
+
+`arh` finds the project by walking up from the working directory. If your
+harness resets the shell's directory between commands, `export ARH_PROJECT=<study>`
+so every command resolves the project from anywhere.
+
+A review is bound to the report's sha256 and to every file under `results/`.
+Write the report's *Cross-check* section as a pointer before `arh ask`, and put
+your evaluation of the findings in `REVIEW_RESPONSE.md` at the iteration root.
 
 To re-examine a result an iteration already produced, use the verification
 track instead of silently revising the original:

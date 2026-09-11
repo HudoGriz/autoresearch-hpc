@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
+import socket
 import subprocess
 import shutil
 import shlex
@@ -16,6 +18,49 @@ from project import config, guard
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def alive(pid):
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, ValueError, TypeError, OverflowError):
+        return True
+    return True
+
+
+def acquire(lock, parser):
+    """Take the named launch lock. A lock whose recorded owner is a dead process on this host is
+    reclaimed; a lock with no owner record, or a live or remote owner, is left alone."""
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        try:
+            owner = json.loads((lock / 'owner.json').read_text())
+        except (OSError, ValueError):
+            owner = None
+        if not owner or owner.get('host') != socket.gethostname() or alive(owner.get('pid')):
+            where = f" (owner pid {owner.get('pid')} on {owner.get('host')}; stop it with kill -TERM)" if owner else ''
+            parser.error('this named workflow is already running; inspect .launch-lock before recovery' + where)
+        stale = lock.with_name(f'{lock.name}.stale-{os.getpid()}')
+        try:
+            lock.rename(stale)      # atomic: of two reclaimers only one succeeds
+        except OSError:
+            parser.error('this named workflow is already running; inspect .launch-lock before recovery')
+        shutil.rmtree(stale, ignore_errors=True)
+        print(f"arh: reclaimed a launch lock left by dead process {owner['pid']} on {owner['host']}", file=sys.stderr)
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            parser.error('this named workflow is already running; inspect .launch-lock before recovery')
+    (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': os.getpid(),
+                                                 'started': datetime.now(timezone.utc).isoformat()}) + '\n')
+
+
+def release(lock):
+    (lock / 'owner.json').unlink(missing_ok=True)
+    lock.rmdir()
 
 
 def run():
@@ -70,10 +115,7 @@ def run():
     engine.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
     lock = engine / '.launch-lock'
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        parser.error('this named workflow is already running; inspect .launch-lock before recovery')
+    acquire(lock, parser)
     try:
         attempt = Path(tempfile.mkdtemp(prefix='attempt-', dir=logs))
         env = dict(os.environ, NXF_HOME=str(root / '.arh/nextflow'), NXF_VER=version,
@@ -141,8 +183,14 @@ def run():
             cmd += ['--arh_script', str(workflow), '--arh_project', str(root)]
         else:
             cmd += ['--outdir', str(iteration / 'results' / name)]
+        # Workflows call the iteration's scripts by path, and those scripts are not Nextflow inputs:
+        # without their hashes two receipts of runs that did different things can look identical.
+        scripts = iteration / 'scripts'
+        script_sha256 = ({str(p.relative_to(root)): sha(p) for p in sorted(scripts.rglob('*'))
+                          if p.is_file() and '__pycache__' not in p.parts} if scripts.is_dir() else {})
         record = dict(engine='nextflow', version=version, executable_sha256=expected, environment_prefix=prefix,
                       workflow=str(workflow.relative_to(root)), workflow_sha256=sha(workflow),
+                      script_sha256=script_sha256,
                       predeclaration_sha256=sha(iteration / 'README.md'),
                       params_sha256=sha(args.params) if args.params else None,
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
@@ -152,17 +200,35 @@ def run():
                       resume=args.resume, command=cmd, started=datetime.now(timezone.utc).isoformat())
         receipt = attempt / 'run.json'
         receipt.write_text(json.dumps(record, indent=2) + '\n')
+        received = []
         with (attempt / 'console.log').open('w') as output:
-            result = subprocess.run(cmd, cwd=engine, env=env, stdout=output, stderr=subprocess.STDOUT)
-        record.update(exit_code=result.returncode, finished=datetime.now(timezone.utc).isoformat())
+            proc = subprocess.Popen(cmd, cwd=engine, env=env, stdout=output, stderr=subprocess.STDOUT)
+
+            def forward(signum, frame):
+                # Stopping the wrapper must stop Nextflow (which cancels its jobs) and still reach
+                # the `finally` that releases the launch lock. A second signal escalates.
+                received.append(signal.Signals(signum))
+                proc.send_signal(signal.SIGTERM if len(received) == 1 else signal.SIGKILL)
+
+            handlers = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+            try:
+                returncode = proc.wait()
+            finally:
+                for s, handler in handlers.items():
+                    signal.signal(s, handler)
+        record.update(exit_code=returncode, finished=datetime.now(timezone.utc).isoformat())
+        if received:
+            record['signal'] = received[0].name
+            returncode = returncode or 128 + received[0].value
         receipt.write_text(json.dumps(record, indent=2) + '\n')
         print(attempt)
-        print(f'arh: Nextflow exit={result.returncode}; trace and logs: {attempt}', file=sys.stderr)
-        if result.returncode:
+        print(f'arh: Nextflow exit={record["exit_code"]}; trace and logs: {attempt}'
+              + (f'; stopped by {record["signal"]}' if received else ''), file=sys.stderr)
+        if returncode:
             print('\n'.join((attempt / 'console.log').read_text().splitlines()[-20:]), file=sys.stderr)
-        return result.returncode
+        return returncode
     finally:
-        lock.rmdir()
+        release(lock)
 
 
 if __name__ == '__main__':

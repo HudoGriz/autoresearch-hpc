@@ -9,7 +9,7 @@ Optional — put `bin/` on PATH for every session in the project, in
 
 ```json
 {
-  "env": { "PATH": "${PWD}/../discovery-loop/bin:${PATH}" },
+  "env": { "PATH": "${PWD}/../autoresearch-hpc/bin:${PATH}" },
   "permissions": {
     "allow": ["Bash(arh:*)", "Bash(arh-*:*)", "Bash(sbatch:*)", "Bash(squeue:*)"]
   }

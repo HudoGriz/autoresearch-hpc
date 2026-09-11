@@ -29,8 +29,9 @@ hook. Claude reads it through `CLAUDE.md`; other supported harnesses use
 ## Deterministic budget controls
 
 `arh ask` defaults to bounded input/output bytes, elapsed time and attempts per
-iteration. Failed attempts consume a round; concurrent reviews are locked and an
-unchanged eligible review is reused. `arh context` supplies a compact deterministic
+iteration. Failed attempts consume a round, except provider refusals (quota,
+rate limit, authentication), which are recorded but not counted. Concurrent
+reviews are locked and an unchanged eligible review is reused. `arh context` supplies a compact deterministic
 handoff, while execution, polling and status do not call a model.
 
 These controls do not cap provider billing, system prompts or hidden harness

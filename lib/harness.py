@@ -44,6 +44,24 @@ def valid_records(directory):
     return valid
 
 
+# A provider that refuses the call (quota, rate limit, authentication) is an unavailable
+# verifier, not a review. Some CLIs exit 0 when this happens (`codex exec` printed
+# "You've hit your usage limit" and exited 0), so it is recognised from the text of a response
+# that carries no VERDICT line.
+PROVIDER_ERROR = re.compile(
+    r"usage limit|rate.?limit|quota|too many requests|\b429\b|\b401\b|\b403\b|"
+    r"unauthori[sz]ed|authentication|insufficient.?(credit|balance)|try again (at|in)|overloaded",
+    re.I)
+
+
+def provider_error(path):
+    """True if the cross-check record at PATH was a provider refusal, not a review."""
+    try:
+        return bool(json.loads(Path(str(path) + '.json').read_text()).get('provider_error'))
+    except (OSError, ValueError):
+        return False
+
+
 def budget():
     directory, prompt, command, role, harness, pf, vf, max_input, max_rounds, note, dry = sys.argv[2:]
     if Path(prompt).stat().st_size > int(max_input):
@@ -58,7 +76,9 @@ def budget():
             return
     if dry == '1':
         return
-    attempts = len(list(Path(directory).glob('CROSSCHECK_*.md')))
+    # Provider refusals are not review rounds: counting them let one quota error spend half of
+    # an iteration's two-round budget without any model having read the work.
+    attempts = len([p for p in Path(directory).glob('CROSSCHECK_*.md') if not provider_error(p)])
     if attempts >= int(max_rounds):
         sys.exit('review round budget exhausted; leave unresolved work recorded or deliberately revise the budget')
     if attempts and not note.strip():
@@ -113,7 +133,10 @@ def run():
                     available = max(0, maximum - received[key.fileobj])
                     target.write(chunk[:available])
                     received[key.fileobj] += len(chunk)
-                    if received[key.fileobj] > maximum:
+                    # Only the review (stdout) is bounded. stderr is diagnostic: it is truncated
+                    # on disk but drained, never fatal — `codex exec` echoes the whole prompt to
+                    # stderr, so a stderr cap killed every review whose prompt exceeded it.
+                    if received[key.fileobj] > maximum and key.fileobj is process.stdout:
                         rc = 66
                         try:
                             os.killpg(process.pid, signal.SIGKILL)
@@ -138,17 +161,26 @@ def run():
         finally:
             if sent_input:
                 sent_input.close()
-    verdicts = re.findall(r'^VERDICT: (SOUND|QUALIFIED|UNSOUND)\s*$', Path(output).read_text(errors="replace"), re.M)
+    text = Path(output).read_text(errors="replace")
+    verdicts = re.findall(r'^VERDICT: (SOUND|QUALIFIED|UNSOUND)\s*$', text, re.M)
     verdict = verdicts[0] if len(verdicts) == 1 else None
-    if not verdict and rc == 0:
-        rc = 65
+    refused = False
+    if not verdict:
+        err = Path(output + '.err')
+        refused = bool(PROVIDER_ERROR.search(text + '\n' + (err.read_text(errors="replace")
+                                                            if err.exists() else '')))
+        if refused:
+            rc = 75
+        elif rc == 0:
+            rc = 65
     directory = Path(output).parent
     report = directory / 'results/report' / (directory.name + '_report.md')
     data = dict(exit_code=rc, verdict=verdict, producer_family=pf, verifier_family=vf,
                 same_family_override=override == '1', started=started, finished=time.time(),
                 command_template=command, cwd=cwd, prompt_sha256=digest(prompt_file),
                 review_sha256=digest(output), report_sha256=reviewed_report,
-                predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts)
+                predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts,
+                provider_error=refused)
     with open(output + '.json', 'x') as record:
         json.dump(data, record, indent=2)
         record.write('\n')
@@ -167,6 +199,8 @@ if __name__ == '__main__':
             if str(path) in valid:
                 data = json.loads(Path(str(path) + '.json').read_text())
                 print(path.name + ': ' + data['verdict'])
+            elif provider_error(path):
+                print(path.name + ': PROVIDER ERROR (verifier unavailable; not a review round)')
             else:
                 print(path.name + ': INELIGIBLE (missing/failed metadata, invalid verdict, family or artifact hash)')
     else:

@@ -29,7 +29,7 @@ tests, validates schemas and lints shell scripts.
 - Bash 3.2 compatible where practical: avoid `mapfile`, `declare -A` and `${var,,}`.
 - No GNU-only flags without feature detection and a portable fallback.
 - Public commands live in `bin/arh-<name>` and are dispatched by `bin/arh`.
-- Project state belongs under `.arh/`; do not add new `.arh/` dependencies.
+- Project state belongs under `.arh/`.
 - Shared implementation belongs in `lib/`.
 
 ## Adding things

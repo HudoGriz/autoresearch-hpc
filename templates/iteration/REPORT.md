@@ -35,5 +35,8 @@ validated is a candidate, not a finding.>
 
 ## Cross-check
 
-<verdict from `arh ask`, the role and harness that produced it, and what you did
-about each finding — including the ones you rejected, with the reason.>
+<write this section BEFORE running `arh ask`, as a pointer: the review record is
+bound to this report's sha256 and to every file under results/, so filling it in
+afterwards invalidates the review. Record the verdict and what you did about each
+finding — including rejections, with the reason — in ../../REVIEW_RESPONSE.md at
+the iteration root.>

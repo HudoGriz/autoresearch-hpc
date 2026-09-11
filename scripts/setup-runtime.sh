@@ -4,7 +4,8 @@ set -euo pipefail
 [ $# -eq 2 ] || { echo 'usage: scripts/setup-runtime.sh PROJECT RUNTIME.sif' >&2; exit 2; }
 project=$(cd "$1" && pwd)
 image=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
-if [ -d "$project/.arh" ]; then state="$project/.arh"; elif [ -d "$project/.arh" ]; then state="$project/.arh"; else echo 'run arh init first' >&2; exit 1; fi
+state="$project/.arh"
+[ -d "$state" ] || { echo 'run arh init first' >&2; exit 1; }
 [ -f "$image" ] || { echo 'runtime SIF is missing' >&2; exit 1; }
 if command -v singularity >/dev/null 2>&1; then runtime=singularity
 elif command -v apptainer >/dev/null 2>&1; then runtime=apptainer
@@ -20,10 +21,20 @@ if [ ! -x "$prefix/bin/nextflow" ]; then
     "$image" micromamba create -y -p "$prefix" -c conda-forge -c bioconda \
       "nextflow=$version" 'python=3.12' 'git=2.49' 'bash=5.2' 'procps-ng=4.0.4'
 fi
-"$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
-  --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
-  "$image" micromamba list -p "$prefix" --explicit > "$state/nextflow-explicit.lock"
+# Replayable lock (@EXPLICIT plus URL#md5 lines), as in setup-nextflow.sh.
+{ echo '@EXPLICIT'
+  "$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
+    --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
+    "$image" micromamba list -p "$prefix" --explicit --md5 | grep -E '^https?://'
+} > "$state/nextflow-explicit.lock"
 if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum "$image" | awk '{print $1}'); else digest=$(shasum -a 256 "$image" | awk '{print $1}'); fi
+# setup-nextflow.sh rewrites the same file; serialise so concurrent setups cannot drop keys.
+lock="$state/config/.site.lock"; i=0
+until mkdir "$lock" 2>/dev/null; do
+  i=$((i+1)); [ "$i" -lt 120 ] || { echo "site.md locked by another setup: $lock (remove if stale)" >&2; exit 1; }
+  sleep 1
+done
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 python3 - "$state/config/site.md" "$image" "$prefix" "$digest" "$version" "$runtime" <<'PY'
 from pathlib import Path
 import re,sys
