@@ -1,4 +1,4 @@
-![AutoResearch HPC — auditable AI-assisted research on HPC](/docs/assets/autoresearch-hpc-banner.webp)
+![AutoResearch HPC — auditable AI-assisted research on HPC](docs/assets/autoresearch-hpc-banner.jpg)
 
 <p align="center">
   <a href="https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml/badge.svg"></a>
