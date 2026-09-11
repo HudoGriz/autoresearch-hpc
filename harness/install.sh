@@ -8,6 +8,14 @@ target="${1:?usage: harness/install.sh <project-dir> [claude codex opencode]}"; 
 target=$(cd "$target" && pwd)
 harnesses=("$@"); [ ${#harnesses[@]} -eq 0 ] && harnesses=(claude codex opencode)
 
+# Shared paths are read through AGENTS.md and OpenCode's role prompts.
+mkdir -p "$target/skills"
+cp -r "$root/skills/." "$target/skills/"
+# Upgrade the default policy without replacing the operator's existing contract.
+if ! grep -q '^## Default coding skill — Ponytail' "$target/AGENTS.md"; then
+  sed -n '/^## Default coding skill — Ponytail/,$p' "$root/AGENTS.md" >> "$target/AGENTS.md"
+fi
+
 for h in "${harnesses[@]}"; do
   case "$h" in
     claude)

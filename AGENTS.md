@@ -107,3 +107,17 @@ system by design, and their objections are part of the scientific record.
 
 Run `dl status`. Anything showing `ALTERED`, or a report without a cross-check,
 is an unfinished protocol violation — not a formatting detail.
+
+## Default coding skill — Ponytail
+
+For coding, debugging, refactoring and dependency decisions, use Ponytail in
+**full** mode by default. Read `skills/ponytail/SKILL.md` once when starting
+coding work; reuse that context instead of reloading it every turn. If absent
+in an older study, run the framework's `harness/install.sh` to install it.
+Prefer existing code, standard libraries and installed tools before adding
+implementation. Keep explanations concise when a fuller report is not requested.
+
+Explicit user requirements, validation, immutable-input protection and every
+research gate above take precedence over brevity. Never remove controls or
+evidence to save tokens. “Stop ponytail” or “normal mode” disables this coding
+preference for the session. It does not apply to non-coding research reports.

@@ -117,7 +117,9 @@ else hs=$(dl_config_get "$DL_HARN" harnesses "codex"); fi
 avail=""
 for h in $hs; do
   c=$(dl_config_get "$DL_HARN" "harness_${h}_cmd" "")
-  [ -n "$c" ] && command -v "${c%% *}" >/dev/null 2>&1 && avail="$avail $h"
+  if [ -n "$c" ] && { [ "$dry" = 1 ] || command -v "${c%% *}" >/dev/null 2>&1; }; then
+    avail="$avail $h"
+  fi
 done
 [ -n "$avail" ] || dl_die "no configured harness CLI is installed"
 set -- $avail; navail=$#

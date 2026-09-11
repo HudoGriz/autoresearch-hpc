@@ -132,6 +132,10 @@ site configuration. There is no separate always-running research daemon.
 
 ## Keep model calls focused
 
+**Ponytail is on by default for coding.** Its pinned core skill guides agents to
+reuse existing code and tools before adding implementation. Load it once per
+coding session; keep required controls and validation. [Skills and budget details →](docs/skills-and-token-budget.md)
+
 Execution, polling, cache reuse, ledger checks and `dl context -n N` use no LLM.
 The default review policy limits submitted prompt bytes to **24,000**, captured
 output to **8,000 bytes**, and attempts to **two per iteration**. Further reviews
@@ -190,6 +194,7 @@ lint and schema validation. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 ## Built on existing work
 
+- **[Ponytail](https://github.com/DietrichGebert/ponytail):** default coding guidance; pinned core skill with MIT attribution.
 - **[Nextflow](https://www.nextflow.io/):** execution, scheduling and caching.
 - **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep):** a
   pinned, adapted adversarial review rubric. The full ARIS autonomous workflow

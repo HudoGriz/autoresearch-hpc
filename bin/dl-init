@@ -28,6 +28,8 @@ sed -e "s|{{PROJECT}}|$(basename "$target")|g" -e "s|{{DATE}}|$(dl_today)|g" \
   "$DL_HOME/templates/PROGRESS.md" > "$target/$ledger"
 cp "$DL_HOME/templates/GOTCHAS.md" "$target/GOTCHAS.md"
 cp "$DL_HOME/AGENTS.md" "$target/AGENTS.md"
+mkdir -p "$target/skills"
+cp -r "$DL_HOME/skills/." "$target/skills/"
 ln -sf AGENTS.md "$target/CLAUDE.md"
 
 cat > "$target/.dl/VERSION" <<EOF
