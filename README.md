@@ -11,7 +11,7 @@ Multiple agent harnesses · Nextflow execution · Singularity tasks · Auditable
 [![Protocol](https://img.shields.io/badge/protocol-0.1.0-blue)](PROTOCOL.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [HPC setup](docs/hpc-execution.md) · [Validation](docs/validation.md) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Skills we use](#skills-we-use) · [How it works](#how-it-works) · [HPC setup](docs/hpc-execution.md) · [Validation](docs/validation.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -38,6 +38,29 @@ You keep the question, controls, failed attempts and review together.
 | **Keep the evidence** | Iteration-owned results, execution traces, run receipts and review records |
 | **Spend model calls deliberately** | Deterministic status/context, bounded reviews and reuse of unchanged eligible reviews |
 | **Preserve corrections** | Append-only iterations retain failed attempts and superseded conclusions |
+
+## Skills we use
+
+**Ponytail is the default coding skill. ARIS informs the adversarial review.**
+Both are pinned to upstream commits with MIT attribution; the research-loop
+skills are maintained in this repository.
+
+| Skill | Source | When it is used |
+|---|---|---|
+| **[Ponytail](skills/ponytail/SKILL.md)** | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) | **Default for coding**, debugging, refactoring and dependency choices: reuse existing solutions, avoid unnecessary code |
+| **[ARIS review rubric](skills/cross-check/roles/adversary.md)** | [Auto-Research-In-Sleep](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) | Adapted guidance for `dl ask --role adversary`; challenge assumptions, evidence and claims |
+| **[Iterate](skills/iterate/SKILL.md)** | AutoResearch HPC | Follow the declare → execute → review → record research loop |
+| **[Cross-check](skills/cross-check/SKILL.md)** | AutoResearch HPC | Request review from another model family with a defined role |
+| **[Verify](skills/verify/SKILL.md)** | AutoResearch HPC | Re-examine an existing result against a declared success criterion |
+| **[Arms](skills/arms/SKILL.md)** | AutoResearch HPC | Organize separately tracked sub-analyses within an iteration |
+| **[Replicate](skills/replicate/SKILL.md)** | AutoResearch HPC | Reimplement from a frozen specification when replication is requested |
+| **[Ledger](skills/ledger/SKILL.md)** | AutoResearch HPC | Maintain the record and check it against artifacts on disk |
+
+Ponytail activates through the agent contract; it is not a mandatory runtime
+hook. It never overrides requested work, scientific controls or validation.
+The full ARIS workflow and Ponytail's auxiliary plugins are not bundled.
+Other skills are available for the relevant task rather than loaded on every
+turn. [Installation, upstream pins and token-budget scope →](docs/skills-and-token-budget.md)
 
 ## How it works
 
