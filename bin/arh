@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# AutoResearch HPC — command dispatcher.
+set -euo pipefail
+
+_arh_self="${BASH_SOURCE[0]}"
+while [ -L "$_arh_self" ]; do
+  _arh_link=$(ls -ld -- "$_arh_self" | sed 's/.* -> //')
+  case "$_arh_link" in /*) _arh_self="$_arh_link" ;; *) _arh_self="$(dirname "$_arh_self")/$_arh_link" ;; esac
+done
+ARH_HOME="${ARH_HOME:-$(cd "$(dirname "$_arh_self")/.." && pwd)}"
+export ARH_HOME
+if [ "${1-}" != init ]; then
+  . "$ARH_HOME/lib/common.sh"
+  if (arh_find_project) >/dev/null 2>&1; then
+    arh_load_project
+    driver_prefix=$(arh_config_get "$ARH_SITE" nextflow_prefix "")
+    if [ -n "$driver_prefix" ]; then
+      [ -x "$driver_prefix/bin/python3" ] || arh_die "driver environment missing: $driver_prefix"
+      export PATH="$driver_prefix/bin:$PATH"
+      export JAVA_HOME="$driver_prefix"
+    fi
+  fi
+fi
+
+usage() {
+  cat <<'USAGE'
+arh — AutoResearch HPC
+
+  arh init [dir] [options]       create and bootstrap a research project
+  arh claim  -t TITLE            atomically claim the next iteration number
+  arh new    -n N                scaffold iteration N from the pre-declaration template
+  arh arm    {new|gate|fate|list} parallel sub-analyses within one iteration
+  arh gate   predeclare -n N     check the pre-declaration, then freeze its hash
+  arh gate   results    -n N     check results against the frozen pre-declaration
+  arh gate   rules      <file>   check a document against the standing rules
+  arh ask    --role R -n N       cross-check with a foreign harness
+  arh verify {new|gate|list}     re-examine an object an iteration produced
+  arh dag    {init|check|freeze} reconstruct the path a result took
+  arh replicate [run|report]     N agents re-implement from the DAG, blind to the code
+  arh run    IMAGE -- CMD...     run a command in a pinned container
+  arh submit SCRIPT -n NAME      submit a job through the configured workflow engine
+  arh guard  PATH...             assert paths are writable under the project
+  arh ledger [render|check]      maintain the project record
+  arh context -n N               compact deterministic handoff; no model call
+  arh status                     show iterations, claims and gate state
+  arh doctor                     check environment, configuration and setup hints
+  arh next                       what to do next, and why
+
+`arh init --help` shows bootstrap options.
+USAGE
+}
+
+[ $# -ge 1 ] || { usage; exit 2; }
+cmd="$1"; shift
+case "$cmd" in
+  -h|--help|help) usage ;;
+  -V|--version|version)
+    printf 'autoresearch-hpc %s (protocol %s)\n' \
+      "$(cat "$ARH_HOME/VERSION" 2>/dev/null || echo unknown)" \
+      "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
+    ;;
+  init|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|guard|ledger|status|doctor|next|context)
+    exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
+  *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
+esac

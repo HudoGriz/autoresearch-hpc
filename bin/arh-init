@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Create an AutoResearch HPC project and discover sensible site defaults.
+set -euo pipefail
+. "${ARH_HOME:?}/lib/common.sh"
+
+target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0
+usage() {
+  cat <<'USAGE'
+usage: arh init [dir] [options]
+
+Options:
+  --scheduler auto|local|slurm|pbs  scheduler written to site.md (default: auto)
+  --micromamba PATH                 micromamba binary for host Nextflow setup
+  --runtime IMAGE.sif               task runtime image to configure
+  --bootstrap                       build the host Nextflow environment now
+  -h, --help                        show this help
+
+Without flags, `arh init` discovers the scheduler/container command and creates
+an immediately inspectable project. Run `arh doctor` next; it prints the exact
+remaining setup actions for this machine.
+USAGE
+}
+
+if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scheduler) scheduler="$2"; shift 2 ;;
+    --micromamba) micromamba="$2"; shift 2 ;;
+    --runtime) runtime="$2"; shift 2 ;;
+    --bootstrap) bootstrap=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+case "$scheduler" in auto|local|slurm|pbs) ;; *) arh_die "--scheduler must be auto, local, slurm or pbs" ;; esac
+
+mkdir -p "$target"
+target=$(cd "$target" && pwd)
+[ -d "$target/.arh" ] && arh_die "already an AutoResearch HPC project: $target"
+
+mkdir -p "$target/.arh/config" "$target/rules"
+cp "$ARH_HOME/config/site.md" "$target/.arh/config/site.md"
+cp "$ARH_HOME/config/project.md" "$target/.arh/config/project.md"
+cp "$ARH_HOME/config/harnesses.md" "$target/.arh/config/harnesses.md"
+cp "$ARH_HOME"/config/rules/*.md "$target/rules/"
+
+ARH_PROJ="$target/.arh/config/project.md"
+iters=$(arh_config_get "$ARH_PROJ" iterations_dir iterations)
+verif=$(arh_config_get "$ARH_PROJ" verification_dir verification)
+ledger=$(arh_config_get "$ARH_PROJ" ledger PROGRESS.md)
+mkdir -p "$target/$iters" "$target/$verif"
+printf 'iteration\tagent\tclaimed\tstatus\ttitle\n' > "$target/.arh/registry.tsv"
+
+sed -e "s|{{PROJECT}}|$(basename "$target")|g" -e "s|{{DATE}}|$(arh_today)|g" "$ARH_HOME/templates/PROGRESS.md" > "$target/$ledger"
+cp "$ARH_HOME/templates/GOTCHAS.md" "$target/GOTCHAS.md"
+cp "$ARH_HOME/AGENTS.md" "$target/AGENTS.md"
+mkdir -p "$target/skills"; cp -r "$ARH_HOME/skills/." "$target/skills/"
+ln -sf AGENTS.md "$target/CLAUDE.md"
+cat > "$target/.arh/VERSION" <<EOF
+protocol = 0.2.0
+created  = $(arh_now)
+by       = $(arh_agent_name)
+EOF
+
+if [ "$scheduler" = auto ]; then
+  if command -v sbatch >/dev/null 2>&1 && command -v squeue >/dev/null 2>&1; then scheduler=slurm
+  elif command -v qsub >/dev/null 2>&1 && command -v qstat >/dev/null 2>&1; then scheduler=pbs
+  else scheduler=local
+  fi
+fi
+if command -v singularity >/dev/null 2>&1; then runtime_cmd=singularity
+elif command -v apptainer >/dev/null 2>&1; then runtime_cmd=apptainer
+else runtime_cmd=none
+fi
+
+python3 - "$target/.arh/config/site.md" "$scheduler" "$runtime_cmd" <<'PY'
+from pathlib import Path
+import re, sys
+p=Path(sys.argv[1]); text=p.read_text()
+for key,value in {'scheduler':sys.argv[2], 'container_runtime':sys.argv[3]}.items():
+    pat=r'(?m)^('+re.escape(key)+r'\s*=\s*).*$'
+    text=re.sub(pat, lambda m: m.group(1)+value, text)
+p.write_text(text)
+PY
+
+if [ -z "$micromamba" ] && command -v micromamba >/dev/null 2>&1; then micromamba=$(command -v micromamba); fi
+if [ "$bootstrap" = 1 ]; then
+  [ -n "$micromamba" ] || arh_die "--bootstrap needs micromamba on PATH or --micromamba PATH"
+  "$ARH_HOME/scripts/setup-nextflow.sh" "$target" "$micromamba"
+fi
+if [ -n "$runtime" ]; then "$ARH_HOME/scripts/setup-runtime.sh" "$target" "$runtime"; fi
+
+printf 'Initialised AutoResearch HPC project at %s\n' "$target"
+printf '  detected scheduler: %s\n' "$scheduler"
+printf '  detected container command: %s\n' "$runtime_cmd"
+printf '\nNext:\n  cd %q\n  arh doctor\n' "$target"
+if [ "$bootstrap" = 0 ]; then
+  printf '\nTo prepare the pinned host Nextflow environment automatically:\n'
+  if [ -n "$micromamba" ]; then printf '  %s/scripts/setup-nextflow.sh %q %q\n' "$ARH_HOME" "$target" "$micromamba"
+  else printf '  install/provide micromamba, then run scripts/setup-nextflow.sh (doctor will show details)\n'; fi
+fi

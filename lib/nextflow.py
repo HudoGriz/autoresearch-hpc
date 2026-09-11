@@ -27,9 +27,9 @@ def run():
     parser.add_argument('--params', type=Path, help='Nextflow JSON/YAML params file')
     parser.add_argument('-l', '--logdir', type=Path)
     args = parser.parse_args()
-    root, home = Path(os.environ['DL_ROOT']), Path(os.environ['DL_HOME'])
-    site = config(root / '.dl/config/site.md')
-    project = config(root / '.dl/config/project.md')
+    root, home = Path(os.environ['ARH_ROOT']), Path(os.environ['ARH_HOME'])
+    site = config(root / '.arh/config/site.md')
+    project = config(root / '.arh/config/project.md')
     immutable = project.get('immutable_inputs', '').split()
     workflow = args.workflow.resolve()
     if not workflow.is_file() or root not in workflow.parents:
@@ -47,7 +47,7 @@ def run():
         parser.error('supply a native .nf workflow or a migration .sh script')
     if args.resume and workflow.suffix == '.sh':
         parser.error('resume requires a native .nf workflow with declared inputs; shell adapter is never cached')
-    image = site.get('runtime_image') or os.environ.get('DL_RUNTIME_IMAGE')
+    image = site.get('runtime_image') or os.environ.get('ARH_RUNTIME_IMAGE')
     prefix = site.get('nextflow_prefix')
     if os.environ.get('APPTAINER_CONTAINER') or os.environ.get('SINGULARITY_CONTAINER'):
         parser.error('run the Nextflow controller on the host, outside Singularity')
@@ -76,10 +76,10 @@ def run():
         parser.error('this named workflow is already running; inspect .launch-lock before recovery')
     try:
         attempt = Path(tempfile.mkdtemp(prefix='attempt-', dir=logs))
-        env = dict(os.environ, NXF_HOME=str(root / '.dl/nextflow'), NXF_VER=version,
+        env = dict(os.environ, NXF_HOME=str(root / '.arh/nextflow'), NXF_VER=version,
                    NXF_ANSI_LOG='false', NXF_DISABLE_CHECK_LATEST='true', NXF_OFFLINE='true')
         # Plugins/images must be staged in advance for offline execution.
-        site_nf = root / '.dl/config/nextflow.config'
+        site_nf = root / '.arh/config/nextflow.config'
         generated = attempt / 'execution.config'
         executor = site.get('scheduler', 'local')
         if executor not in ('local', 'slurm', 'pbs'):
@@ -138,7 +138,7 @@ def run():
                 parser.error('params file missing')
             cmd += ['-params-file', str(params)]
         if workflow.suffix == '.sh':
-            cmd += ['--dl_script', str(workflow), '--dl_project', str(root)]
+            cmd += ['--arh_script', str(workflow), '--arh_project', str(root)]
         else:
             cmd += ['--outdir', str(iteration / 'results' / name)]
         record = dict(engine='nextflow', version=version, executable_sha256=expected, environment_prefix=prefix,
@@ -148,7 +148,7 @@ def run():
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
-                      environment_locks={p.name: sha(p) for p in (root / '.dl').glob('*explicit.lock')},
+                      environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
                       resume=args.resume, command=cmd, started=datetime.now(timezone.utc).isoformat())
         receipt = attempt / 'run.json'
         receipt.write_text(json.dumps(record, indent=2) + '\n')
@@ -157,7 +157,7 @@ def run():
         record.update(exit_code=result.returncode, finished=datetime.now(timezone.utc).isoformat())
         receipt.write_text(json.dumps(record, indent=2) + '\n')
         print(attempt)
-        print(f'dl: Nextflow exit={result.returncode}; trace and logs: {attempt}', file=sys.stderr)
+        print(f'arh: Nextflow exit={result.returncode}; trace and logs: {attempt}', file=sys.stderr)
         if result.returncode:
             print('\n'.join((attempt / 'console.log').read_text().splitlines()[-20:]), file=sys.stderr)
         return result.returncode

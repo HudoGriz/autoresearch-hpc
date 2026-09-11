@@ -7,7 +7,7 @@
 # verifying harness must belong to a different model family than the producer.
 set -euo pipefail
 # shellcheck source=lib/common.sh
-. "${DL_HOME:?}/lib/common.sh"
+. "${ARH_HOME:?}/lib/common.sh"
 
 role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""
 while [ $# -gt 0 ]; do
@@ -18,46 +18,46 @@ while [ $# -gt 0 ]; do
     --same-family)  same_family=1; shift ;;
     --dry-run)      dry=1; shift ;;
     --note)         extra="$2"; shift 2 ;;
-    -h|--help) echo 'usage: dl ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run]'; exit 0 ;;
-    *) dl_die "unexpected argument: $1" ;;
+    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run]'; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
   esac
 done
-case "$n" in ""|*[!0-9]*) dl_die "iteration must be numeric" ;; esac
-case "$role:$harness" in *..*|*/*) dl_die "invalid role or harness" ;; esac
-[ -n "$n" ] || dl_die "which iteration? dl ask --role $role -n N"
+case "$n" in ""|*[!0-9]*) arh_die "iteration must be numeric" ;; esac
+case "$role:$harness" in *..*|*/*) arh_die "invalid role or harness" ;; esac
+[ -n "$n" ] || arh_die "which iteration? arh ask --role $role -n N"
 
-dl_load_project
-dir="$DL_ITERS/iteration$n"
-[ -d "$dir" ] || dl_die "no iteration $n"
-[ -f "$dir/PREDECLARATION.sha256" ] || dl_die "iteration is not frozen"
-[ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md")" ] || dl_die "pre-declaration altered"
+arh_load_project
+dir="$ARH_ITERS/iteration$n"
+[ -d "$dir" ] || arh_die "no iteration $n"
+[ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"
+[ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md")" ] || arh_die "pre-declaration altered"
 
-roledoc="$DL_HOME/skills/cross-check/roles/$role.md"
-[ -f "$roledoc" ] || dl_die "unknown role: $role (see skills/cross-check/roles/)"
+roledoc="$ARH_HOME/skills/cross-check/roles/$role.md"
+[ -f "$roledoc" ] || arh_die "unknown role: $role (see skills/cross-check/roles/)"
 
-producer=$(dl_config_get "$DL_HARN" producer claude)
-[ -n "$harness" ] || harness=$(dl_config_get "$DL_HARN" verifier codex)
+producer=$(arh_config_get "$ARH_HARN" producer claude)
+[ -n "$harness" ] || harness=$(arh_config_get "$ARH_HARN" verifier codex)
 
-case "$producer:$harness" in *..*|*/*) dl_die "invalid configured harness name" ;; esac
+case "$producer:$harness" in *..*|*/*) arh_die "invalid configured harness name" ;; esac
 
-pfam=$(dl_config_get "$DL_HARN" "harness_${producer}_family" unknown)
-vfam=$(dl_config_get "$DL_HARN" "harness_${harness}_family" unknown)
-case "$pfam:$vfam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) dl_die "configure concrete producer and verifier model families" ;; esac
+pfam=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" unknown)
+vfam=$(arh_config_get "$ARH_HARN" "harness_${harness}_family" unknown)
+case "$pfam:$vfam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) arh_die "configure concrete producer and verifier model families" ;; esac
 if [ "$pfam" = "$vfam" ] && [ "$same_family" = 0 ]; then
-  dl_die "producer ($producer/$pfam) and verifier ($harness/$vfam) are the same model family.
+  arh_die "producer ($producer/$pfam) and verifier ($harness/$vfam) are the same model family.
        A model does not reliably catch its own reasoning errors. Choose another
        harness, or pass --same-family to record a weaker check that cannot satisfy the results gate."
 fi
 
-cmd=$(dl_config_get "$DL_HARN" "harness_${harness}_cmd" "")
-[ -n "$cmd" ] || dl_die "no command configured for harness '$harness' (see .dl/config/harnesses.md)"
+cmd=$(arh_config_get "$ARH_HARN" "harness_${harness}_cmd" "")
+[ -n "$cmd" ] || arh_die "no command configured for harness '$harness' (see .arh/config/harnesses.md)"
 # Roles that must not see the original implementation. For these the prompt
 # carries the frozen DAG without the implementation. Filesystem isolation must
 # be provided externally; prompt omission alone is a cooperative boundary.
 blind=0
 case "$role" in reimplementer) blind=1 ;; esac
 
-dl_guard_path "$dir"
+arh_guard_path "$dir"
 prompt=$(mktemp "$dir/logs/prompt.XXXXXX")
 lock=""
 cleanup() { rm -f "$prompt"; [ -z "$lock" ] || rmdir "$lock"; }
@@ -67,14 +67,14 @@ trap cleanup EXIT
   printf '\n---\n\n## The work under review\n\n'
   if [ "$blind" = 1 ]; then
     dag="$dir/DAG.md"
-    [ -f "$dag" ] || dl_die "role '$role' works from the frozen DAG, and iteration $n has none.
-       Run: dl dag init -n $n, complete it, then dl dag freeze -n $n"
-    [ -f "$dir/DAG.sha256" ] || dl_die "iteration $n has a DAG but it is not frozen (dl dag freeze -n $n)"
-    [ "$(head -1 "$dir/DAG.sha256")" = "$(dl_sha256 "$dag")" ] || dl_die "DAG altered"
+    [ -f "$dag" ] || arh_die "role '$role' works from the frozen DAG, and iteration $n has none.
+       Run: arh dag init -n $n, complete it, then arh dag freeze -n $n"
+    [ -f "$dir/DAG.sha256" ] || arh_die "iteration $n has a DAG but it is not frozen (arh dag freeze -n $n)"
+    [ "$(head -1 "$dir/DAG.sha256")" = "$(arh_sha256 "$dag")" ] || arh_die "DAG altered"
     printf 'You are working from the discovery DAG ALONE. The original code is\n'
     printf 'deliberately not provided, and you must not go looking for it: it is\n'
     printf 'under %s/scripts/ and reading it voids this check.\n\n' "$dir"
-    printf 'Project root: %s   Iteration: %s\n\n' "$DL_ROOT" "$n"
+    printf 'Project root: %s   Iteration: %s\n\n' "$ARH_ROOT" "$n"
     printf '### Discovery DAG (frozen %s)\n\n' "$(head -1 "$dir/DAG.sha256")"
     cat "$dag"
     printf '\n### Pre-declaration\n\n'
@@ -87,9 +87,9 @@ trap cleanup EXIT
     printf 'make the specification runnable; your reproduced value; and — where the\n'
     printf 'object is a set — which elements you got, BY NAME.\n'
   else
-  printf 'Project root: %s\nIteration: %s\nDirectory: %s\n\n' "$DL_ROOT" "$n" "$dir"
-  printf 'Standing rules every conclusion inherits are in %s/rules/.\n' "$DL_ROOT"
-  printf 'Recorded silent failure modes are in %s/GOTCHAS.md.\n\n' "$DL_ROOT"
+  printf 'Project root: %s\nIteration: %s\nDirectory: %s\n\n' "$ARH_ROOT" "$n" "$dir"
+  printf 'Standing rules every conclusion inherits are in %s/rules/.\n' "$ARH_ROOT"
+  printf 'Recorded silent failure modes are in %s/GOTCHAS.md.\n\n' "$ARH_ROOT"
   printf '### Pre-declaration (written before any result existed)\n\n'
   [ -f "$dir/README.md" ] && cat "$dir/README.md" || printf '(none)\n'
   report="$dir/results/report/iteration${n}_report.md"
@@ -100,15 +100,15 @@ trap cleanup EXIT
   printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
   printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
   fi
-  printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(dl_config_get "$DL_HARN" ask_output_words 500)"
+  printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(arh_config_get "$ARH_HARN" ask_output_words 500)"
 } > "$prompt"
-max_input=$(dl_config_get "$DL_HARN" ask_max_input_bytes 24000)
-max_rounds=$(dl_config_get "$DL_HARN" ask_max_rounds 2)
+max_input=$(arh_config_get "$ARH_HARN" ask_max_input_bytes 24000)
+max_rounds=$(arh_config_get "$ARH_HARN" ask_max_rounds 2)
 if [ "$dry" = 0 ]; then
   lock="$dir/.review-lock"
-  mkdir "$lock" 2>/dev/null || { lock=""; dl_die "another review is running"; }
+  mkdir "$lock" 2>/dev/null || { lock=""; arh_die "another review is running"; }
 fi
-cached=$(python3 "$DL_HOME/lib/harness.py" budget "$dir" "$prompt" "$cmd" "$role" "$harness" "$pfam" "$vfam" "$max_input" "$max_rounds" "$extra" "$dry")
+cached=$(python3 "$ARH_HOME/lib/harness.py" budget "$dir" "$prompt" "$cmd" "$role" "$harness" "$pfam" "$vfam" "$max_input" "$max_rounds" "$extra" "$dry")
 if [ -n "$cached" ] && [ "$dry" = 0 ]; then
   printf 'reused unchanged review (no model call): %s\n' "$cached"
   grep -m1 '^VERDICT:' "$cached"
@@ -133,20 +133,20 @@ printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
   printf '| role | `%s` |\n| verifying harness | `%s` (%s) |\n' "$role" "$harness" "$vfam"
   printf '| producing harness | `%s` (%s) |\n| same family | %s |\n' "$producer" "$pfam" \
          "$([ "$same_family" = 1 ] && echo 'yes — WEAKER CHECK' || echo no)"
-  printf '| run | %s |\n\n---\n\n' "$(dl_now)"
+  printf '| run | %s |\n\n---\n\n' "$(arh_now)"
 } > "$out"
 
-timeout_s=$(dl_config_get "$DL_HARN" ask_timeout 900)
+timeout_s=$(arh_config_get "$ARH_HARN" ask_timeout 900)
 # Parse quoted arguments without shell expansion; timeout is portable.
 set +e
-python3 "$DL_HOME/lib/harness.py" run "$cmd" "$prompt" "$DL_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" "$(dl_config_get "$DL_HARN" ask_max_output_bytes 8000)"
+python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)"
 rc=$?
 set -e
 cp "$prompt" "$out.prompt"
 [ -s "$out.err" ] || rm -f "$out.err"
 
 if [ "$rc" -ne 0 ]; then
-  dl_warn "harness exited $rc — partial record kept at $out"
+  arh_warn "harness exited $rc — partial record kept at $out"
   exit "$rc"
 fi
 

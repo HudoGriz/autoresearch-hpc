@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Run a command inside the configured container runtime.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: arh run IMAGE -- CMD...'; exit 0; }
+arh_load_project
+# shellcheck source=lib/container.sh
+. "$ARH_HOME/lib/container.sh"
+image="${1:?usage: arh run IMAGE -- CMD...}"; shift
+[ "${1-}" = "--" ] && shift
+if [ "$image" = runtime ]; then
+  runtime_image=$(arh_config_get "$ARH_SITE" runtime_image "")
+  prefix=$(arh_config_get "$ARH_SITE" runtime_prefix "")
+  digest=$(arh_config_get "$ARH_SITE" runtime_sha256 "")
+  backend=$(arh_config_get "$ARH_SITE" container_runtime singularity)
+  case "$backend" in singularity|apptainer) ;; *) arh_die "runtime requires singularity/apptainer, configured: $backend" ;; esac
+  [ -f "$runtime_image" ] && [ -n "$digest" ] && [ "$(arh_sha256 "$runtime_image")" = "$digest" ] || arh_die "runtime SIF missing or digest mismatch"
+  args=(exec --cleanenv --containall --bind "$ARH_HOME:$ARH_HOME:ro" --bind "$ARH_ROOT:$ARH_ROOT:rw" --pwd "$ARH_ROOT")
+  if [ -n "$prefix" ]; then
+    args+=(--bind "$prefix:$prefix:ro" --env "PATH=$prefix/bin:/usr/local/bin:/usr/bin:/bin")
+  fi
+  for input in $(arh_config_get "$ARH_PROJ" immutable_inputs ""); do
+    case "$input" in /*) ;; *) input="$ARH_ROOT/$input" ;; esac
+    args+=(--bind "$input:$input:ro")
+  done
+  exec "$backend" "${args[@]}" "$runtime_image" "$@"
+fi
+
+arh_ctr_run "$image" "$@"

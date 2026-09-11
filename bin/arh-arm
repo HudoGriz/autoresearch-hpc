@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Arms — parallel sub-analyses within one iteration.
+set -euo pipefail
+. "${ARH_HOME:?}/lib/common.sh"
+sub="${1:-list}"; shift || true
+case "$sub" in -h|--help) echo 'usage: arh arm {new|gate|fate|list} -n N [-a ARM] [-t TITLE] [-f FATE]'; exit 0 ;; esac
+n=""; arm=""; title=""; fate=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="$2"; shift 2 ;;
+    -a|--arm) arm="$2"; shift 2 ;;
+    -t|--title) title="$2"; shift 2 ;;
+    -f|--fate) fate="$2"; shift 2 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+[ -n "$n" ] || arh_die "which iteration? arh arm $sub -n N"
+arh_load_project
+dir="$ARH_ITERS/iteration$n"; [ -d "$dir" ] || arh_die "no iteration $n"
+armsdir="$dir/arms"
+VALID_FATES="CONCLUDED NULL INFEASIBLE KILLED_BY_CONTROL ABANDONED"
+case "$sub" in
+  new)
+    [ -n "$arm" ] || arh_die "which arm? arh arm new -n $n -a A -t 'title'"
+    case "$arm" in */*|.*|"") arh_die "arm id must be a single path segment: $arm" ;; esac
+    [ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration $n is not pre-declared yet — arms specialise a pre-declaration"
+    mkdir -p "$armsdir"; a="$armsdir/$arm"
+    mkdir "$a" 2>/dev/null || arh_die "arm $arm already exists"; mkdir -p "$a"/{scripts,results,logs}
+    sed -e "s|{{N}}|$n|g" -e "s|{{ARM}}|$arm|g" -e "s|{{DATE}}|$(arh_today)|g" -e "s|{{TITLE}}|${title:-<state what this arm tests>}|g" "$ARH_HOME/templates/iteration/ARM.md" > "$a/README.md"
+    printf 'wrote %s\n\nComplete it, then:  arh arm gate -n %s -a %s\n' "${a#"$ARH_ROOT"/}/README.md" "$n" "$arm"
+    ;;
+  gate)
+    [ -n "$arm" ] || arh_die "which arm?"; a="$armsdir/$arm"; r="$a/README.md"; [ -f "$r" ] || arh_die "no arm $arm in iteration $n"
+    printf 'gate: iteration %s arm %s\n' "$n" "$arm"; fails=0
+    [ -n "$(find "$a/results" -type f 2>/dev/null | head -1)" ] && { arh_fail "results/ already populated"; fails=$((fails+1)); } || arh_ok "results/ is empty"
+    for sec in "What this arm tests" "Acceptance criteria" "Negative control" "Fate"; do grep -qiF "$sec" "$r" && arh_ok "section: $sec" || { arh_fail "section missing: $sec"; fails=$((fails+1)); }; done
+    grep -qE '^<|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$r" && { arh_fail "template placeholders remain"; fails=$((fails+1)); } || arh_ok "no placeholders remain"
+    [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s). Nothing frozen.\n' "$fails" >&2; exit 1; }
+    arh_sha256 "$r" > "$a/PREDECLARATION.sha256"; printf '%s\n' "$(arh_now)" >> "$a/PREDECLARATION.sha256"; printf '\ngate PASSED. Arm %s frozen.\n' "$arm"
+    ;;
+  fate)
+    [ -n "$arm" ] || arh_die "which arm?"; a="$armsdir/$arm"; [ -f "$a/README.md" ] || arh_die "no arm $arm in iteration $n"; [ -n "$fate" ] || arh_die "which fate? one of: $VALID_FATES"
+    case " $VALID_FATES " in *" $fate "*) ;; *) arh_die "invalid fate '$fate'. One of: $VALID_FATES" ;; esac
+    printf '%s\t%s\n' "$fate" "$(arh_now)" > "$a/FATE"; printf 'iteration %s arm %s: %s\n' "$n" "$arm" "$fate"
+    case "$fate" in INFEASIBLE|KILLED_BY_CONTROL|ABANDONED) printf '\nThis is a REPORTABLE result, not a dropped arm.\n' ;; esac
+    ;;
+  list)
+    [ -d "$armsdir" ] || { printf '(iteration %s has no arms)\n' "$n"; exit 0; }
+    printf '%-10s %-11s %-20s %s\n' ARM PREDECL FATE TITLE; printf '%-10s %-11s %-20s %s\n' ---------- ----------- -------------------- -----
+    for a in "$armsdir"/*/; do
+      [ -d "$a" ] || continue; id=$(basename "$a")
+      if [ -f "$a/PREDECLARATION.sha256" ]; then [ "$(head -1 "$a/PREDECLARATION.sha256")" = "$(arh_sha256 "$a/README.md" 2>/dev/null)" ] && pre=frozen || pre=ALTERED; else pre=draft; fi
+      f=$(cut -f1 "$a/FATE" 2>/dev/null || echo PLANNED); t=$(sed -n '1s/.*— //p' "$a/README.md" 2>/dev/null | head -1); printf '%-10s %-11s %-20s %s\n' "$id" "$pre" "$f" "${t:0:40}"
+    done
+    ;;
+  *) arh_die "unknown: $sub" ;;
+esac

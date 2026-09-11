@@ -11,7 +11,7 @@ Optional — put `bin/` on PATH for every session in the project, in
 {
   "env": { "PATH": "${PWD}/../discovery-loop/bin:${PATH}" },
   "permissions": {
-    "allow": ["Bash(dl:*)", "Bash(dl-*:*)", "Bash(sbatch:*)", "Bash(squeue:*)"]
+    "allow": ["Bash(arh:*)", "Bash(arh-*:*)", "Bash(sbatch:*)", "Bash(squeue:*)"]
   }
 }
 ```

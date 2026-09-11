@@ -12,13 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Protocol(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='dl-hardening-')
+        self.temp = tempfile.TemporaryDirectory(prefix='arh-hardening-')
         self.root = Path(self.temp.name) / 'project'
-        self.env = dict(os.environ, DL_HOME=str(ROOT), DL_PROJECT=str(self.root),
+        self.env = dict(os.environ, ARH_HOME=str(ROOT), ARH_PROJECT=str(self.root),
                         PATH=str(ROOT / 'bin') + os.pathsep + os.environ['PATH'])
-        subprocess.run([str(ROOT / 'bin/dl'), 'init', str(self.root)], check=True, capture_output=True)
-        if os.environ.get('DL_TEST_SITE'):
-            (self.root / '.dl/config/site.md').write_text(Path(os.environ['DL_TEST_SITE']).read_text())
+        subprocess.run([str(ROOT / 'bin/arh'), 'init', str(self.root)], check=True, capture_output=True)
+        if os.environ.get('ARH_TEST_SITE'):
+            (self.root / '.arh/config/site.md').write_text(Path(os.environ['ARH_TEST_SITE']).read_text())
         self.call('claim', '-t', 'validation')
         self.call('new', '-n', '1')
         self.it = self.root / 'iterations/iteration1'
@@ -28,7 +28,7 @@ class Protocol(unittest.TestCase):
         self.report = self.it / 'results/report/iteration1_report.md'
         self.report.parent.mkdir(parents=True, exist_ok=True)
         self.report.write_text('Negative controls reject failures. Detection limit: one check. Candidate only.\n')
-        self.config = self.root / '.dl/config/harnesses.md'
+        self.config = self.root / '.arh/config/harnesses.md'
         self.mock = self.root / 'mock.py'
         self.configure()
 
@@ -36,7 +36,7 @@ class Protocol(unittest.TestCase):
         self.temp.cleanup()
 
     def call(self, *args, good=True):
-        result = subprocess.run([str(ROOT / 'bin/dl'), *args], env=self.env, cwd=self.root,
+        result = subprocess.run([str(ROOT / 'bin/arh'), *args], env=self.env, cwd=self.root,
                                 capture_output=True, text=True, timeout=90)
         if good:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -46,7 +46,7 @@ class Protocol(unittest.TestCase):
 
     def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5):
         self.mock.write_text(body + '\n')
-        self.config.write_text(f'''```dl-config
+        self.config.write_text(f'''```arh-config
 producer = source
 verifier = reviewer
 harness_source_family = openai
@@ -143,20 +143,20 @@ ask_timeout = {timeout}
         self.call('submit', str(script), '-w', good=False)
 
     def test_relative_immutable_guard(self):
-        p=self.root / '.dl/config/project.md'; p.write_text(p.read_text().replace('immutable_inputs  =', 'immutable_inputs  = raw'))
+        p=self.root / '.arh/config/project.md'; p.write_text(p.read_text().replace('immutable_inputs  =', 'immutable_inputs  = raw'))
         self.call('guard', str(self.root/'raw/x'), good=False)
 
     def test_image_digest(self):
         image=self.root/'image.sif'; image.write_bytes(b'fixture')
         fake=self.root/'apptainer'; fake.write_text('#!/bin/sh\nexit 0\n'); fake.chmod(0o755)
         self.env['PATH']=str(self.root)+os.pathsep+self.env['PATH']
-        site=self.root/'.dl/config/site.md'
-        site.write_text(f'```dl-config\ncontainer_runtime = apptainer\nimage_test = {image}\nimage_test_sha256 = {hashlib.sha256(image.read_bytes()).hexdigest()}\n```\n')
+        site=self.root/'.arh/config/site.md'
+        site.write_text(f'```arh-config\ncontainer_runtime = apptainer\nimage_test = {image}\nimage_test_sha256 = {hashlib.sha256(image.read_bytes()).hexdigest()}\n```\n')
         self.call('run', 'test', '--', 'true')
         image.write_bytes(b'changed'); self.call('run', 'test', '--', 'true', good=False)
 
     def test_remote_tag_rejected(self):
-        (self.root/'.dl/config/site.md').write_text('```dl-config\ncontainer_runtime = docker\nimage_test = docker://python:latest\n```\n')
+        (self.root/'.arh/config/site.md').write_text('```arh-config\ncontainer_runtime = docker\nimage_test = docker://python:latest\n```\n')
         self.call('run', 'test', '--', 'true', good=False)
 
     def test_result_snapshot_change_rejected(self):
@@ -169,7 +169,7 @@ ask_timeout = {timeout}
 
     def test_local_digest_shaped_filename_is_hashed(self):
         image=self.root/('image@sha256:'+'a'*64); image.write_bytes(b'fixture')
-        (self.root/'.dl/config/site.md').write_text(f'```dl-config\ncontainer_runtime = apptainer\nimage_test = {image}\n```\n')
+        (self.root/'.arh/config/site.md').write_text(f'```arh-config\ncontainer_runtime = apptainer\nimage_test = {image}\n```\n')
         self.call('run', 'test', '--', 'true', good=False)
 
     def test_gate_surfaces_unsound_verdict(self):

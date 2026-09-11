@@ -1,80 +1,73 @@
 #!/usr/bin/env bash
-# discovery-loop — shared shell library. Sourced by every bin/dl-* command.
+# AutoResearch HPC — shared shell library. Sourced by bin/arh-* commands.
 set -euo pipefail
 
-DL_HOME="${DL_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-export DL_HOME
+ARH_HOME="${ARH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export ARH_HOME
 
-dl_die()  { printf 'dl: %s\n' "$*" >&2; exit 1; }
-dl_warn() { printf 'dl: %s\n' "$*" >&2; }
-dl_info() { printf '  %s\n' "$*"; }
-dl_ok()   { printf '  OK   %s\n' "$*"; }
-dl_fail() { printf '  FAIL %s\n' "$*"; }
+arh_die()  { printf 'arh: %s\n' "$*" >&2; exit 1; }
+arh_warn() { printf 'arh: %s\n' "$*" >&2; }
+arh_info() { printf '  %s\n' "$*"; }
+arh_ok()   { printf '  OK   %s\n' "$*"; }
+arh_fail() { printf '  FAIL %s\n' "$*"; }
 
-# ---------------------------------------------------------------------------
-# Config files are Markdown. Machine-readable settings live in fenced blocks
-# tagged `dl-config`, as `key = value`. Everything outside those blocks is
-# documentation for the human and is ignored by the parser.
-# ---------------------------------------------------------------------------
-dl_config_get() {   # <file> <key> [default]
+# Config files are Markdown. Machine-readable settings live only in
+# fenced `arh-config` blocks as `key = value`.
+arh_config_get() {
   local file="$1" key="$2" default="${3-}" val
   [ -f "$file" ] || { printf '%s' "$default"; return 0; }
   val=$(awk -v key="$key" '
-    /^[ \t]*```[ \t]*dl-config[ \t]*$/ { inb=1; next }
-    /^[ \t]*```/                       { inb=0; next }
-    !inb                               { next }
-    /^[ \t]*#/                         { next }
+    /^[ \t]*```[ \t]*arh-config[ \t]*$/ { inb=1; next }
+    /^[ \t]*```/    { inb=0; next }
+    !inb   { next }
+    /^[ \t]*#/       { next }
     {
       n = index($0, "=")
       if (n == 0) next
       k = substr($0, 1, n-1); v = substr($0, n+1)
       gsub(/^[ \t]+|[ \t]+$/, "", k)
       gsub(/^[ \t]+|[ \t]+$/, "", v)
-      if (k == key) { print v; found=1; exit }
+      if (k == key) { print v; exit }
     }' "$file")
   [ -n "$val" ] && printf '%s' "$val" || printf '%s' "$default"
 }
 
-dl_config_keys() {  # <file>  -> list all keys
+arh_config_keys() {
   awk '
-    /^[ \t]*```[ \t]*dl-config[ \t]*$/ { inb=1; next }
-    /^[ \t]*```/                       { inb=0; next }
-    !inb || /^[ \t]*#/                 { next }
-    { n = index($0, "="); if (n) { k=substr($0,1,n-1); gsub(/^[ \t]+|[ \t]+$/,"",k); print k } }' "$1"
+    /^[ \t]*```[ \t]*arh-config[ \t]*$/ { inb=1; next }
+    /^[ \t]*```/    { inb=0; next }
+    !inb || /^[ \t]*#/        { next }
+    { n=index($0,"="); if(n){ k=substr($0,1,n-1); gsub(/^[ \t]+|[ \t]+$/,"",k); print k } }' "$1"
 }
 
-# ---------------------------------------------------------------------------
-# Project discovery: walk up from $PWD looking for the .dl/ marker directory.
-# ---------------------------------------------------------------------------
-dl_find_project() {
-  local d="${DL_PROJECT:-$PWD}"
-  d=$(cd "$d" 2>/dev/null && pwd) || dl_die "cannot resolve $d"
+arh_find_project() {
+  local d="${ARH_PROJECT:-$PWD}"
+  d=$(cd "$d" 2>/dev/null && pwd) || arh_die "cannot resolve $d"
   while [ "$d" != "/" ]; do
-    [ -d "$d/.dl" ] && { printf '%s' "$d"; return 0; }
+    [ -d "$d/.arh" ] && { printf '%s' "$d"; return 0; }
     d=$(dirname "$d")
   done
-  dl_die "not inside a discovery-loop project (no .dl/ found). Run: dl init <dir>"
+  arh_die "not inside an AutoResearch HPC project (no .arh/ found). Run: arh init <dir>"
 }
 
-dl_load_project() {
-  DL_ROOT=$(dl_find_project)
-  DL_CONF="$DL_ROOT/.dl/config"
-  DL_SITE="$DL_CONF/site.md"
-  DL_PROJ="$DL_CONF/project.md"
-  DL_HARN="$DL_CONF/harnesses.md"
-  DL_ITERS="$DL_ROOT/$(dl_config_get "$DL_PROJ" iterations_dir iterations)"
-  DL_VERIFY="$DL_ROOT/$(dl_config_get "$DL_PROJ" verification_dir verification)"
-  DL_LEDGER="$DL_ROOT/$(dl_config_get "$DL_PROJ" ledger PROGRESS.md)"
-  DL_REGISTRY="$DL_ROOT/.dl/registry.tsv"
-  export DL_ROOT DL_CONF DL_SITE DL_PROJ DL_HARN DL_ITERS DL_VERIFY DL_LEDGER DL_REGISTRY
+arh_load_project() {
+  ARH_ROOT=$(arh_find_project)
+  ARH_STATE="$ARH_ROOT/.arh"
+  ARH_CONF="$ARH_STATE/config"
+  ARH_SITE="$ARH_CONF/site.md"
+  ARH_PROJ="$ARH_CONF/project.md"
+  ARH_HARN="$ARH_CONF/harnesses.md"
+  ARH_ITERS="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" iterations_dir iterations)"
+  ARH_VERIFY="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" verification_dir verification)"
+  ARH_LEDGER="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" ledger PROGRESS.md)"
+  ARH_REGISTRY="$ARH_STATE/registry.tsv"
+  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY
 }
 
-dl_now()   { date -u +%Y-%m-%dT%H:%M:%SZ; }
-dl_today() { date -u +%Y-%m-%d; }
+arh_now()   { date -u +%Y-%m-%dT%H:%M:%SZ; }
+arh_today() { date -u +%Y-%m-%d; }
 
-# Portable `readlink -m`: absolutise and normalise a path that need not exist.
-# BSD/macOS readlink has no -m, so fall back to python3 (already a dependency).
-dl_abspath() {
+arh_abspath() {
   if readlink -m / >/dev/null 2>&1; then
     readlink -m -- "$1"
   else
@@ -82,47 +75,40 @@ dl_abspath() {
   fi
 }
 
-dl_sha256() {
+arh_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
-  elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  else dl_die "no sha256sum or shasum available"; fi
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else arh_die "no sha256sum or shasum available"; fi
 }
 
-# Identity of the agent doing the work, for claim records.
-dl_agent() {
-  printf '%s' "${DL_AGENT:-${CLAUDECODE:+claude}${DL_AGENT:-}}" 2>/dev/null || true
+arh_agent() {
+  printf '%s' "${ARH_AGENT:-${CLAUDECODE:+claude}}" 2>/dev/null || true
   :
 }
-dl_agent_name() {
-  if [ -n "${DL_AGENT:-}" ]; then printf '%s' "$DL_AGENT"
+
+arh_agent_name() {
+  if [ -n "${ARH_AGENT:-}" ]; then printf '%s' "$ARH_AGENT"
   elif [ -n "${CLAUDECODE:-}" ]; then printf 'claude'
   elif [ -n "${CODEX_SANDBOX:-}${CODEX_HOME:-}" ]; then printf 'codex'
   elif [ -n "${OPENCODE:-}" ]; then printf 'opencode'
   else printf '%s' "${USER:-unknown}"; fi
 }
 
-# Immutable-input guard. Refuses any write path outside the project root, or
-# inside a path listed as immutable in project.md.
-dl_guard_path() {   # <path...>
-  local p abs immutable
-  immutable=$(dl_config_get "$DL_PROJ" immutable_inputs "")
+arh_guard_path() {
+  local p abs immutable ip
+  immutable=$(arh_config_get "$ARH_PROJ" immutable_inputs "")
   for p in "$@"; do
-    abs=$(dl_abspath "$p")
-    case "$abs" in
-      "$DL_ROOT"/*) ;;
-      *) dl_die "refusing write outside project root: $abs" ;;
-    esac
-    local ip
+    abs=$(arh_abspath "$p")
+    case "$abs" in "$ARH_ROOT"/*) ;; *) arh_die "refusing write outside project root: $abs" ;; esac
     for ip in $immutable; do
       [ -n "$ip" ] || continue
-      case "$ip" in /*) ;; *) ip="$DL_ROOT/$ip" ;; esac
-      ip=$(dl_abspath "$ip")
-      case "$abs" in "$ip"/*|"$ip") dl_die "immutable input path: $abs" ;; esac
+      case "$ip" in /*) ;; *) ip="$ARH_ROOT/$ip" ;; esac
+      ip=$(arh_abspath "$ip")
+      case "$abs" in "$ip"/*|"$ip") arh_die "immutable input path: $abs" ;; esac
     done
   done
 }
 
-# Count only successful, foreign-family reviews bound to current artifacts.
-dl_crosschecks() {
-  python3 "$DL_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
+arh_crosschecks() {
+  python3 "$ARH_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
 }

@@ -18,7 +18,7 @@ in the project**:
 | Layer | Choice | Why |
 |---|---|---|
 | Truth | Files in git — iteration record + Obsidian vault | Already there; survives any tool dying |
-| Vocabulary | PROV-O + CiTO + FaBiO + a small local `dl:` | Reuse standards; invent only what is genuinely ours |
+| Vocabulary | PROV-O + CiTO + FaBiO + a small local `arh:` | Reuse standards; invent only what is genuinely ours |
 | Generation | [Morph-KGC](https://github.com/morph-kgc/morph-kgc) RML mappings, enriched from [OpenAlex](https://openalex.org) | Declarative, reviewable, versioned |
 | Store & view | Oxigraph (default) · Neo4j + MCP (agent querying) · Cytoscape.js (viewing) | All disposable and rebuildable |
 
@@ -75,10 +75,10 @@ distinction the Evidence Matrix makes in prose and no bibliography makes at all.
 A small local vocabulary covers what is genuinely ours and has no standard term:
 
 ```
-dl:Arm  dl:fate  dl:Gate  dl:preDeclarationHash  dl:preDeclaredAt
-dl:CrossCheck  dl:verdict  dl:verifierFamily  dl:producerFamily
-dl:detectionLimit  dl:negativeControlBehaved  dl:supersededBy
-dl:DagNode  dl:nodeKind  dl:branchCount
+arh:Arm  arh:fate  arh:Gate  arh:preDeclarationHash  arh:preDeclaredAt
+arh:CrossCheck  arh:verdict  arh:verifierFamily  arh:producerFamily
+arh:detectionLimit  arh:negativeControlBehaved  arh:supersededBy
+arh:DagNode  arh:nodeKind  arh:branchCount
 ```
 
 ## Layer 3 — generation
@@ -119,11 +119,11 @@ allocation; see [`prior-art.md`](prior-art.md) §4.5.
 ## Proposed interface
 
 ```bash
-dl graph build     # files → RDF via the RML mappings
-dl graph enrich    # DOIs → OpenAlex → literature metadata
-dl graph query     # SPARQL; or emit a Cypher load script for Neo4j
-dl graph view      # static Cytoscape.js page
-dl graph check     # SHACL shapes over the result (see below)
+arh graph build     # files → RDF via the RML mappings
+arh graph enrich    # DOIs → OpenAlex → literature metadata
+arh graph query     # SPARQL; or emit a Cypher load script for Neo4j
+arh graph view      # static Cytoscape.js page
+arh graph check     # SHACL shapes over the result (see below)
 ```
 
 ## What the graph is actually for
@@ -146,7 +146,7 @@ That last one is the loop learning about itself.
 
 Once findings are RDF, the standing rules can become **SHACL shapes over the
 data** rather than regexes over prose: *every finding with status `supported`
-must have a `dl:detectionLimit` carrying a value, units and a basis*. That is a
+must have a `arh:detectionLimit` carrying a value, units and a basis*. That is a
 structural constraint, and unlike a regex it cannot be satisfied by rephrasing.
 The regex rules stay — they catch a sound analysis written up in overreaching
 language, which is a different and commoner failure.

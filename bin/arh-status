@@ -2,33 +2,33 @@
 # Show every iteration, its claim, and where it stands against the gates.
 set -euo pipefail
 # shellcheck source=lib/common.sh
-. "${DL_HOME:?}/lib/common.sh"
+. "${ARH_HOME:?}/lib/common.sh"
 json=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) json=1; shift ;;
-    --help) echo 'usage: dl status [--json]'; exit 0 ;;
+    --help) echo 'usage: arh status [--json]'; exit 0 ;;
     *) shift ;;
   esac
 done
-dl_load_project
+arh_load_project
 
-# Machine-readable form, so `dl` is a usable API and callers need not scrape text.
+# Machine-readable form, so `arh` is a usable API and callers need not scrape text.
 if [ "$json" = 1 ]; then
-  iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+  iters=$(find "$ARH_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
           | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
-  jsonroot=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$DL_ROOT")
+  jsonroot=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$ARH_ROOT")
   printf '{\n  "project": %s,\n  "iterations": [' "$jsonroot"
   first=1
   for d in $iters; do
-    dir="$DL_ITERS/iteration$d"
+    dir="$ARH_ITERS/iteration$d"
     if [ -f "$dir/PREDECLARATION.sha256" ]; then
-      [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md" 2>/dev/null)" ] \
+      [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md" 2>/dev/null)" ] \
         && pre=frozen || pre=altered
     elif [ -f "$dir/README.md" ]; then pre=draft; else pre=none; fi
     [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
       || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=none; }
-    xc=$(dl_crosschecks "$dir" | grep -c . || true)
+    xc=$(arh_crosschecks "$dir" | grep -c . || true)
     if [ -f "$dir/DAG.sha256" ]; then dag=frozen
     elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
     narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
@@ -40,26 +40,26 @@ if [ "$json" = 1 ]; then
   exit 0
 fi
 
-printf '%s\n' "$DL_ROOT"
+printf '%s\n' "$ARH_ROOT"
 printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
-  "$(dl_config_get "$DL_SITE" scheduler local)" \
-  "$(dl_config_get "$DL_SITE" container_runtime none)" \
-  "$(dl_config_get "$DL_HARN" producer claude)" \
-  "$(dl_config_get "$DL_HARN" verifier codex)"
+  "$(arh_config_get "$ARH_SITE" scheduler local)" \
+  "$(arh_config_get "$ARH_SITE" container_runtime none)" \
+  "$(arh_config_get "$ARH_HARN" producer claude)" \
+  "$(arh_config_get "$ARH_HARN" verifier codex)"
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
 found=0
-iters=$(find "$DL_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+iters=$(find "$ARH_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
         | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
 for d in $iters; do
   found=1
-  dir="$DL_ITERS/iteration$d"
+  dir="$ARH_ITERS/iteration$d"
   agent=$(sed -n 's/.*"declared_agent"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
   title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
 
   if   [ -f "$dir/PREDECLARATION.sha256" ]; then
-    if [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(dl_sha256 "$dir/README.md" 2>/dev/null)" ]
+    if [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md" 2>/dev/null)" ]
     then pre=frozen; else pre=ALTERED; fi
   elif [ -f "$dir/README.md" ]; then pre=draft
   else pre=-; fi
@@ -67,9 +67,9 @@ for d in $iters; do
   [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
     || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=-; }
 
-  dl_crosschecks "$dir" | grep -q . && xc=yes || xc=-
+  arh_crosschecks "$dir" | grep -q . && xc=yes || xc=-
 
   printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
 done
-[ "$found" = 0 ] && printf '(no iterations yet — dl claim -t "your question")\n'
+[ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
 exit 0

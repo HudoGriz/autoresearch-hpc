@@ -7,7 +7,7 @@ overstates the result and is not recoverable by a later reader.
 **Enforcement.** A report concluding null must state the upper bound it can
 exclude, with its power or detection basis.
 
-```dl-config
+```arh-config
 id       = null-is-upper-bound
 severity = error
 applies  = report

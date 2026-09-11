@@ -35,5 +35,5 @@ validated is a candidate, not a finding.>
 
 ## Cross-check
 
-<verdict from `dl ask`, the role and harness that produced it, and what you did
+<verdict from `arh ask`, the role and harness that produced it, and what you did
 about each finding — including the ones you rejected, with the reason.>

@@ -3,7 +3,7 @@
 **Status: PRE-DECLARED {{DATE}}. Written BEFORE any result exists.**
 **Claimed by:** {{AGENT}} (`CLAIM.json`).
 
-> Complete every section below, then run `dl gate predeclare -n {{N}}`. The gate
+> Complete every section below, then run `arh gate predeclare -n {{N}}`. The gate
 > freezes this file's hash. After that it is immutable: a correction is a new
 > iteration, never an edit to this one.
 

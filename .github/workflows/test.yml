@@ -19,23 +19,25 @@ jobs:
         run: |
           mkdir -p "$PWD/.ci/bin"
           ln -s "$(command -v apptainer)" "$PWD/.ci/bin/singularity"
-          export PATH="$PWD/.ci/bin:$PATH"
+          export PATH="$PWD/.ci/bin:$PWD/bin:$PATH"
           echo "$PWD/.ci/bin" >> "$GITHUB_PATH"
-          bin/dl init "$PWD/.ci/study"
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+          bin/arh init "$PWD/.ci/study"
           singularity pull "$PWD/.ci/runtime.sif" docker://mambaorg/micromamba:2.8.1
           singularity exec "$PWD/.ci/runtime.sif" cat /bin/micromamba > "$PWD/.ci/bin/micromamba"
           chmod +x "$PWD/.ci/bin/micromamba"
           scripts/setup-nextflow.sh "$PWD/.ci/study" "$PWD/.ci/bin/micromamba"
           scripts/setup-runtime.sh "$PWD/.ci/study" "$PWD/.ci/runtime.sif"
+          bin/arh --version
+          bin/arh --help >/dev/null
+          bin/arh doctor || true
       - name: Test suite
         run: |
-          export DL_TEST_SITE="$PWD/.ci/study/.dl/config/site.md"
+          export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md"
           test/run_tests.sh
           python3 test/test_hardening.py
       - name: Protocol conformance is actually enforced
         run: |
-          # PROTOCOL.md §10 names seven clauses that MUST be refused, not warned.
-          # Each is asserted by the suite; fail loudly if one stops being covered.
           for c in "concurrent claims" "unfilled" "results exist" \
                    "tampering" "frozen hash" "outside" "same-family" \
                    "does not leak the code"; do
@@ -50,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning --shell=bash \
-            bin/dl bin/dl-* lib/*.sh harness/install.sh test/run_tests.sh
+            bin/arh bin/arh-* lib/*.sh harness/install.sh test/run_tests.sh
 
   schemas:
     runs-on: ubuntu-latest
@@ -59,7 +61,7 @@ jobs:
       - name: JSON is valid
         run: |
           python3 - <<'EOF'
-          import json, glob, sys
+          import json, glob
           for f in sorted(glob.glob('schema/*.json') + glob.glob('harness/**/*.json', recursive=True)):
               json.load(open(f)); print('ok', f)
           EOF

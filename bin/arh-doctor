@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Check the local/HPC environment and print concrete setup actions.
+set -euo pipefail
+. "${ARH_HOME:?}/lib/common.sh"
+[ "${1-}" = "--help" ] && { echo 'usage: arh doctor'; exit 0; }
+warn=0
+printf 'AutoResearch HPC  ARH_HOME=%s\n\n' "$ARH_HOME"
+
+if (arh_find_project) >/dev/null 2>&1; then
+  arh_load_project
+  arh_ok "project: $ARH_ROOT"
+  arh_ok "state: .arh (protocol 0.2 layout)"
+else
+  arh_warn "not inside a project"
+  arh_info "create one with: arh init /shared/my-study"
+  exit 0
+fi
+
+printf '\nexecution:\n'
+sched=$(arh_config_get "$ARH_SITE" scheduler local)
+case "$sched" in
+  slurm)
+    missing=""
+    for c in sbatch squeue scancel; do command -v "$c" >/dev/null || missing="$missing $c"; done
+    [ -z "$missing" ] && arh_ok "scheduler slurm" || { arh_fail "scheduler=slurm; missing:$missing"; warn=$((warn+1)); }
+    ;;
+  pbs)
+    command -v qsub >/dev/null && arh_ok "scheduler pbs" || { arh_fail "scheduler=pbs but qsub is missing"; warn=$((warn+1)); }
+    ;;
+  local) arh_ok "scheduler local" ;;
+  *) arh_fail "unknown scheduler: $sched"; warn=$((warn+1)) ;;
+esac
+
+ctr=$(arh_config_get "$ARH_SITE" container_runtime none)
+case "$ctr" in
+  singularity)
+    command -v singularity >/dev/null && arh_ok "container command: singularity" || { arh_fail "singularity not on PATH"; warn=$((warn+1)); }
+    ;;
+  apptainer)
+    command -v apptainer >/dev/null && arh_ok "container command: apptainer" || { arh_fail "apptainer not on PATH"; warn=$((warn+1)); }
+    ;;
+  docker)
+    command -v docker >/dev/null && arh_ok "container command: docker" || { arh_fail "docker not on PATH"; warn=$((warn+1)); }
+    ;;
+  none) arh_warn "container_runtime=none — suitable only for smoke tests" ;;
+  *) arh_fail "unknown container_runtime: $ctr"; warn=$((warn+1)) ;;
+esac
+
+prefix=$(arh_config_get "$ARH_SITE" nextflow_prefix "")
+if [ -n "$prefix" ] && [ -x "$prefix/bin/nextflow" ]; then
+  arh_ok "pinned host Nextflow: $prefix/bin/nextflow"
+else
+  arh_fail "host Nextflow environment is not configured"
+  if command -v micromamba >/dev/null 2>&1; then arh_info "fix: $ARH_HOME/scripts/setup-nextflow.sh $ARH_ROOT $(command -v micromamba)"
+  else arh_info "fix: provide micromamba, then run scripts/setup-nextflow.sh PROJECT MICROMAMBA"; fi
+  warn=$((warn+1))
+fi
+
+image=$(arh_config_get "$ARH_SITE" runtime_image "")
+if [ -n "$image" ] && [ -f "$image" ]; then
+  expected=$(arh_config_get "$ARH_SITE" runtime_sha256 "")
+  [ -n "$expected" ] && [ "$(arh_sha256 "$image")" = "$expected" ] && arh_ok "task runtime image is present and digest-matched" \
+    || { arh_fail "runtime image digest is missing or does not match"; warn=$((warn+1)); }
+else
+  arh_warn "no task runtime SIF configured"
+  arh_info "fix: $ARH_HOME/scripts/setup-runtime.sh $ARH_ROOT /shared/images/runtime.sif"
+fi
+
+printf '\nharnesses:\n'
+producer=$(arh_config_get "$ARH_HARN" producer "")
+verifier=$(arh_config_get "$ARH_HARN" verifier "")
+for h in $(arh_config_get "$ARH_HARN" harnesses ""); do
+  c=$(arh_config_get "$ARH_HARN" "harness_${h}_cmd" ""); fam=$(arh_config_get "$ARH_HARN" "harness_${h}_family" '?')
+  if command -v "${c%% *}" >/dev/null 2>&1; then arh_ok "$h ($fam) — ${c%% *} present"
+  else arh_warn "$h ($fam) — ${c%% *} not installed"; fi
+done
+pf=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" a)
+vf=$(arh_config_get "$ARH_HARN" "harness_${verifier}_family" b)
+if [ "$pf" = "$vf" ]; then arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1))
+else arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"; fi
+
+printf '\nrules:\n'
+for r in $(arh_config_get "$ARH_PROJ" rules ""); do
+  [ -f "$ARH_ROOT/rules/$r.md" ] && arh_ok "$r" || { arh_fail "$r — configured but missing"; warn=$((warn+1)); }
+done
+
+printf '\n'
+[ "$warn" -gt 0 ] && { printf '%s setup problem(s) found. Fix the FAIL items above and rerun `arh doctor`.\n' "$warn"; exit 1; }
+printf 'Ready. Next: arh claim -t "your first question"\n'
