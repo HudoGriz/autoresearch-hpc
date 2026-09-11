@@ -12,3 +12,6 @@ A fresh clone should initialize its own study with `dl init`.
 
 The source release is prepared for the private HudoGriz/autoresearch-hpc repository. This remains an experimental pre-1.0
 framework; do not treat protocol compliance as scientific validation.
+
+Ponytail default-skill integration and the CI dry-run correction are under
+validation in local audit iteration 6. See docs/skills-and-token-budget.md.
