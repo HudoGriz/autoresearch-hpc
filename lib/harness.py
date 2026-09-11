@@ -64,8 +64,16 @@ def provider_error(path):
 
 def budget():
     directory, prompt, command, role, harness, pf, vf, max_input, max_rounds, note, dry = sys.argv[2:]
-    if Path(prompt).stat().st_size > int(max_input):
-        sys.exit('review input exceeds ask_max_input_bytes; supply a smaller explicit evidence packet')
+    size = Path(prompt).stat().st_size
+    if size > int(max_input):
+        d = Path(directory)
+        body = d / ('DAG.md' if role == 'reimplementer' else 'results/report/' + d.name + '_report.md')
+        parts = [(name, p.stat().st_size) for name, p in (('pre-declaration', d / 'README.md'), (body.stem, body))
+                 if p.exists()]
+        parts.append(('role, instructions and note', size - sum(n for _, n in parts)))
+        sys.exit(f"review input is {size} bytes ({', '.join(f'{name} {n}' for name, n in parts)}); "
+                 f"ask_max_input_bytes is {max_input}. Shorten the pre-declaration or report, or raise "
+                 "ask_max_input_bytes in .arh/config/harnesses.md and record why beside it")
     for record in valid_records(directory):
         data = json.loads(Path(record + '.json').read_text())
         if (Path(record).name.startswith('CROSSCHECK_' + role + '_' + harness + '_')
@@ -85,8 +93,24 @@ def budget():
         sys.exit('a further review requires --note describing the concrete unresolved issue')
 
 
+def cli_version(template, cwd):
+    """First output line of the harness's configured version command, recorded so a verdict can be
+    traced to the CLI build that produced it. Never trusted for eligibility."""
+    if not template.strip():
+        return None
+    try:
+        out = subprocess.run(shlex.split(template), cwd=cwd, stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=15)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    lines = (out.stdout.strip() or out.stderr.strip()).splitlines()
+    return lines[0][:200] if lines else None
+
+
 def run():
-    command, prompt_file, cwd, output, seconds, pf, vf, override, output_limit = sys.argv[2:]
+    command, prompt_file, cwd, output, seconds, pf, vf, override, output_limit = sys.argv[2:11]
+    version_cmd = sys.argv[11] if len(sys.argv) > 11 else ''
+    version = cli_version(version_cmd, cwd)
     prompt = Path(prompt_file).read_text()
     values = {'{prompt}': prompt, '{cwd}': cwd}
     argv = [re.sub(r'\{prompt\}|\{cwd\}', lambda match: values[match.group()], arg)
@@ -180,7 +204,7 @@ def run():
                 command_template=command, cwd=cwd, prompt_sha256=digest(prompt_file),
                 review_sha256=digest(output), report_sha256=reviewed_report,
                 predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts,
-                provider_error=refused)
+                provider_error=refused, verifier_version=version, verifier_version_cmd=version_cmd or None)
     with open(output + '.json', 'x') as record:
         json.dump(data, record, indent=2)
         record.write('\n')

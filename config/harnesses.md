@@ -30,15 +30,19 @@ harnesses = claude codex opencode
 
 harness_claude_cmd      = claude -p {prompt}
 harness_claude_family   = anthropic
+harness_claude_version_cmd = claude --version
 
 harness_codex_cmd       = codex exec --skip-git-repo-check {prompt}
 harness_codex_family    = openai
+harness_codex_version_cmd = codex --version
 
 harness_opencode_cmd    = opencode run {prompt}
 harness_opencode_family = mixed
+harness_opencode_version_cmd = opencode --version
 
 harness_gemini_cmd      = gemini -p {prompt}
 harness_gemini_family   = google
+harness_gemini_version_cmd = gemini --version
 
 producer   = claude
 verifier   = codex
@@ -55,3 +59,10 @@ a wrapper script for pipelines or environment setup. Reviews from `mixed` or
 `unknown` families cannot satisfy the required foreign-family gate. An unchanged
 eligible review is reused without a model call. Deterministic execution, status
 and context assembly do not call a model.
+
+`harness_<name>_version_cmd` (optional) runs once before each review. Its first
+output line is stored in the review record as `verifier_version`, so a verdict
+can be traced to the CLI build that produced it. The family alone does not
+identify the model. When the provider's default model must not drift between
+reviews, pin it in the command template itself (for example
+`codex exec -m <model> --skip-git-repo-check {prompt}`).

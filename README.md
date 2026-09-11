@@ -247,7 +247,7 @@ The protocol is a cooperative research-integrity system, not a hostile-code sand
 | **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
-| **Migration / hardening** | [Moving a 0.1 study to 0.2, and implementation notes](docs/migration-hardening.md) |
+| **Migration / hardening** | [`arh migrate` for 0.1 studies, and implementation notes](docs/migration-hardening.md) |
 | **Positioning** | [What this project is — and is not](docs/positioning.md) |
 | **Changes** | [CHANGELOG.md](CHANGELOG.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |

@@ -52,6 +52,18 @@ the foreign reviewer.
 - Leftover `discovery-loop` names: the Claude Code `PATH` example (it pointed at
   `../discovery-loop/bin`), the Codex profile, the adversary role and the test
   banner.
+- **`arh ledger render` no longer adds a second status table.** Given a ledger whose
+  status block uses another marker (a 0.1 ledger's), it used to append a second
+  table, and `arh ledger check` still passed. `render` now refuses and names the
+  marker. `check` now fails whenever the table differs from a fresh render
+  (stale, missing or duplicated), not only when an iteration number is absent.
+- `arh doctor` compares the protocol recorded in `.arh/VERSION` with the
+  framework's, and names `arh migrate` on a mismatch.
+- The review-size refusal states the prompt's size, the limit and the size of
+  each part. It used to ask for "a smaller explicit evidence packet", which no
+  option supplies.
+- `arh gate results` warns when a reviewed iteration has no `REVIEW_RESPONSE.md`
+  (protocol 6.5 requires every finding to be evaluated).
 
 ### Added
 - `scripts/lock-env.sh` exports an existing conda/micromamba environment as a
@@ -60,8 +72,23 @@ the foreign reviewer.
 - `docs/hpc-execution.md` covers pulling the runtime image, run receipts and
   caching, stopping a submission, and Nextflow strict syntax (a Groovy `import`
   is a compile error that surfaces only after submit).
-- A tested procedure for migrating a 0.1 study, in
-  [docs/migration-hardening.md](docs/migration-hardening.md).
+- **`arh migrate [DIR] [--apply]`** moves a 0.1 study to the current layout: state
+  directory, fences, ledger markers, `site.md` paths, `AGENTS.md`, `skills/` and
+  `.arh/VERSION`. It is a dry run by default and writes a backup before changing
+  anything. It never touches iteration or verification files, and running it
+  again changes nothing
+  ([docs/migration-hardening.md](docs/migration-hardening.md)).
+- Standing rules may set `scope = paragraph`, so a forbidden term must be
+  qualified in the same paragraph rather than anywhere in the document. The
+  default stays `document`, so existing reports are judged as before.
+- `harness_<name>_version_cmd`: its first output line is stored in each review
+  record as `verifier_version`. The shipped harnesses declare one.
+- Regression tests for the above: `test_migrate_legacy_study`,
+  `test_ledger_render_refuses_a_foreign_status_block`,
+  `test_ledger_check_detects_a_stale_table`, `test_rule_scope_paragraph`,
+  `test_review_records_verifier_version`,
+  `test_doctor_names_a_protocol_mismatch` and
+  `test_gate_warns_without_review_response`.
 - Six regression tests: `test_verbose_stderr_does_not_abort_review`,
   `test_provider_error_does_not_consume_round`,
   `test_rule_violation_blocks_review_before_dispatch`,

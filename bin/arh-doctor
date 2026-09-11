@@ -9,7 +9,14 @@ printf 'AutoResearch HPC  ARH_HOME=%s\n\n' "$ARH_HOME"
 if (arh_find_project) >/dev/null 2>&1; then
   arh_load_project
   arh_ok "project: $ARH_ROOT"
-  arh_ok "state: .arh (protocol 0.2 layout)"
+  framework=$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md")
+  recorded=$(sed -n 's/^protocol *= *//p' "$ARH_STATE/VERSION" 2>/dev/null | head -1)
+  if [ -z "$recorded" ]; then arh_warn "no protocol recorded in .arh/VERSION"
+  elif [ "$recorded" = "$framework" ]; then arh_ok "state: .arh, protocol $recorded"
+  else
+    arh_fail "project records protocol $recorded, the framework is $framework — run: arh migrate $ARH_ROOT"
+    warn=$((warn+1))
+  fi
 else
   arh_warn "not inside a project"
   arh_info "create one with: arh init /shared/my-study"

@@ -151,7 +151,8 @@ printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
 timeout_s=$(arh_config_get "$ARH_HARN" ask_timeout 900)
 # Parse quoted arguments without shell expansion; timeout is portable.
 set +e
-python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)"
+python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" \
+  "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${harness}_version_cmd" "")"
 rc=$?
 set -e
 cp "$prompt" "$out.prompt"
