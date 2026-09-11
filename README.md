@@ -1,4 +1,6 @@
-![AutoResearch HPC — auditable AI-assisted research on HPC](docs/assets/autoresearch-hpc-banner.jpg)
+<p align="center">
+  <img src="docs/assets/autoresearch-hpc-banner.jpg" alt="AutoResearch HPC — auditable AI-assisted research on HPC" width="100%">
+</p>
 
 <p align="center">
   <a href="https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/HudoGriz/autoresearch-hpc/actions/workflows/test.yml/badge.svg"></a>
@@ -78,7 +80,21 @@ That separation is important: an agent may choose to *use the Iterate skill*, bu
 
 ## Quick start
 
-### 1. Initialize a study
+### Easiest: ask your AI harness to set it up
+
+If you are already using **Claude Code, Codex, OpenCode, Cursor, Copilot, or another coding agent**, you do not need to copy the setup commands by hand. Give the agent this repository:
+
+```text
+https://github.com/HudoGriz/autoresearch-hpc
+```
+
+and ask it:
+
+> Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, configure the required host-side tools and harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
+
+The repository ships `AGENTS.md`, reusable skills, and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. You remain in control of any installation or system-level change it proposes.
+
+### Manual setup
 
 ```bash
 git clone https://github.com/HudoGriz/autoresearch-hpc.git
@@ -92,7 +108,7 @@ arh doctor
 
 `arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. `arh doctor` reports what still needs configuration.
 
-If micromamba is available, bootstrap the host-side Nextflow environment during initialization:
+**Micromamba is not a protocol requirement.** The current automated bootstrap uses a standalone micromamba binary to create a pinned host-side Nextflow/Python environment. It does not need to be installed system-wide. If you use that bootstrap path:
 
 ```bash
 arh init /shared/my-study --bootstrap \
