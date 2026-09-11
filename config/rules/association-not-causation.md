@@ -7,7 +7,7 @@ treatment, secular time. Every contrast is *associated with*, never *caused by*.
 **Enforcement.** An iteration report containing causal language in a conclusion
 must also contain an explicit statement of the design's causal limits.
 
-```dl-config
+```arh-config
 id       = association-not-causation
 severity = error
 applies  = report

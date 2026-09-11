@@ -13,7 +13,7 @@ borrow from**.
 
 | Framework | What it is | Why it matters here |
 |---|---|---|
-| [AiiDA](https://github.com/aiidateam/aiida-core) ([Sci Data 2020](https://www.nature.com/articles/s41597-020-00638-4)) | Workflow manager built around a provenance graph. SLURM/PBS/SGE/LSF out of the box; millions of queryable nodes | The mature version of what `dl dag` does by hand |
+| [AiiDA](https://github.com/aiidateam/aiida-core) ([Sci Data 2020](https://www.nature.com/articles/s41597-020-00638-4)) | Workflow manager built around a provenance graph. SLURM/PBS/SGE/LSF out of the box; millions of queryable nodes | The mature version of what `arh dag` does by hand |
 | [nf-core](https://nf-co.re/docs/guidelines/pipelines/overview) | Convention + `nf-core lint` + template, for Nextflow pipelines | Exactly our genre: MUST-level rules with a linter enforcing them |
 | [eLabFTW](https://github.com/elabftw/elabftw) | Open-source electronic lab notebook with RFC 3161 timestamping | The production recipe for our pre-declaration timestamping gap |
 | [Sumatra](https://github.com/open-research/sumatra) | "Automated electronic lab notebook for computational projects" | Closest ancestor in spirit; captures at execution time |
@@ -25,7 +25,7 @@ borrow from**.
 
 ## 2. Three lessons that change our design
 
-### 2.1 AiiDA — our DAG nodes and edges are untyped, and that is why `dl dag check` is weak
+### 2.1 AiiDA — our DAG nodes and edges are untyped, and that is why `arh dag check` is weak
 
 AiiDA distinguishes **data nodes** from **process nodes**, and splits processes
 into *calculations* (which create new data) and *workflows* (which only
@@ -37,13 +37,13 @@ The payoff is a rule we currently cannot express:
 > **Data provenance must be a strict DAG. Logical provenance may contain
 > cycles** — because a workflow can legitimately return its own input.
 
-Our DAG has generic nodes and one arrow type. With typing, `dl dag check` could
+Our DAG has generic nodes and one arrow type. With typing, `arh dag check` could
 verify that the terminal claim has a `create`-path back to the declared inputs.
 That is precisely how a claim comes to rest on a step which only passed data
 through without producing anything — a defect invisible in any narrative report.
 
 **Action:** add a `kind` column to the DAG node table (`data` / `calculation` /
-`workflow`) and an edge-type annotation; extend `dl dag check` to require a
+`workflow`) and an edge-type annotation; extend `arh dag check` to require a
 `create`-path from inputs to the terminal claim.
 
 ### 2.2 nf-core — our standing rules have no waiver mechanism, and that is a design flaw
@@ -58,7 +58,7 @@ leaving no trace. That is strictly worse than an explicit waiver.
 
 > **A rule that cannot be waived honestly will be evaded dishonestly.**
 
-**Action:** per-iteration waivers with a **required reason**; `dl gate` prints
+**Action:** per-iteration waivers with a **required reason**; `arh gate` prints
 active waivers rather than passing quietly; the waiver is carried into the
 report so a reader sees which rule was set aside and why.
 
@@ -91,7 +91,7 @@ eLabFTW's RFC 3161 flow, in production use:
 parameters, inputs, outputs and platform without asking the human for anything.
 `datalad rerun` then re-executes from that record.
 
-Our `dl submit` records almost nothing. It should capture the same record
+Our `arh submit` records almost nothing. It should capture the same record
 itself, and the record should be re-executable rather than merely descriptive.
 
 ### 2.5 showyourwork — the report should be a build artifact
@@ -145,8 +145,8 @@ is a legitimate reason, but it should be named honestly.
 > **The graph database must be a rebuildable cache, never the source of truth.**
 
 Source of truth stays as files in git: pre-declarations, DAGs, `finding.json`
-records, cross-check records. A `dl graph build` materialises those into
-whatever store you like; `dl graph rebuild` reconstructs it from scratch.
+records, cross-check records. A `arh graph build` materialises those into
+whatever store you like; `arh graph rebuild` reconstructs it from scratch.
 
 This is not architectural fastidiousness. **Kùzu — the obvious embedded choice
 until recently — was acquired by Apple, its repository archived on 10 October
@@ -164,7 +164,7 @@ as disposable and that event costs you an afternoon instead of a project.
 | **Apache Jena / Fuseki** | RDF, SPARQL | yes | weaker tooling | mature RDF, heavier |
 | **DuckDB** (+ DuckPGQ) | relational + property graph | no | good text-to-SQL | excellent on HPC, zero ops |
 | **FalkorDB** | property graph, Cypher | yes (Redis) | has an MCP server | lighter than Neo4j; the Kùzu migration path |
-| **NetworkX / rustworkx** | in-process | no | none | fine for `dl dag check` itself |
+| **NetworkX / rustworkx** | in-process | no | none | fine for `arh dag check` itself |
 | ~~Kùzu~~ | embedded property graph | no | — | **archived Oct 2025, do not adopt** |
 
 ### 4.4 Does Neo4j have an effective LLM interface? Yes — the best of any of them
@@ -197,12 +197,12 @@ there is no privilege problem — a container is just an executable.
 apptainer pull neo4j.sif docker://neo4j:5-community
 
 # Neo4j writes to four directories; bind them into the project.
-mkdir -p .dl/neo4j/{data,logs,conf,plugins}
+mkdir -p .arh/neo4j/{data,logs,conf,plugins}
 apptainer instance start \
-  --bind .dl/neo4j/data:/data \
-  --bind .dl/neo4j/logs:/logs \
-  --bind .dl/neo4j/conf:/var/lib/neo4j/conf \
-  --bind .dl/neo4j/plugins:/plugins \
+  --bind .arh/neo4j/data:/data \
+  --bind .arh/neo4j/logs:/logs \
+  --bind .arh/neo4j/conf:/var/lib/neo4j/conf \
+  --bind .arh/neo4j/plugins:/plugins \
   --env NEO4J_AUTH=none \
   neo4j.sif dlgraph
 ```
@@ -224,7 +224,7 @@ Caveats that decide whether this is worth it:
 | Tool | What it does | Fit |
 |---|---|---|
 | **[Morph-KGC](https://github.com/morph-kgc/morph-kgc)** | R2RML/RML mappings → RDF from heterogeneous sources; integrates RDFLib, **Oxigraph**, Kafka | **Best fit.** Declarative mappings from our JSON/TSV to RDF, versioned as files, instead of bespoke conversion code |
-| **[pySHACL](https://kg-construct.github.io/awesome-kgc-tools/)** | validates RDF against SHACL shapes | **The RDF analogue of `dl gate`** — see below |
+| **[pySHACL](https://kg-construct.github.io/awesome-kgc-tools/)** | validates RDF against SHACL shapes | **The RDF analogue of `arh gate`** — see below |
 | **[KG-Hub](https://kghub.org/)** / Biolink / KGX | modular ETL for biological KGs; versioned automatic builds, stable URLs, OBO ontology integration | Relevant if findings need to join a biomedical KG |
 | **LangChain `LLMGraphTransformer`** / LlamaIndex `PropertyGraphIndex` | LLM extracts entities and relations from text into Neo4j | Useful for *navigating* prose. **Not for the provenance backbone** |
 | [awesome-kgc-tools](https://kg-construct.github.io/awesome-kgc-tools/) | curated list of construction tooling | Starting point |
@@ -273,7 +273,7 @@ whole, which for us is a long way off.
 
 1. **Model findings and DAGs as files, in a PROV-aligned schema.** That is the
    source of truth and it is what gets published.
-2. **Add `dl graph build`** emitting both an RDF dump and a Cypher load script,
+2. **Add `arh graph build`** emitting both an RDF dump and a Cypher load script,
    so the store is a choice rather than a commitment.
 3. **Generate RDF with Morph-KGC mappings**, not bespoke code, so the mapping
    is itself a reviewable, versioned artifact.

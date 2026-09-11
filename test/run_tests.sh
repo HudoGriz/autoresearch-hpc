@@ -5,12 +5,12 @@
 #   test/run_tests.sh            run in a temp dir, clean up
 #   KEEP=1 test/run_tests.sh     keep the scratch project for inspection
 set -uo pipefail
-: "${DL_TEST_SITE:?Set DL_TEST_SITE to a configured local Nextflow/Singularity site.md}"
+: "${ARH_TEST_SITE:?Set ARH_TEST_SITE to a configured local Nextflow/Singularity site.md}"
 
-DL_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-export DL_HOME PATH="$DL_HOME/bin:$PATH"
+ARH_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+export ARH_HOME PATH="$ARH_HOME/bin:$PATH"
 
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/dl-test.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/arh-test.XXXXXX")
 PROJ="$WORK/toy"
 pass=0; fail=0
 
@@ -36,43 +36,43 @@ printf '# discovery-loop test suite\n# scratch: %s\n\n' "$WORK"
 
 # --- 1. framework --------------------------------------------------------
 printf '# framework\n'
-check "dl prints usage"                    0 dl --help
-check "dl rejects an unknown command"      1 dl nonsense
-check "dl doctor runs outside a project"   0 env DL_PROJECT="$WORK" dl doctor
-for f in "$DL_HOME"/bin/dl*; do
+check "arh prints usage"                    0 arh --help
+check "arh rejects an unknown command"      1 arh nonsense
+check "arh doctor runs outside a project"   0 env ARH_PROJECT="$WORK" arh doctor
+for f in "$ARH_HOME"/bin/arh*; do
   bash -n "$f" 2>/dev/null && ok "syntax: $(basename "$f")" || no "syntax: $(basename "$f")"
 done
 python3 -c "
 import json,glob,sys
-for f in sorted(glob.glob('$DL_HOME/schema/*.json')): json.load(open(f))
+for f in sorted(glob.glob('$ARH_HOME/schema/*.json')): json.load(open(f))
 " && ok "schemas are valid JSON" || no "schemas are valid JSON"
 
 # --- 2. init -------------------------------------------------------------
 printf '\n# init\n'
-check "dl init creates a project"          0 dl init "$PROJ"
-if [ -n "${DL_TEST_SITE:-}" ]; then cp "$DL_TEST_SITE" "$PROJ/.dl/config/site.md"; fi
-check "dl init refuses to re-init"         1 dl init "$PROJ"
-for p in .dl/config/site.md .dl/config/project.md .dl/config/harnesses.md \
-         PROGRESS.md AGENTS.md GOTCHAS.md rules/null-is-upper-bound.md .dl/registry.tsv; do
+check "arh init creates a project"          0 arh init "$PROJ"
+if [ -n "${ARH_TEST_SITE:-}" ]; then cp "$ARH_TEST_SITE" "$PROJ/.arh/config/site.md"; fi
+check "arh init refuses to re-init"         1 arh init "$PROJ"
+for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md \
+         PROGRESS.md AGENTS.md GOTCHAS.md rules/null-is-upper-bound.md .arh/registry.tsv; do
   [ -e "$PROJ/$p" ] && ok "created $p" || no "created $p"
 done
 [ -L "$PROJ/CLAUDE.md" ] && ok "CLAUDE.md symlinks to AGENTS.md" || no "CLAUDE.md symlinks to AGENTS.md"
 
 cd "$PROJ" || exit 1
-check "dl doctor passes on a fresh project" 0 dl doctor
+check "arh doctor passes on a fresh project" 0 arh doctor
 
 # --- 3. claiming ---------------------------------------------------------
 printf '\n# claiming\n'
-n=$(dl claim -t "Does the toy signal exceed its null?" -a tester 2>/dev/null)
+n=$(arh claim -t "Does the toy signal exceed its null?" -a tester 2>/dev/null)
 [ "$n" = 1 ] && ok "first claim returns 1" || no "first claim returns 1" "got '$n'"
 [ -f "iterations/iteration1/CLAIM.json" ] && ok "CLAIM.json written" || no "CLAIM.json written"
 python3 -c "import json;json.load(open('iterations/iteration1/CLAIM.json'))" 2>/dev/null \
   && ok "CLAIM.json is valid JSON" || no "CLAIM.json is valid JSON"
-grep_ok "registry row appended" "^1[[:space:]]+tester" .dl/registry.tsv
+grep_ok "registry row appended" "^1[[:space:]]+tester" .arh/registry.tsv
 
 # Concurrent claims must not collide. This is the failure the protocol exists
 # to prevent: two agents creating the same iteration directory.
-for i in 1 2 3 4 5 6; do ( dl claim -t "concurrent $i" -a "agent$i" >"$WORK/c$i" 2>/dev/null ) & done
+for i in 1 2 3 4 5 6; do ( arh claim -t "concurrent $i" -a "agent$i" >"$WORK/c$i" 2>/dev/null ) & done
 wait
 got=$(cat "$WORK"/c[1-6] 2>/dev/null | sort -n | tr '\n' ' ')
 uniq_n=$(cat "$WORK"/c[1-6] 2>/dev/null | sort -n | uniq | wc -l)
@@ -83,9 +83,9 @@ dirs=$(ls -1d iterations/iteration* | wc -l)
 
 # --- 4. pre-declaration gate --------------------------------------------
 printf '\n# pre-declaration gate\n'
-check "dl new scaffolds the README"         0 dl new -n 1
-check "dl new refuses to overwrite"         1 dl new -n 1
-check "gate rejects an unfilled template"   1 dl gate predeclare -n 1
+check "arh new scaffolds the README"         0 arh new -n 1
+check "arh new refuses to overwrite"         1 arh new -n 1
+check "gate rejects an unfilled template"   1 arh gate predeclare -n 1
 if [ -f iterations/iteration1/PREDECLARATION.sha256 ]
 then no "a failed gate freezes nothing"; else ok "a failed gate freezes nothing"; fi
 
@@ -121,14 +121,14 @@ Results are associated with the grouping variable and cannot separate it from
 draw order. Any null is an upper bound at the stated detection limit. Nothing
 here is orthogonally validated, so every result is a candidate.
 EOF
-check "gate accepts a complete pre-declaration" 0 dl gate predeclare -n 1
+check "gate accepts a complete pre-declaration" 0 arh gate predeclare -n 1
 [ -f iterations/iteration1/PREDECLARATION.sha256 ] && ok "hash frozen" || no "hash frozen"
 frozen=$(head -1 iterations/iteration1/PREDECLARATION.sha256)
 
 # A pre-declaration written after the results is not a pre-declaration.
-dl new -n 2 >/dev/null 2>&1
+arh new -n 2 >/dev/null 2>&1
 mkdir -p iterations/iteration2/results && echo "answer" > iterations/iteration2/results/out.tsv
-check "gate rejects pre-declaration after results exist" 1 dl gate predeclare -n 2
+check "gate rejects pre-declaration after results exist" 1 arh gate predeclare -n 2
 
 # --- 5. running work -----------------------------------------------------
 printf '\n# running work\n'
@@ -161,26 +161,26 @@ python3 iterations/iteration1/scripts/it1_01_toy.py iterations/iteration1/result
 EOF
 chmod +x iterations/iteration1/scripts/it1_01_run.sh
 
-jid=$(dl submit iterations/iteration1/scripts/it1_01_run.sh -n it1_01 \
+jid=$(arh submit iterations/iteration1/scripts/it1_01_run.sh -n it1_01 \
         -l iterations/iteration1/logs -w 2>/dev/null)
-[ -n "$jid" ] && ok "dl submit returned a job id ($jid)" || no "dl submit returned a job id"
+[ -n "$jid" ] && ok "arh submit returned a job id ($jid)" || no "arh submit returned a job id"
 for _ in $(seq 1 50); do [ -s iterations/iteration1/results/it1_01_result.tsv ] && break; sleep 0.2; done
 [ -s iterations/iteration1/results/it1_01_result.tsv ] \
   && ok "job produced results" || no "job produced results"
 grep_ok "results reconcile to n=100" "^n[[:space:]]+100" iterations/iteration1/results/it1_01_result.tsv
-check "dl run uses the configured Singularity runtime" 0 dl run runtime -- true
+check "arh run uses the configured Singularity runtime" 0 arh run runtime -- true
 
 # --- 6. guard ------------------------------------------------------------
 printf '\n# immutable-input guard\n'
-check "guard allows a path inside the project" 0 dl guard "$PROJ/iterations/iteration1/results/x"
-check "guard refuses a path outside"           1 dl guard /etc/passwd
+check "guard allows a path inside the project" 0 arh guard "$PROJ/iterations/iteration1/results/x"
+check "guard refuses a path outside"           1 arh guard /etc/passwd
 python3 - <<EOF
 import re,pathlib
-p=pathlib.Path(".dl/config/project.md"); s=p.read_text()
+p=pathlib.Path(".arh/config/project.md"); s=p.read_text()
 p.write_text(s.replace("immutable_inputs  =", "immutable_inputs  = $WORK/raw"))
 EOF
 mkdir -p "$WORK/raw"
-check "guard refuses a declared immutable input" 1 dl guard "$WORK/raw/x"
+check "guard refuses a declared immutable input" 1 arh guard "$WORK/raw/x"
 
 # --- 7. standing rules ---------------------------------------------------
 printf '\n# standing rules\n'
@@ -188,7 +188,7 @@ cat > "$WORK/bad_report.md" <<'EOF'
 # Report
 The exposure causes the outcome. There is no effect in the control arm.
 EOF
-check "rules reject causal language and a bare null" 1 dl gate rules "$WORK/bad_report.md"
+check "rules reject causal language and a bare null" 1 arh gate rules "$WORK/bad_report.md"
 cat > "$WORK/good_report.md" <<'EOF'
 # Report
 The exposure is associated with the outcome; this design cannot separate it from
@@ -196,11 +196,11 @@ draw order and the claim is not causal. The control arm is null: we cannot
 exclude effects below the stated detection limit of 0.20 units, which is the
 upper bound this design supports. Negative controls did not fire.
 EOF
-check "rules accept a properly qualified report" 0 dl gate rules "$WORK/good_report.md"
+check "rules accept a properly qualified report" 0 arh gate rules "$WORK/good_report.md"
 
 # --- 8. results gate & tamper detection ---------------------------------
 printf '\n# results gate\n'
-check "results gate fails with no report" 1 dl gate results -n 1
+check "results gate fails with no report" 1 arh gate results -n 1
 cat > iterations/iteration1/results/report/iteration1_report.md <<'EOF'
 # Iteration 1 report
 
@@ -222,13 +222,13 @@ Yes — §7 predicted a null with a quiet negative control.
 Association only; the design cannot separate grouping from draw order. The
 result is a candidate, not a validated finding.
 EOF
-check "results gate still fails with no cross-check" 1 dl gate results -n 1
+check "results gate still fails with no cross-check" 1 arh gate results -n 1
 cat > "iterations/iteration1/CROSSCHECK_adversary_codex_20260908T000000Z.md" <<'EOF'
 # Cross-check — iteration 1
 VERDICT: SOUND
 No findings; the null is reported as an upper bound.
 EOF
-python3 - "$DL_HOME" <<'PYTEST'
+python3 - "$ARH_HOME" <<'PYTEST'
 import sys, json
 from pathlib import Path
 sys.path.insert(0, sys.argv[1] + '/lib')
@@ -239,13 +239,13 @@ data=dict(exit_code=0, verdict='SOUND', producer_family='anthropic', verifier_fa
           predeclaration_sha256=digest('iterations/iteration1/README.md'))
 Path(str(p)+'.json').write_text(json.dumps(data))
 PYTEST
-check "results gate passes when cross-checked" 0 dl gate results -n 1
+check "results gate passes when cross-checked" 0 arh gate results -n 1
 
 # The core mechanism: editing the pre-declaration after results must be caught.
 printf '\n' >> iterations/iteration1/README.md
 echo "## 9. Added after the fact" >> iterations/iteration1/README.md
-check "tampering with a frozen pre-declaration is caught" 1 dl gate results -n 1
-grep_ok "tamper report names the file" "README.md CHANGED" <(dl gate results -n 1 2>&1)
+check "tampering with a frozen pre-declaration is caught" 1 arh gate results -n 1
+grep_ok "tamper report names the file" "README.md CHANGED" <(arh gate results -n 1 2>&1)
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path("iterations/iteration1/README.md")
@@ -257,48 +257,48 @@ now=$(if command -v sha256sum >/dev/null 2>&1
       else shasum -a 256 iterations/iteration1/README.md; fi | awk '{print $1}')
 [ "$now" = "$frozen" ] && ok "restored README matches the frozen hash" \
   || no "restored README matches the frozen hash"
-check "results gate passes again after restore" 0 dl gate results -n 1
+check "results gate passes again after restore" 0 arh gate results -n 1
 
 # --- 9. cross-harness dispatch ------------------------------------------
 printf '\n# cross-harness dispatch\n'
-check "dl ask --dry-run composes a prompt"    0 dl ask --role adversary -n 1 --dry-run
-out=$(dl ask --role adversary -n 1 --dry-run 2>&1)
+check "arh ask --dry-run composes a prompt"    0 arh ask --role adversary -n 1 --dry-run
+out=$(arh ask --role adversary -n 1 --dry-run 2>&1)
 printf '%s' "$out" | grep -q "^# Role: adversary" \
   && ok "prompt carries the role instructions" || no "prompt carries the role instructions"
 printf '%s' "$out" | grep -q "PRE-DECLARED" \
   && ok "prompt carries the pre-declaration" || no "prompt carries the pre-declaration"
-check "dl ask rejects an unknown role"        1 dl ask --role nonsense -n 1 --dry-run
+check "arh ask rejects an unknown role"        1 arh ask --role nonsense -n 1 --dry-run
 python3 - <<'EOF'
 import pathlib
-p = pathlib.Path(".dl/config/harnesses.md")
+p = pathlib.Path(".arh/config/harnesses.md")
 p.write_text(p.read_text().replace("verifier   = codex", "verifier   = claude"))
 EOF
-check "same-family verification is refused"   1 dl ask --role adversary -n 1 --dry-run
-check "--same-family overrides it"            0 dl ask --role adversary -n 1 --dry-run --same-family
+check "same-family verification is refused"   1 arh ask --role adversary -n 1 --dry-run
+check "--same-family overrides it"            0 arh ask --role adversary -n 1 --dry-run --same-family
 python3 - <<'EOF'
 import pathlib
-p = pathlib.Path(".dl/config/harnesses.md")
+p = pathlib.Path(".arh/config/harnesses.md")
 p.write_text(p.read_text().replace("verifier   = claude", "verifier   = codex"))
 EOF
 
 # --- 10. ledger ----------------------------------------------------------
 printf '\n# ledger\n'
-check "dl ledger render"  0 dl ledger render
+check "arh ledger render"  0 arh ledger render
 grep_ok "status table rendered" "^\| 1 \| tester" PROGRESS.md
 grep_ok "frozen state shown"    "frozen" PROGRESS.md
-check "dl ledger render is idempotent" 0 dl ledger render
-[ "$(grep -c 'dl:status:begin' PROGRESS.md)" = 1 ] \
+check "arh ledger render is idempotent" 0 arh ledger render
+[ "$(grep -c 'arh:status:begin' PROGRESS.md)" = 1 ] \
   && ok "render does not duplicate the table" || no "render does not duplicate the table"
-check "dl status runs" 0 dl status
-grep_ok "status shows the cross-check" "yes" <(dl status 2>&1)
+check "arh status runs" 0 arh status
+grep_ok "status shows the cross-check" "yes" <(arh status 2>&1)
 
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path("iterations/iteration1/README.md")
 p.write_text(p.read_text() + "\ntampered\n")
 EOF
-check "ledger check catches an altered pre-declaration" 1 dl ledger check
-grep_ok "ledger names the altered iteration" "iteration 1 — README.md altered" <(dl ledger check 2>&1)
+check "ledger check catches an altered pre-declaration" 1 arh ledger check
+grep_ok "ledger names the altered iteration" "iteration 1 — README.md altered" <(arh ledger check 2>&1)
 python3 - <<'RESTORE'
 from pathlib import Path
 p = Path('iterations/iteration1/README.md')
@@ -309,25 +309,25 @@ RESTORE
 printf '\n# configuration\n'
 python3 - <<'EOF'
 import pathlib
-p = pathlib.Path(".dl/config/site.md")
+p = pathlib.Path(".arh/config/site.md")
 p.write_text(p.read_text().replace("scheduler         = local", "scheduler         = nonesuch"))
 EOF
-check "doctor fails on an unknown scheduler backend" 1 dl doctor
+check "doctor fails on an unknown scheduler backend" 1 arh doctor
 python3 - <<'EOF'
 import pathlib
-p = pathlib.Path(".dl/config/site.md")
+p = pathlib.Path(".arh/config/site.md")
 p.write_text(p.read_text().replace("scheduler         = nonesuch", "scheduler         = local"))
 EOF
-check "doctor passes when the config matches the machine" 0 dl doctor
+check "doctor passes when the config matches the machine" 0 arh doctor
 
 # --- 12. arms -------------------------------------------------------------
 printf '\n# arms\n'
-check "dl arm list on an iteration with none" 0 dl arm list -n 1
-check "dl arm new refuses before pre-declaration" 1 dl arm new -n 2 -a A -t "too early"
-check "dl arm new scaffolds"                  0 dl arm new -n 1 -a A -t "the primary route"
-check "dl arm new refuses a duplicate"        1 dl arm new -n 1 -a A
-check "dl arm new rejects a path segment"     1 dl arm new -n 1 -a ../escape
-check "arm gate rejects an unfilled template" 1 dl arm gate -n 1 -a A
+check "arh arm list on an iteration with none" 0 arh arm list -n 1
+check "arh arm new refuses before pre-declaration" 1 arh arm new -n 2 -a A -t "too early"
+check "arh arm new scaffolds"                  0 arh arm new -n 1 -a A -t "the primary route"
+check "arh arm new refuses a duplicate"        1 arh arm new -n 1 -a A
+check "arh arm new rejects a path segment"     1 arh arm new -n 1 -a ../escape
+check "arm gate rejects an unfilled template" 1 arh arm gate -n 1 -a A
 cat > iterations/iteration1/arms/A/README.md <<'EOF'
 # Iteration 1 · Arm A — the primary route
 
@@ -343,19 +343,19 @@ Index-shuffled pairing, expected null.
 ## 4. Fate
 PLANNED
 EOF
-check "arm gate accepts a complete arm"       0 dl arm gate -n 1 -a A
-grep_ok "arm shows as frozen" "^A[[:space:]]+frozen" <(dl arm list -n 1 2>&1)
-check "dl arm fate rejects an invalid fate"   1 dl arm fate -n 1 -a A -f MADE_UP
-check "dl arm fate records KILLED_BY_CONTROL" 0 dl arm fate -n 1 -a A -f KILLED_BY_CONTROL
-grep_ok "fate is listed" "KILLED_BY_CONTROL" <(dl arm list -n 1 2>&1)
+check "arm gate accepts a complete arm"       0 arh arm gate -n 1 -a A
+grep_ok "arm shows as frozen" "^A[[:space:]]+frozen" <(arh arm list -n 1 2>&1)
+check "arh arm fate rejects an invalid fate"   1 arh arm fate -n 1 -a A -f MADE_UP
+check "arh arm fate records KILLED_BY_CONTROL" 0 arh arm fate -n 1 -a A -f KILLED_BY_CONTROL
+grep_ok "fate is listed" "KILLED_BY_CONTROL" <(arh arm list -n 1 2>&1)
 grep_ok "a killed arm is called a reportable result" "REPORTABLE" \
-  <(dl arm fate -n 1 -a A -f INFEASIBLE 2>&1)
+  <(arh arm fate -n 1 -a A -f INFEASIBLE 2>&1)
 
 # --- 13. discovery DAG ----------------------------------------------------
 printf '\n# discovery DAG\n'
-check "dl dag init scaffolds"              0 dl dag init -n 1
-check "dl dag init refuses to overwrite"   1 dl dag init -n 1
-check "dag check rejects the empty template" 1 dl dag check -n 1
+check "arh dag init scaffolds"              0 arh dag init -n 1
+check "arh dag init refuses to overwrite"   1 arh dag init -n 1
+check "dag check rejects the empty template" 1 arh dag check -n 1
 cat > iterations/iteration1/DAG.md <<'EOF'
 # Discovery DAG — iteration 1
 
@@ -390,10 +390,10 @@ N1 is discarded before the null is built. Nothing downstream restores it.
 ## 6. Terminal claim
 The mean difference is 0.0184 raw units at permutation p = 0.87.
 EOF
-check "dag check passes on a complete DAG"  0 dl dag check -n 1
-check "dl dag freeze"                       0 dl dag freeze -n 1
+check "dag check passes on a complete DAG"  0 arh dag check -n 1
+check "arh dag freeze"                       0 arh dag freeze -n 1
 [ -f iterations/iteration1/DAG.sha256 ] && ok "DAG hash frozen" || no "DAG hash frozen"
-grep_ok "dag show reports frozen state" "frozen and unchanged" <(dl dag show -n 1 2>&1)
+grep_ok "dag show reports frozen state" "frozen and unchanged" <(arh dag show -n 1 2>&1)
 
 # An orphan node is the defect the topology check exists to surface: something
 # the tables describe and the graph never connects.
@@ -404,19 +404,19 @@ p.write_text(p.read_text().replace(
     "| C1 | the claim | none | no | perm p |",
     "| C1 | the claim | none | no | perm p |\n| N9 | genotype at 13.6 kb | none | yes | dosage |"))
 EOF
-check "dag check catches a node with no edge" 1 dl dag check -n 1
-grep_ok "orphan is named" "N9" <(dl dag check -n 1 2>&1)
+check "dag check catches a node with no edge" 1 arh dag check -n 1
+grep_ok "orphan is named" "N9" <(arh dag check -n 1 2>&1)
 
 # --- 14. blind replication ------------------------------------------------
 printf '\n# blind replication\n'
-check "replicate refuses while the DAG is altered" 1 dl replicate -n 1 --agents 2 --dry-run
+check "replicate refuses while the DAG is altered" 1 arh replicate -n 1 --agents 2 --dry-run
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path("iterations/iteration1/DAG.md")
 p.write_text(p.read_text().replace(
     "\n| N9 | genotype at 13.6 kb | none | yes | dosage |", ""))
 EOF
-check "replicate runs once the DAG matches again" 0 dl replicate -n 1 --agents 2 --dry-run
+check "replicate runs once the DAG matches again" 0 arh replicate -n 1 --agents 2 --dry-run
 for f in verification/replication_it1/agent1/SPEC.md verification/replication_it1/agent1/PROMPT.md \
          verification/replication_it1/agent2/SPEC.md; do
   [ -f "$f" ] && ok "sandbox: ${f#verification/}" || no "sandbox: ${f#verification/}"
@@ -433,7 +433,7 @@ grep_ok "prompt asks for ambiguities"   "ambiguities" verification/replication_i
 # Membership comparison across agents: contested elements must be named.
 cat > verification/replication_it1/agent1/REPORT.md <<'EOF'
 VERDICT: QUALIFIED
-```dl-replication
+```arh-replication
 value = 0.0184
 members = e1,e2,e3
 ambiguities = 2
@@ -441,14 +441,14 @@ ambiguities = 2
 EOF
 cat > verification/replication_it1/agent2/REPORT.md <<'EOF'
 VERDICT: QUALIFIED
-```dl-replication
+```arh-replication
 value = 0.0191
 members = e1,e2,e4
 ambiguities = 3
 ```
 EOF
-check "replicate report runs" 0 dl replicate report -n 1
-rep=$(dl replicate report -n 1 2>&1)
+check "replicate report runs" 0 arh replicate report -n 1
+rep=$(arh replicate report -n 1 2>&1)
 printf '%s' "$rep" | grep -q "2 distinct values" && ok "divergent values are reported" \
   || no "divergent values are reported"
 printf '%s' "$rep" | grep -q "contested: 2" && ok "contested membership is counted" \
@@ -459,18 +459,18 @@ printf '%s' "$rep" | grep -qi "evidence, not truth" && ok "agreement is not equa
 
 # The reimplementer role must work from the DAG, never the directory.
 grep_ok "reimplementer prompt carries the DAG" "frozen" \
-  <(dl ask --role reimplementer -n 1 --dry-run 2>&1)
-out=$(dl ask --role reimplementer -n 1 --dry-run 2>&1)
+  <(arh ask --role reimplementer -n 1 --dry-run 2>&1)
+out=$(arh ask --role reimplementer -n 1 --dry-run 2>&1)
 printf '%s' "$out" | grep -q "it1_01_toy.py" && no "reimplementer prompt leaks the code" \
   || ok "reimplementer prompt does not leak the code"
-check "reimplementer refuses without a frozen DAG" 1 dl ask --role reimplementer -n 2 --dry-run
+check "reimplementer refuses without a frozen DAG" 1 arh ask --role reimplementer -n 2 --dry-run
 
 # --- 15. guidance and machine-readable output -----------------------------
 printf '\n# guidance and API\n'
-check "dl next runs"        0 dl next
-check "dl next -n works"    0 dl next -n 1
-check "dl status --json"    0 dl status --json
-dl status --json > "$WORK/st.json" 2>/dev/null
+check "arh next runs"        0 arh next
+check "arh next -n works"    0 arh next -n 1
+check "arh status --json"    0 arh status --json
+arh status --json > "$WORK/st.json" 2>/dev/null
 python3 -c "
 import json,sys
 d=json.load(open('$WORK/st.json'))
@@ -483,11 +483,11 @@ assert i['arms']==1, i['arms']
 
 # --- 16. verification track ---------------------------------------------
 printf '\n# verification track\n'
-check "dl verify list runs"                   0 dl verify list
-check "dl verify new scaffolds"               0 dl verify new panel_recalc -m recalculation
-check "dl verify new refuses a duplicate"     1 dl verify new panel_recalc
-check "dl verify new rejects a path segment"  1 dl verify new ../escape
-check "verify gate rejects an unfilled template" 1 dl verify gate panel_recalc
+check "arh verify list runs"                   0 arh verify list
+check "arh verify new scaffolds"               0 arh verify new panel_recalc -m recalculation
+check "arh verify new refuses a duplicate"     1 arh verify new panel_recalc
+check "arh verify new rejects a path segment"  1 arh verify new ../escape
+check "verify gate rejects an unfilled template" 1 arh verify gate panel_recalc
 cat > verification/panel_recalc/PREDECLARATION.md <<'EOF'
 # Verification pre-declaration — panel_recalc
 
@@ -512,20 +512,20 @@ Disagreement in retained pairs would show the pairing was not preserved, which
 changes the null the original test was against. A difference only in the sixth
 decimal changes nothing about the claim.
 EOF
-check "verify gate accepts a complete pre-declaration" 0 dl verify gate panel_recalc
+check "verify gate accepts a complete pre-declaration" 0 arh verify gate panel_recalc
 [ -f verification/panel_recalc/PREDECLARATION.sha256 ] \
   && ok "verification hash frozen" || no "verification hash frozen"
-grep_ok "verify list shows frozen" "panel_recalc[[:space:]]+frozen" <(dl verify list 2>&1)
+grep_ok "verify list shows frozen" "panel_recalc[[:space:]]+frozen" <(arh verify list 2>&1)
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path("verification/panel_recalc/PREDECLARATION.md")
 p.write_text(p.read_text() + "\nadded later\n")
 EOF
-grep_ok "verify list detects tampering" "panel_recalc[[:space:]]+ALTERED" <(dl verify list 2>&1)
+grep_ok "verify list detects tampering" "panel_recalc[[:space:]]+ALTERED" <(arh verify list 2>&1)
 
 # A membership criterion is required: reproducing a set's size is not
 # reproducing the set (PROTOCOL.md 6.4).
-dl verify new counts_only >/dev/null 2>&1
+arh verify new counts_only >/dev/null 2>&1
 cat > verification/counts_only/PREDECLARATION.md <<'EOF'
 # Verification pre-declaration — counts_only
 
@@ -544,11 +544,11 @@ The rerun must return 41 elements.
 ## What a failure would mean
 A different count would indicate non-determinism in the pipeline.
 EOF
-check "verify gate rejects a count-only success criterion" 1 dl verify gate counts_only
+check "verify gate rejects a count-only success criterion" 1 arh verify gate counts_only
 
 # --- 17. harness install -------------------------------------------------
 printf '\n# harness install\n'
-check "harness/install.sh runs" 0 "$DL_HOME/harness/install.sh" "$PROJ"
+check "harness/install.sh runs" 0 "$ARH_HOME/harness/install.sh" "$PROJ"
 for p in .claude/skills/iterate/SKILL.md .codex/config.toml opencode.json; do
   [ -e "$PROJ/$p" ] && ok "installed $p" || no "installed $p"
 done

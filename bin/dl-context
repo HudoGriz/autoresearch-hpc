@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-. "${DL_HOME:?}/lib/common.sh"
-[ "${1-}" = --help ] && { echo 'usage: dl context -n N'; exit 0; }
-[ "${1-}" = -n ] && [ -n "${2-}" ] || dl_die 'usage: dl context -n N'
-dl_load_project
-exec python3 "$DL_HOME/lib/context.py" "$2"

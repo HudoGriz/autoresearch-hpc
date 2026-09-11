@@ -6,7 +6,7 @@ never be excluded by an unexamined floor or cap.
 
 **Enforcement.** Pre-declaration and report must both state the detection limit.
 
-```dl-config
+```arh-config
 id       = detection-limit-stated
 severity = error
 applies  = predeclaration report

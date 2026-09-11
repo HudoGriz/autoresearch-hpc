@@ -16,15 +16,15 @@ already knows the codebase.
 | [P2](#p2) | Trusted timestamping of pre-declarations | half a day | `PROPOSED` |
 | [P3](#p3) | Typed DAG nodes and edges | 1 day | `PROPOSED` |
 | [P4](#p4) | Digest-pin container images | half a day | `PROPOSED` |
-| [P5](#p5) | Execution-time provenance capture in `dl submit` | 1–2 days | `PROPOSED` |
+| [P5](#p5) | Execution-time provenance capture in `arh submit` | 1–2 days | `PROPOSED` |
 | [P6](#p6) | Workflow-engine runner (Nextflow / Snakemake) | 2–3 days | `PROPOSED` |
-| [P7](#p7) | `dl graph` — the knowledge graph | 1–2 weeks | `PROPOSED` |
+| [P7](#p7) | `arh graph` — the knowledge graph | 1–2 weeks | `PROPOSED` |
 | [P8](#p8) | Align `finding.schema.json` with the claim-aware profile | half a day | `PROPOSED` |
 | [P9](#p9) | RO-Crate export | 2–3 days | `PROPOSED` |
 | [P10](#p10) | Nanopublications for findings | 3–4 days | `PROPOSED` |
 | [P11](#p11) | Standing rules as SHACL shapes | 2–3 days | `PROPOSED` |
 | [P12](#p12) | in-toto attestations as the record format | 3–4 days | `PROPOSED` |
-| [P13](#p13) | MCP server for `dl` | 2 days | `PROPOSED` |
+| [P13](#p13) | MCP server for `arh` | 2 days | `PROPOSED` |
 | [P14](#p14) | Reports as build artifacts | 2 days | `PROPOSED` |
 | [P15](#p15) | Guix/Nix for bit-reproducible environments | 1–2 weeks | `PROPOSED` |
 | [P16](#p16) | Benchmark the cross-check roles | 1–2 weeks | `PROPOSED` |
@@ -40,7 +40,7 @@ whole project, leaving no trace.
 
 > A rule that cannot be waived honestly will be evaded dishonestly.
 
-**Proposal.** Per-iteration waivers with a mandatory reason. `dl gate` *prints*
+**Proposal.** Per-iteration waivers with a mandatory reason. `arh gate` *prints*
 active waivers rather than passing quietly, and the waiver is carried into the
 report so a reader sees which rule was set aside and why.
 
@@ -49,7 +49,7 @@ report so a reader sees which rule was set aside and why.
 circumstances… if agreed upon by the community". See `prior-art.md` §2.2.
 
 **Risk.** Waivers become routine. Mitigate by surfacing the count in
-`dl status` — a project with many waived rules should look like one.
+`arh status` — a project with many waived rules should look like one.
 
 ---
 
@@ -71,16 +71,16 @@ a Time Stamping Authority, store the export and the token together.
 | Sigstore cosign + Rekor | needs OIDC | ties the stamp to *who*, in a public log |
 
 **Recommendation:** OpenTimestamps — no account, no key management, one line in
-`dl gate predeclare`. Add RFC 3161 as an option for sites that require it.
+`arh gate predeclare`. Add RFC 3161 as an option for sites that require it.
 
 **Risk.** External dependency at gate time. Make it non-blocking with a
-`dl gate stamp` catch-up command, so a cluster without egress still works.
+`arh gate stamp` catch-up command, so a cluster without egress still works.
 
 ---
 
 ## P3 — Typed DAG nodes and edges {#p3}
 
-**Problem.** `dl dag check` can verify a node appears in the graph, but not that
+**Problem.** `arh dag check` can verify a node appears in the graph, but not that
 the terminal claim actually *derives* from the declared inputs. A step that only
 passes data through is indistinguishable from one that produces something.
 
@@ -90,7 +90,7 @@ passes data through is indistinguishable from one that produces something.
 > Data provenance must be a strict DAG. Logical provenance may contain cycles —
 > a workflow can legitimately return its own input.
 
-`dl dag check` gains a real test: the terminal claim must have a `create`-path
+`arh dag check` gains a real test: the terminal claim must have a `create`-path
 back to a declared input.
 
 **Evidence.** `prior-art.md` §2.1.
@@ -106,7 +106,7 @@ back to a declared input.
 nothing notices. The README claims runs are reproducible; without this they are
 merely pinned by name.
 
-**Proposal.** Record each image's sha256 on first use; `dl run` refuses a
+**Proposal.** Record each image's sha256 on first use; `arh run` refuses a
 changed digest unless the config is updated deliberately. Support
 `docker://…@sha256:…` for remote images.
 
@@ -114,9 +114,9 @@ changed digest unless the config is updated deliberately. Support
 
 ---
 
-## P5 — Execution-time provenance capture in `dl submit` {#p5}
+## P5 — Execution-time provenance capture in `arh submit` {#p5}
 
-**Problem.** `dl submit` records almost nothing. The human is expected to write
+**Problem.** `arh submit` records almost nothing. The human is expected to write
 down what ran, which they will not do reliably.
 
 **Proposal.** Capture automatically at execution: code version, parameters,
@@ -133,7 +133,7 @@ have done exactly this for years. `prior-art.md` §2.4.
 
 ## P6 — Workflow-engine runner (Nextflow / Snakemake) {#p6}
 
-**Problem.** `dl submit` is a thin `sbatch` wrapper — no DAG, no resume, no
+**Problem.** `arh submit` is a thin `sbatch` wrapper — no DAG, no resume, no
 per-rule containers, no provenance.
 
 **Proposal.** `runner = slurm | snakemake | nextflow` in `site.md`.
@@ -147,7 +147,7 @@ become one. Keep the runner a dispatch target, not an abstraction over both.
 
 ---
 
-## P7 — `dl graph`, the knowledge graph {#p7}
+## P7 — `arh graph`, the knowledge graph {#p7}
 
 **Problem.** The iteration record and the literature vault are **the same graph
 seen from two sides**, and they never meet.
@@ -166,12 +166,12 @@ design in [`knowledge-graph-design.md`](knowledge-graph-design.md).
 | Layer | Choice |
 |---|---|
 | Truth | files in git — iteration record **+ the existing Obsidian vault** |
-| Vocabulary | PROV-O + CiTO + FaBiO + a small local `dl:` |
+| Vocabulary | PROV-O + CiTO + FaBiO + a small local `arh:` |
 | Generation | Morph-KGC RML mappings, enriched from OpenAlex (no auth needed) |
 | Store & view | Oxigraph default · Neo4j+MCP for agent querying · Cytoscape.js + Mermaid |
 
 ```bash
-dl graph build | enrich | query | view | check
+arh graph build | enrich | query | view | check
 ```
 
 **Two hard rules.** The database is a rebuildable index, never the source of
@@ -204,7 +204,7 @@ and gives a citation.
 
 ## P9 — RO-Crate export {#p9}
 
-**Proposal.** `dl crate` emitting a
+**Proposal.** `arh crate` emitting a
 [Workflow Run RO-Crate](https://doi.org/10.1371/journal.pone.0309210) per
 concluded iteration: depositable to WorkflowHub/Zenodo, W3C PROV aligned,
 citable. This is the publication path for an *iteration*.
@@ -256,13 +256,13 @@ P12 later is the low-risk order.
 
 ---
 
-## P13 — MCP server for `dl` {#p13}
+## P13 — MCP server for `arh` {#p13}
 
 **Proposal.** Expose claim / gate / ask / status / graph-query as MCP tools, so
 any MCP client participates without shelling out. Also the natural seam with
 PROV-AGENT, which already speaks MCP.
 
-**Note.** `dl status --json` already makes `dl` callable from code; this is
+**Note.** `arh status --json` already makes `arh` callable from code; this is
 about *agent* ergonomics, not capability.
 
 ---

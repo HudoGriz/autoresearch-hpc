@@ -2,12 +2,12 @@
 
 **Single source of truth for project state.** Last updated: **{{DATE}}**.
 
-This file exists so that state never has to be reconstructed from chat history.
-Anyone — any person, any agent, any harness — picking this project up reads this
-file first and knows what is done, what is running, and where to resume.
+This file exists so state never has to be reconstructed from chat history.
+Anyone — person, agent or harness — picking this project up reads this file first
+and knows what is done, what is running and where to resume.
 
 > **Maintenance rule.** Update this file whenever an iteration changes status.
-> Run `dl ledger render` to regenerate the status table, and `dl ledger check`
+> Run `arh ledger render` to regenerate the status table, and `arh ledger check`
 > to prove the table still matches what is on disk.
 
 ---
@@ -25,28 +25,25 @@ file first and knows what is done, what is running, and where to resume.
 
 ## 2. Conventions that must not be broken
 
-- **Iterations are append-only.** A new iteration never modifies or overwrites
-  an earlier one. Corrections are stated in the new iteration; the superseded
-  files are left intact.
-- **Pre-declaration precedes results.** `dl gate predeclare` freezes the README
-  hash; `dl gate results` refuses a report whose pre-declaration changed.
-- **Claim before you create.** `dl claim` is the only way to take an iteration
-  number. Two agents creating the same directory is a real failure mode, not a
-  hypothetical one.
-- **Immutable inputs stay immutable.** Bound read-only in every container. All
-  output stays under the project root.
-- **Standing rules are inherited, not re-argued.** See `rules/`.
+- **Iterations are append-only.** Corrections are new iterations; superseded
+  files remain intact.
+- **Pre-declaration precedes results.** `arh gate predeclare` freezes the README
+  hash; `arh gate results` refuses a changed declaration.
+- **Claim before you create.** `arh claim` is the only supported way to take an
+  iteration number.
+- **Immutable inputs stay immutable.** Bind them read-only and keep output under
+  the project root.
+- **Standing rules are inherited.** See `rules/`.
 
 ## 3. Status
 
-<!-- dl:status:begin -->
-<!-- dl:status:end -->
+<!-- arh:status:begin -->
+<!-- arh:status:end -->
 
 ## 4. What each iteration established
 
-<one paragraph per concluded iteration: the claim, its strongest limit, and
-whether a later iteration superseded it. Supersession is stated here, never by
-editing the superseded entry.>
+<one paragraph per concluded iteration: the claim, strongest limit, and any
+supersession. Never rewrite the superseded entry.>
 
 ## 5. Currently running
 
@@ -54,5 +51,4 @@ editing the superseded entry.>
 
 ## 6. Resume points — do these next
 
-<the next actions, most recent first, each with enough context to be picked up
-cold by an agent that has never seen this project>
+<the next actions, most recent first, with enough context for a cold resume>

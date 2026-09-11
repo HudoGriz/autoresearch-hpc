@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/discovery-loop/schema/claim.schema.json",
   "title": "Iteration claim",
-  "description": "Written by `dl claim` when an iteration number is taken. The directory creation is the lock; this file records who holds it.",
+  "description": "Written by `arh claim` when an iteration number is taken. The directory creation is the lock; this file records who holds it.",
   "type": "object",
   "required": ["iteration", "agent", "claimed", "title", "status"],
   "additionalProperties": false,

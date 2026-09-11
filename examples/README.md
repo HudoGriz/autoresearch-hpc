@@ -1,188 +1,112 @@
 # Worked example
 
-A complete pass through the loop on a generic toy analysis — no domain tools, no
-cluster, no network. Every block below is real captured output.
+A complete pass through the AutoResearch HPC loop on a generic toy analysis — no
+domain tools, cluster or network required.
 
-The same sequence runs as `test/run_tests.sh`, so if this drifts, CI fails.
-
-## 1. Create a project
+## 1. Create and inspect a project
 
 ```console
-$ dl init my-study && cd my-study
-Initialised discovery-loop project at /…/my-study
+$ arh init my-study
+Initialised AutoResearch HPC project at /…/my-study
+  detected scheduler: local
+  detected container command: singularity
 
-  PROGRESS.md                the record — read this first
-  AGENTS.md                  harness contract (CLAUDE.md symlinks here)
-  GOTCHAS.md                 silent failure modes, as executable assertions
-  rules/                     standing rules every iteration inherits
-  .dl/config/                edit these before your first iteration
-
-Next: edit .dl/config/site.md, then  dl claim -t "your first question"
+$ cd my-study
+$ arh doctor
 ```
 
-## 2. Check the machine against the config
+Configuration lives under `.arh/config/`. `arh init` discovers the obvious site
+defaults; `arh doctor` tells you what still needs to be staged or configured.
+
+## 2. Claim and pre-declare
 
 ```console
-$ dl doctor
-  OK   scheduler local (no cluster required)
-dl: container_runtime=none — tools are unpinned, results are not reproducible
-  acceptable for smoke tests only
-
-harnesses:
-  OK   claude (anthropic) — claude 2.1.265 (Claude Code)
-  OK   codex (openai) — codex codex-cli 0.149.1
-  OK   opencode (mixed) — opencode 1.14.50
-  OK   producer claude (anthropic) != verifier codex (openai)
-
-rules:
-  OK   association-not-causation
-  OK   null-is-upper-bound
-  OK   negative-controls-required
-  OK   detection-limit-stated
-
-No problems found.
-```
-
-`dl doctor` warns rather than fails on `container_runtime = none`: unpinned tools
-are fine for a smoke test and disqualifying for a result.
-
-## 3. Claim a number
-
-```console
-$ dl claim -t "Do groups A and B differ in mean?"
+$ arh claim -t "Do groups A and B differ in mean?"
 1
 claimed iteration 1 at /…/my-study/iterations/iteration1
-next: dl new -n 1   (writes the pre-declaration you must complete BEFORE running anything)
-```
+next: arh new -n 1
 
-Claiming is atomic — the directory *is* the lock. The test suite fires six
-concurrent claims and asserts they get six distinct numbers, because two agents
-once created the same iteration eleven minutes apart on a real project.
-
-## 4. The gate refuses an unfilled pre-declaration
-
-```console
-$ dl new -n 1 && dl gate predeclare -n 1
+$ arh new -n 1
+$ arh gate predeclare -n 1
 gate: pre-declaration, iteration 1
-  OK   results/ is empty
-  OK   section: Question
-  OK   section: Estimand
-  OK   section: Instrument
-  OK   section: Acceptance criteria
-  OK   section: Negative controls
-  OK   section: Detection limit
-  OK   section: Prediction
   FAIL template placeholders remain unfilled
-  OK   negative-controls-required
-  OK   detection-limit-stated
-
-gate FAILED (1). Nothing was frozen; fix and re-run.
 ```
 
-Nothing is frozen on failure. Fill the sections in and re-run:
+Nothing freezes on failure. Complete the required question, estimand, instrument,
+acceptance criteria, negative controls, detection limit and prediction, then:
 
 ```console
-$ dl gate predeclare -n 1
+$ arh gate predeclare -n 1
 gate PASSED. Pre-declaration frozen:
   97f064ad8c07ed25f99175d6f99da0d03a44210702337d8493b201e2679ff8a5
-The README is now immutable. Corrections go in a new iteration.
 ```
 
-That hash is the whole mechanism. It is what makes "we planned this in advance"
-checkable rather than asserted.
+That frozen hash is the mechanism that makes later edits detectable. A design
+change is represented by a new iteration rather than rewriting the old one.
 
-## 5. Run the work
+## 3. Run the work
 
 ```console
-$ dl submit iterations/iteration1/scripts/it1_01_run.sh -n it1_01 -w
-submitted it1_01 as job 1831084 via local
+$ arh submit iterations/iteration1/scripts/experiment.nf -n it1_01
 ```
 
-Identical command under SLURM once `scheduler = slurm` is set in `site.md`; the
-job id is then an `sbatch` id rather than a pid.
+Nextflow owns the execution graph and caching. With `scheduler = slurm`, tasks
+flow to Slurm; with `local`, they run locally. Scientific tasks use the configured
+digest-pinned Singularity/Apptainer runtime.
 
-## 6. Cross-check with a foreign harness
+## 4. Cross-check with a foreign model family
 
 ```console
-$ dl ask --role estimand-auditor -n 1
+$ arh ask --role estimand-auditor -n 1
 cross-check: role=estimand-auditor harness=codex (openai) vs producer=claude (anthropic)
-wrote iterations/iteration1/CROSSCHECK_estimand-auditor_codex_20260908T093907Z.md
 VERDICT: QUALIFIED
 ```
 
-**This is a real result from a real run, and it found a real defect.** Codex,
-reading only the pre-declaration, wrote:
+In the original toy example, the reviewer caught a real design mismatch: the
+pre-declaration described paired observations while the permutation pooled all
+observations, thereby testing a different null. This is exactly the sort of
+error the protocol tries to make visible.
 
-> Because observations are paired, permutations should preserve pairing —
-> normally by swapping A/B labels within pairs. Unrestricted permutation across
-> all 200 observations would test a different null and discard the matched design.
+The verdict is evidence, not a ruling. Record what you accepted, rejected and
+why.
 
-The toy script did exactly that: it pooled all 200 observations and shuffled.
-The pre-declaration said *paired*; the test was not. Every individual step was
-correct and the number answered a different question — which is the error class
-the `estimand-auditor` role exists for, caught on the first live dispatch by a
-model from a different family.
-
-The verdict is evidence, not a ruling. Record what you accepted, what you
-rejected, and why.
-
-## 7. Conclude
+## 5. Conclude without rewriting history
 
 ```console
-$ dl gate results -n 1
-gate: results, iteration 1
-  OK   pre-declaration unchanged since freeze
-  OK   report present
-  OK   association-not-causation
-  OK   null-is-upper-bound
-  OK   negative-controls-required
-  OK   detection-limit-stated
-  OK   cross-checked by a foreign harness
-
-gate PASSED. Iteration 1 may be concluded in the ledger.
+$ arh gate results -n 1
+$ arh ledger render
+$ arh ledger check
+$ arh status
 ```
 
-Edit the README after freezing and the same gate says so:
+Editing `iterations/iteration1/README.md` after freezing makes the results gate
+fail with an altered-hash error. A correction is a new iteration that points
+back to the superseded one.
+
+## Standing rules
 
 ```console
-  FAIL README.md CHANGED after pre-declaration was frozen
-     frozen: 97f064ad8c07ed25f99175d6f99da0d03a44210702337d8493b201e2679ff8a5
-     now:    3e2b8c14f0a97d5be1c6f2803a5d4977ce9a1b0e64f7a2d83b95c07e1a4f6d20
+$ arh gate rules draft_report.md
 ```
 
-## 8. Update the record
+The shipped rules catch common reporting failures such as causal wording from an
+observational design, a bare “no effect” claim without its detection bound,
+missing negative-control reporting, and an unstated detection limit. They are
+lint/gates, not proofs of scientific rigor.
+
+## Verification later
 
 ```console
-$ dl ledger render && dl ledger check && dl status
-rendered status table into PROGRESS.md
-
-Ledger consistent with 1 iteration(s) on disk.
-
-IT    AGENT        PREDECL     RESULTS   XCHECK  TITLE
------ ------------ ----------- --------- ------- -----
-1     claude       frozen      report    yes     Do groups A and B differ in mean?
+$ arh verify new panel_recalc -m re-implementation
+$ arh verify gate panel_recalc
 ```
 
-## What the standing rules refuse
+For set-valued results, success criteria must compare membership rather than only
+the count. Use a frozen discovery DAG for stronger blind re-implementation:
 
 ```console
-$ dl gate rules draft_report.md
-  FAIL association-not-causation — uses 'causes|caused by|leads to|…' language without stating 'association|…'
-  FAIL null-is-upper-bound — uses 'no effect|there is no|…' language without stating 'upper bound|…'
+$ arh dag init -n 1
+$ arh dag check -n 1
+$ arh dag freeze -n 1
+$ arh replicate -n 1 --agents 3
 ```
-
-Both are satisfiable by an author writing in bad faith, and neither is meant to
-be a proof of rigour. They catch the far commoner case: a correct analysis
-written up in language stronger than it supports.
-
-## Verifying a result later
-
-```console
-$ dl verify new panel_recalc -m re-implementation
-$ dl verify gate panel_recalc
-  FAIL success criterion must name which elements must come back, not how many
-```
-
-Reproducing the *size* of a candidate set is not reproducing the set. On a real
-project a 41-element set reproduced at the right size and differed in
-membership; the odd element out was a binning artefact.

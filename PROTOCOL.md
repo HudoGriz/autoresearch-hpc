@@ -1,29 +1,26 @@
-# The discovery-loop protocol, v0.1.0
+# The AutoResearch HPC protocol, v0.2.0
 
 Normative specification. `MUST`, `MUST NOT`, `SHOULD` and `MAY` are used in the
-RFC 2119 sense. `README.md` explains how to use the tooling; this file defines
-what the tooling is enforcing, so that a conforming implementation could be
-written without it.
+RFC 2119 sense. `README.md` explains the tooling; this file defines what a
+conforming implementation enforces.
 
 ## 1. Objects
 
-**Project** — a directory containing `.dl/`, a ledger, and zero or more
+**Project** — a directory containing `.arh/`, a ledger, and zero or more
 iterations. **Iteration** — a numbered, append-only directory answering one
 question. **Verification** — a re-examination of an object an iteration already
-produced. **Finding** — one claim, typed per `schema/finding.schema.json`.
-**Cross-check** — one review of an iteration by a foreign harness.
+produced. **Finding** — one typed claim. **Cross-check** — one review of an
+iteration by a configured foreign harness.
 
 ## 2. Claiming
 
-2.1 An iteration number MUST be obtained by an operation that is atomic against
-concurrent agents. Directory creation is the reference mechanism: `mkdir` fails
-if the path exists, so the directory *is* the lock.
+2.1 An iteration number MUST be obtained by an operation atomic against
+concurrent agents. Directory creation is the reference mechanism.
 
 2.2 An agent MUST NOT create an iteration directory by any other means.
-Consulting a registry and creating the directory afterwards is a race, and it
-has produced a real collision in practice.
+Consulting a registry and creating the directory afterwards is a race.
 
-2.3 A claim MUST record the holder, the timestamp and the question.
+2.3 A claim MUST record holder, timestamp and question.
 
 2.4 Numbers are never reused. An abandoned iteration keeps its number and is
 marked `ABANDONED`.
@@ -32,16 +29,16 @@ marked `ABANDONED`.
 
 3.1 An iteration MUST carry a pre-declaration written **before any result
 exists**, containing at minimum: question, estimand, instrument, acceptance
-criteria, negative controls, detection limit, prediction.
+criteria, negative controls, detection limit and prediction.
 
-3.2 The estimand MUST be stated as a quantity in its own units, precisely enough
+3.2 The estimand MUST be stated as a quantity in its own units precisely enough
 that an independent implementation could compute a comparable number.
 
 3.3 The detection limit MUST be stated in the units of the estimand. A candidate
-MAY be excluded by a stated detection limit; it MUST NOT be excluded by an
+MAY be excluded by a declared detection limit; it MUST NOT be excluded by an
 unexamined threshold.
 
-3.4 Negative controls MUST be named in the pre-declaration, not chosen after
+3.4 Negative controls MUST be named in the pre-declaration, not selected after
 the result.
 
 3.5 A conforming implementation MUST refuse to accept a pre-declaration for an
@@ -50,28 +47,29 @@ iteration whose results already exist.
 3.6 On acceptance, the pre-declaration MUST be cryptographically frozen. After
 freezing it MUST NOT be modified. A design change is a **new iteration**.
 
-3.7 Any operation that accepts results MUST verify the frozen hash and MUST fail
-if it no longer matches.
+3.7 Any operation accepting results MUST verify the frozen hash and MUST fail if
+it no longer matches.
+
+3.8 A pre-declaration gate MUST NOT overwrite an existing freeze. Missing
+configured standing-rule files MUST fail the gate.
 
 ## 4. Append-only
 
 4.1 An iteration MUST NOT be modified to change its conclusion.
 
-4.2 A correction MUST be a new iteration stating what the earlier one got wrong.
-Superseded files MUST be left intact.
+4.2 A correction MUST be a new iteration stating what the earlier one got
+wrong. Superseded files MUST remain intact.
 
 4.3 Supersession MUST be recorded in the superseding entry. The superseded entry
 MUST NOT be edited to be correct in hindsight.
 
 4.4 A standing rule that proves wrong MUST be corrected by a dated amendment
-that leaves the original text visible. A correction can re-introduce the error
-it was meant to remove, and that is only discoverable if both versions are on
-the page.
+that leaves the original text visible.
 
 ## 5. Execution
 
-5.1 Every tool that produces a result MUST run from a pinned image. An unpinned
-tool means the run is not reproducible whatever the numbers show.
+5.1 Every scientific tool that produces a result MUST run from a declared,
+content-pinned image. A path or mutable tag alone is not a reproducibility pin.
 
 5.2 Declared immutable inputs MUST be mounted read-only and MUST NOT be written.
 
@@ -84,133 +82,126 @@ order could affect the result.
 run failing its criteria has no result to interpret.
 
 5.6 A step that can discard data while exiting zero MUST be guarded by an
-assertion that the data survived. "The tool ran without error" is not evidence.
+assertion that the data survived. “The tool ran without error” is not evidence.
+
+5.7 Local waited jobs MUST propagate execution failure. Execution metadata MUST
+identify the code/workflow, environment and completion status sufficiently to
+bind the record to the run. Complete replayable provenance is a stronger goal
+than conformance to this clause.
 
 ## 6. Cross-checking
 
 6.1 Before an iteration is concluded, it SHOULD be reviewed by a harness in a
-**different model family** than the one that produced it.
+**different model family** from the producer.
 
-6.2 An implementation MUST record the producing and verifying model families,
-and MUST mark a same-family check as materially weaker. A model reviewing its
-own output verifies that the work looks correctly generated, not that it is
-correct.
+6.2 An implementation MUST record producing and verifying model families and
+MUST mark a same-family check as materially weaker.
 
-6.2a **The different-family requirement is a heuristic, not a proof.** It
-reduces correlated error; it does not eliminate it, and a cross-family reviewer
-can still hallucinate a plausible constraint or miss a real defect. A passing
-cross-check is evidence that no reviewer found a problem — never evidence that
-none exists.
+6.2a The different-family requirement is a heuristic, not a proof. It reduces
+one source of correlated error; it does not establish statistical independence
+or scientific truth.
 
-6.3 A `reimplementer` MUST NOT read the original implementation. Agreement
-reached by reading the same code is not independent evidence.
+6.3 A `reimplementer` MUST NOT read the original implementation.
 
-6.4 A re-implementation MUST compare **membership, not counts**. Reproducing the
-size of a candidate set is not reproducing the set.
+6.4 A re-implementation MUST compare membership, not only counts, when the
+object being reproduced is a set.
 
-6.5 A cross-check verdict is evidence, not a ruling. Each finding MUST be
-evaluated on its merits, and rejections MUST be recorded with reasons. An
-undocumented rejection is indistinguishable from ignoring the check.
+6.5 A cross-check verdict is evidence, not a ruling. Findings MUST be evaluated
+on their merits and rejected objections MUST be recorded with reasons.
+
+6.6 A required cross-check MUST have a successful invocation record, exactly one
+recognized verdict, concrete producer/verifier family declarations that differ,
+and matching hashes for the reviewed declaration, report and review text. A
+same-family override MUST NOT satisfy a required foreign check.
 
 ## 6b. Arms
 
 6b.1 An iteration MAY be divided into arms — parallel routes to its one
-question. An arm MUST carry its own acceptance criteria and its own negative
-control; it inherits neither from a sibling.
+question. An arm MUST carry its own acceptance criteria and negative control.
 
-6b.2 Every arm MUST be assigned exactly one fate: `CONCLUDED`, `NULL`,
-`INFEASIBLE`, `KILLED_BY_CONTROL` or `ABANDONED`.
+6b.2 Every arm MUST receive exactly one fate: `CONCLUDED`, `NULL`, `INFEASIBLE`,
+`KILLED_BY_CONTROL` or `ABANDONED`.
 
-6b.3 `INFEASIBLE`, `KILLED_BY_CONTROL` and `ABANDONED` are results and MUST be
-reported. Arms that did not work MUST NOT be omitted: ten arms with one hit is a
-different claim from one arm with one hit, and only the arm record distinguishes
-them.
+6b.3 `INFEASIBLE`, `KILLED_BY_CONTROL` and `ABANDONED` are reportable outcomes
+and MUST NOT be omitted. Ten attempted arms with one hit is a different claim
+from one attempted arm with one hit.
 
-## 6c. The discovery DAG and blind replication
+## 6c. Discovery DAG and blind replication
 
 6c.1 A load-bearing result SHOULD have its path reconstructed as a discovery
-DAG: inputs, nodes, the decisions taken at each, and the terminal claim.
+DAG: inputs, nodes, decisions and terminal claim.
 
 6c.2 The DAG MUST state how many distinct paths exist from inputs to claim and
-how many were reported. The difference is the multiple-testing denominator.
+how many were reported. The difference contributes to the multiple-testing
+denominator.
 
-6c.3 A node declared in the DAG's tables but absent from its graph MUST be
-reported. An adjacency an argument assumes and the topology does not contain is
-a defect invisible in any narrative report.
+6c.3 A node declared in DAG tables but absent from its graph MUST be reported.
 
-6c.4 Once frozen, **the DAG is the only permitted specification for a
-replication**, and the original implementation MUST NOT be provided to the
-replicating agent. An implementation MUST enforce this by construction rather
-than by instructing the agent, because an agent that reads the original code
-reproduces its choices, including its mistakes.
+6c.4 Once frozen, the DAG is the only permitted specification for a blind
+replication, and the original implementation MUST NOT be provided to the
+replicating agent. A conforming implementation MUST enforce this by construction
+within the cooperative protocol boundary rather than only instructing the agent.
 
-6c.5 Replication MAY fan out across several agents and harnesses. An
-implementation MUST report divergence — differing values, contested set
-membership, and the count of ambiguities each agent had to resolve.
+6c.5 Replication MAY fan out across several agents/harnesses. Implementations
+MUST report divergence: differing values, contested set membership and the
+ambiguities each agent resolved.
 
-6c.6 **Agreement among replicating agents MUST NOT be reported as confirmation.**
-Models share training data and fail in correlated ways; a unanimous answer can be
-unanimously wrong, and a majority vote among agents is not a measurement. The
-evidential content of a fan-out is its disagreement.
+6c.6 Agreement among replicating agents MUST NOT be reported as confirmation.
+The evidential content of a fan-out is its disagreement, not a majority vote.
 
 ## 7. Reporting
 
-7.1 The pre-declared quantity MUST be reported, including where another number
-is more attractive.
+7.1 The pre-declared quantity MUST be reported, including when another number is
+more attractive.
 
 7.2 A null result MUST be reported as an upper bound with its detection basis.
-"No effect" MUST NOT stand alone.
+“No effect” MUST NOT stand alone.
 
-7.3 A result without orthogonal validation MUST be labelled a candidate.
+7.3 A result without appropriate orthogonal validation MUST be labelled a
+candidate.
 
-7.4 Causal language MUST NOT be used unless the design supports it. An
-observational contrast is an association.
+7.4 Causal language MUST NOT be used unless the design supports it.
 
-7.5 Negative-control behaviour MUST be reported. Controls that fired mean the
-pipeline was diagnosed, not that a result was found.
+7.5 Negative-control behaviour MUST be reported.
 
-7.6 A prediction that missed MUST be recorded as such. It MUST NOT be revised.
+7.6 A prediction that missed MUST be recorded as such and MUST NOT be revised.
 
 ## 8. The ledger
 
 8.1 A project MUST maintain a single authoritative state file.
 
-8.2 It MUST be sufficient to resume the project cold, without conversation
+8.2 It MUST be sufficient to resume the project cold without conversation
 history.
 
 8.3 Generated sections MUST be reproducible from what is on disk, and an
-implementation MUST provide a check that they still agree.
+implementation MUST provide a consistency check.
 
 ## 9. The operator
 
-9.1 An operator challenge to a result MUST be treated as the trigger for a new
-iteration, never as an instruction to edit an old one.
+9.1 An operator challenge to a result MUST trigger a new iteration, never an
+instruction to edit the old one.
 
 9.2 The challenge SHOULD be recorded verbatim as the new iteration's motivation.
-The operator is an adversary in this system by design, and their objections are
-part of the scientific record.
+The operator's objections are part of the scientific record.
 
 ## 10. Conformance
 
-An implementation conforms if it enforces §2.1, §3.1, §3.5, §3.6, §3.7, §4.1,
-§5.2 and §6c.4 mechanically — refusing the operation, not merely warning. The remainder
-MAY be enforced by review.
+An implementation conforms to protocol 0.2.0 if it mechanically refuses
+violations of §2.1, §3.1, §3.5, §3.6, §3.7, §4.1, §5.2 and §6c.4 — **eight
+mechanically enforced boundaries** — and implements the review-integrity checks
+of §6.6. The remainder MAY be enforced by review or additional tooling.
 
-`test/run_tests.sh` asserts each of those eight.
+`test/run_tests.sh` asserts those boundaries and the hardened review contract.
 
-## Unreleased hardening amendment
+## 11. Security and evidence boundary
 
-A required cross-check MUST have a successful invocation record, exactly one
-recognized verdict, distinct concrete producer/verifier model-family declarations,
-and matching hashes for its review text, pre-declaration and report. A same-family
-override MUST NOT satisfy a required foreign check. This validates completion of
-review, not agreement with its verdict. Existing evidence MUST be preserved;
-legacy Markdown-only reviews require a new invocation to satisfy this amendment.
+The protocol is a cooperative research-integrity system, not a hostile-code
+sandbox or trusted timestamp authority. Local hashes detect later changes but do
+not prove temporal priority against an actor controlling the filesystem. A
+blind-review directory does not by itself prevent an agent from reading files it
+has OS permission to access. Container digests identify bytes but do not prove
+determinism or scientific validity.
 
-A pre-declaration gate MUST NOT overwrite an existing freeze. Missing configured
-standing-rule files MUST fail the gate. Non-smoke container execution MUST require
-a declared content digest. Local waited jobs MUST propagate execution failure.
-
-These are cooperative filesystem checks, not trusted timestamps or an operating
-system security boundary. Blind-review directories alone do not prevent agents
-from accessing the original implementation. See `docs/migration-hardening.md`.
+External model services receive the context supplied to them. Local/HPC compute
+does not imply air-gapped inference. These limits MUST NOT be described as
+stronger guarantees in user-facing documentation.

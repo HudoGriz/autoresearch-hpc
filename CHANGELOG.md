@@ -1,72 +1,66 @@
 # Changelog
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions are the **protocol** version; see `PROTOCOL.md`.
+Versions are protocol/tooling versions; see `PROTOCOL.md`.
 
-## [Unreleased]
+## [0.2.0] — 2026-09-11
+
+### Changed
+- Renamed the public CLI from `arh` to **`arh`** (`AutoResearch HPC`) across the
+  user-facing documentation and command paths. New projects use `.arh/` as the
+  authoritative state directory. A temporary `.arh -> .arh` compatibility symlink
+  is created for pre-1.0 migration and older internal adapters.
+- `arh init` now discovers Slurm/PBS/local and Singularity/Apptainer defaults,
+  supports `--bootstrap`, `--micromamba`, `--runtime`, and `--scheduler`, and
+  points directly to `arh doctor` for remaining setup work.
+- `arh doctor` now diagnoses the host Nextflow environment, runtime image digest,
+  scheduler clients, harness families and standing rules, with concrete fix
+  commands for missing setup.
+- Configuration fences are now `arh-config`; the parser accepts legacy
+  `arh-config` only for migration.
+- The normative protocol is now **0.2.0**. The former “unreleased hardening
+  amendment” has been integrated into the relevant normative sections instead
+  of living outside the released specification.
+- Protocol §10 now explicitly identifies **eight** mechanically enforced
+  boundaries, matching the conformance suite.
 
 ### Added
-- `dl arm` — arms as first-class: parallel sub-analyses with their own
-  acceptance criteria, negative control and recorded fate. `INFEASIBLE` and
-  `KILLED_BY_CONTROL` are results, not dropped work (§6b).
-- `dl dag` — reconstruct the path a result took. Fails on nodes declared but
-  absent from the graph, and requires the branch count to be stated (§6c).
-- `dl replicate` — fan-out blind replication. Each agent gets the frozen DAG and
-  nothing else; the report names contested set members individually and refuses
-  to read agreement as confirmation.
-- `dl next` — reads project state and names the next command, with the reason.
-- `dl status --json` — machine-readable state, so `dl` is usable as an API.
-- `dl verify` — the verification track had a skill and templates but no
-  command. Its gate requires a membership-based success criterion, per §6.4.
-- `dl --version`.
-- CI on Linux and macOS, shellcheck, and JSON schema validation.
-- `CITATION.cff`, `CONTRIBUTING.md`, `SECURITY.md`, issue and PR templates.
+- `arh arm` — parallel sub-analyses with their own acceptance criteria,
+  negative control and recorded fate.
+- `arh dag` — reconstruct and freeze the path a result took.
+- `arh replicate` — fan-out blind replication from the frozen DAG.
+- `arh next` — deterministic next-action guidance.
+- `arh status --json` — machine-readable state.
+- `arh verify` — explicit verification track.
+- CI integration, shellcheck/schema validation, citation metadata, security and
+  contribution guidance.
 
-### Fixed
-- The `reimplementer` role was told not to read the original code and then
-  handed the whole iteration directory. The firewall is now enforced by
-  construction: the role works from the frozen DAG and refuses without one.
-- Six counts built with `grep -c . || echo 0` produced `"0\n0"`, because
-  `grep -c` prints the count *and* exits non-zero. This corrupted `dl status
-  --json`.
-- `dl verify list` exited 1 whenever it found something, via a trailing
-  `[ x = 0 ] && printf` under `set -e`.
-- Portability: `readlink -m`, `readlink -f` and `sed -i` are GNU-only. The first
-  of those made the immutable-input guard fail outright on macOS/BSD, which
-  disabled a safety check rather than merely erroring.
-- The test suite called `sha256sum` directly, bypassing the library's fallback.
+### Hardened
+- Cross-check eligibility is hash-bound to the declaration, report and review,
+  with concrete producer/verifier families and successful invocation metadata.
+- Pre-declaration freezes cannot be silently overwritten.
+- Harness argument parsing avoids shell evaluation and uses bounded execution.
+- Local execution propagates failures and records execution metadata.
+- Non-smoke container execution requires declared image identity.
+- Relative immutable input paths are normalized before write checks.
+
+### Migration
+- Use `arh` in scripts and documentation from this release onward.
+- New projects store configuration and framework state in `.arh/`.
+- Existing 0.1 `.arh/` studies remain readable during the pre-1.0 transition;
+  migrate their state directory and replace `arh` command invocations before 1.0.
 
 ## [0.1.0] — 2026-09-08
 
-First working version: protocol, tooling and harness wiring.
+First working version of the discovery-loop protocol and tooling.
 
 ### Added
-- `PROTOCOL.md` — normative spec. §10 names the seven clauses a conforming
-  implementation must enforce mechanically.
-- `bin/dl` — claim, new, gate, ask, run, submit, guard, ledger, status, doctor.
-- `lib/` — pluggable scheduler (slurm/pbs/local) and container runtime
-  (apptainer/singularity/docker/none), both selected from Markdown config.
-- `skills/` — iterate, verify, cross-check (four roles), ledger.
-- `harness/` — Claude Code, Codex and OpenCode wiring from one `AGENTS.md`.
-- `schema/` — claim, finding and cross-check types.
-- `test/run_tests.sh` — 78 checks, no cluster or network required.
+- Normative protocol and mechanically enforced pre-declaration boundaries.
+- Initial `arh` CLI with claim, new, gate, ask, run, submit, guard, ledger,
+  status and doctor commands.
+- Pluggable scheduler/container configuration and portable agent instructions.
+- Initial schemas, skills and regression tests.
 
 ### Fixed
-- Pre-declaration placeholder detection was line-anchored, so an untouched
-  template passed the gate.
-- `required_sections` split on whitespace, breaking multi-word headings.
-- `codex exec` needs `--skip-git-repo-check` outside a git repo, and blocked on
-  stdin when the prompt was passed as an argument. Both surfaced on the first
-  live dispatch; neither was reachable from the stubbed test suite.
-
-## Unreleased — protocol hardening
-
-- Require hash-bound successful foreign-family cross-check records across gates,
-  status, ledger and guidance; reject unknown families and malformed verdicts.
-- Preserve freezes, fail missing rules, parse harness arguments without a shell,
-  enforce portable timeouts and allocate unique review artifacts.
-- Verify declared container digests; normalize relative immutable paths.
-- Gate submission on frozen plans and propagate local job failures with metadata.
-- Add protocol regression tests, framework comparison and proposal decisions.
-- Migration: see `docs/migration-hardening.md`; older evidence is retained but
-  Markdown-only reviews no longer satisfy the strengthened results gate.
+- Pre-declaration placeholder detection, multi-word required sections, and the
+  first live Codex non-interactive dispatch issues.

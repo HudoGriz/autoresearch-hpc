@@ -9,7 +9,7 @@ from harness import digest, valid_records
 n = sys.argv[1]
 if not n.isdigit():
     sys.exit('iteration must be numeric')
-directory = Path(os.environ['DL_ITERS']) / ('iteration' + n)
+directory = Path(os.environ['ARH_ITERS']) / ('iteration' + n)
 if not directory.is_dir():
     sys.exit('iteration does not exist')
 readme = directory / 'README.md'

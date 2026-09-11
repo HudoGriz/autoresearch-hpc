@@ -1,123 +1,118 @@
-# Automated discovery loop — agent contract
+# AutoResearch HPC — agent contract
 
-You are working inside a **discovery-loop** project. This file is the contract.
-It is harness-agnostic: Codex, OpenCode, Cursor and Copilot read it directly,
-Claude Code reads it through `CLAUDE.md`, which symlinks here.
+You are working inside an **AutoResearch HPC** project. This file is the
+harness-agnostic contract. Codex, OpenCode, Cursor and Copilot can read it
+directly; Claude Code reads it through `CLAUDE.md`, which symlinks here.
 
-**Read `PROGRESS.md` first.** It is the authoritative project state and the
-resume point. Never reconstruct state from conversation history.
+**Read `PROGRESS.md` first.** It is the authoritative project state and resume
+point. Never reconstruct state from conversation history.
 
 ## The shape of the work
 
 Work happens in numbered, **append-only** iterations under `iterations/`. One
 iteration answers one question. A complete iteration contains:
 
-```
+```text
 iterations/iterationN/
-  CLAIM.json                    written by `dl claim` — do not hand-edit
-  README.md                     the pre-declaration, written BEFORE any result
-  PREDECLARATION.sha256         the frozen hash — proof the README predates results
-  scripts/  slurm/  resources/  metadata/
+  CLAIM.json
+  README.md                     pre-declaration, written BEFORE results
+  PREDECLARATION.sha256         frozen declaration hash
+  scripts/  resources/  metadata/
   results/report/iterationN_report.md
   logs/
   CROSSCHECK_<role>_<harness>_<ts>.md
 ```
 
+Project/runtime configuration lives under `.arh/config/`.
+
 ## The loop
 
 ```bash
-dl claim -t "the question"          # atomic; returns N. Never mkdir by hand.
-dl new -n N                         # scaffold the pre-declaration
-#   ... complete every section of README.md ...
-dl gate predeclare -n N             # freezes the README hash. Results are now permitted.
-#   ... write scripts/, run them ...
-dl submit iterations/iterationN/scripts/run.sh -n itN_01
-dl ask --role adversary -n N        # cross-check with a foreign harness
-dl gate results -n N                # verifies the pre-declaration never changed
-dl ledger render && dl ledger check
+arh claim -t "the question"          # atomic; returns N
+arh new -n N                         # scaffold the pre-declaration
+# complete every section first
+arh gate predeclare -n N             # freezes the declaration hash
+# write/run the workflow
+arh submit iterations/iterationN/scripts/experiment.nf -n itN_01
+arh ask --role adversary -n N        # foreign-family cross-check
+arh gate results -n N                # verifies the declaration stayed frozen
+arh ledger render && arh ledger check
 ```
 
-To re-examine a result an iteration already produced — rather than claim a new
-analysis — use the verification track instead:
+To re-examine a result an iteration already produced, use the verification
+track instead of silently revising the original:
 
 ```bash
-dl verify new <object> -m re-implementation
-dl verify gate <object>
+arh verify new <object> -m re-implementation
+arh verify gate <object>
 ```
 
 ## Rules that are not negotiable
 
-1. **Claim before you create.** `dl claim` is the only way to take an iteration
-   number. Two agents once created the same iteration directory eleven minutes
-   apart; `mkdir` is the lock precisely so that cannot recur. Never `mkdir -p`
-   an iteration — on a live directory it is silent.
+1. **Claim before you create.** `arh claim` is the only way to take an iteration
+   number. The directory creation is the concurrency lock. Never `mkdir -p` an
+   iteration by hand.
 
-2. **Pre-declare before you run.** The README is written before any result
-   exists, and `dl gate predeclare` freezes its hash. Choosing an analysis after
-   seeing the answer is the failure this prevents, and it is invisible in the
-   output. If the design must change, that is a **new iteration**.
+2. **Pre-declare before you run.** Complete the iteration README before any
+   result exists; `arh gate predeclare` freezes its hash. If the design changes,
+   create a **new iteration**.
 
-3. **Append-only. Never revise an earlier iteration to change its conclusion.**
-   A correction is a new iteration that states what the earlier one got wrong.
-   The superseded files stay exactly as they were. The record of having been
-   wrong is part of the result.
+3. **Append-only. Never rewrite an earlier conclusion.** A correction is a new
+   iteration that records what the earlier one got wrong. Superseded evidence
+   remains intact.
 
-4. **Immutable inputs are immutable.** Bound read-only in every container. All
-   output stays under the project root. Use `dl guard` before writing.
+4. **Immutable inputs are immutable.** Bind them read-only in containers. All
+   output stays under the project root. Use `arh guard` before writing.
 
-5. **Pin every tool.** Run through `dl run <image> -- cmd`, with the image
-   declared in `.dl/config/site.md`. An unpinned tool means the run is not
-   reproducible, whatever the numbers say.
+5. **Pin every scientific tool.** Use the declared task image / `arh run` path.
+   A tool that can silently change underneath a run is not reproducibly pinned.
 
-6. **Verification comes from a different model family.** `dl ask` enforces this.
-   A model reviewing its own output checks whether the work *looks* correctly
-   generated — it reproduces the reasoning errors it made while generating.
+6. **Required review comes from a different configured model family.** `arh ask`
+   enforces this. Cross-family review reduces one source of correlated error; it
+   is evidence, not proof or independent scientific validation.
 
-7. **Standing rules bind every conclusion.** They are in `rules/`, enforced by
-   `dl gate`. They constrain what you may *claim*, not what you may compute.
+7. **Standing rules bind every conclusion.** They live in `rules/` and are
+   enforced by `arh gate`.
 
-8. **Record predictions, including wrong ones.** §7 of every pre-declaration is
-   a prediction. When it misses, the report says so. Do not revise it.
+8. **Record predictions, including wrong ones.** Do not revise a missed
+   prediction after seeing the result.
 
 ## Reporting
 
-- Report the number you pre-declared, even when another number is more attractive.
-- A null result is an **upper bound**, never an absence. State what you could
-  have detected.
-- Anything without orthogonal validation is a **candidate**, not a finding.
-- Say *associated with*, not *causes*, unless the design supports the stronger word.
+- Report the quantity that was pre-declared, even if another number looks nicer.
+- A null result is an **upper bound** with its detection basis, not an absence.
+- Anything without appropriate orthogonal validation is a **candidate**.
+- Use causal language only when the design supports it.
 - State the detection limit in the units of the estimand.
-- Negative controls that fired mean you have diagnosed the pipeline, not found a result.
+- Report negative-control behaviour and failed arms.
 
 ## When the operator challenges a result
 
-Treat the challenge as the trigger for a **new iteration**, not as an
-instruction to edit the old one. Record the challenge verbatim in the new
-iteration's README as its motivation. The operator is an adversary in this
-system by design, and their objections are part of the scientific record.
+Treat the challenge as the trigger for a **new iteration**, not an instruction
+to edit the old one. Record the challenge as motivation. The operator is an
+adversary in this protocol by design.
 
 ## Style
 
 - Shell: `set -euo pipefail`, quote expansions, explicit paths.
 - Scripts: `itN_NN_description.{sh,py}`, deterministic seeds, sorted inputs.
-- Tabular data is real TSV; parse with `awk -F'\t'`, never shell `read`.
+- Tabular data is real TSV; parse deliberately.
 - Write outputs only under the iteration that produced them.
 
 ## Before you finish
 
-Run `dl status`. Anything showing `ALTERED`, or a report without a cross-check,
-is an unfinished protocol violation — not a formatting detail.
+Run `arh status`. Anything showing `ALTERED`, or a required review that is
+missing/ineligible, is an unfinished protocol violation rather than a formatting
+detail.
 
 ## Default coding skill — Ponytail
 
 For coding, debugging, refactoring and dependency decisions, use Ponytail in
-**full** mode by default. Read `skills/ponytail/SKILL.md` once when starting
-coding work; reuse that context instead of reloading it every turn. If absent
-in an older study, run the framework's `harness/install.sh` to install it.
-Prefer existing code, standard libraries and installed tools before adding
-implementation. Keep explanations concise when a fuller report is not requested.
+full mode by default. Read `skills/ponytail/SKILL.md` once when starting coding
+work; reuse that context rather than reloading it every turn. Prefer existing
+code, standard libraries and installed tools before adding implementation.
 
 Explicit user requirements, validation, immutable-input protection and every
-research gate above take precedence over brevity. Never remove controls or
-evidence to save tokens. “Stop ponytail” or “normal mode” disables this coding
-preference for the session. It does not apply to non-coding research reports.
+research gate above take precedence over brevity. “Stop ponytail” or “normal
+mode” disables this coding preference for the session; it does not change the
+research protocol.

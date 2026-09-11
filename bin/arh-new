@@ -2,41 +2,41 @@
 # Scaffold an iteration's pre-declaration from the template.
 set -euo pipefail
 # shellcheck source=lib/common.sh
-. "${DL_HOME:?}/lib/common.sh"
+. "${ARH_HOME:?}/lib/common.sh"
 
 n=""; title=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -n|--iteration) n="$2"; shift 2 ;;
     -t|--title)     title="$2"; shift 2 ;;
-    -h|--help) echo 'usage: dl new -n N [-t TITLE]'; exit 0 ;;
-    *) dl_die "unexpected argument: $1" ;;
+    -h|--help) echo 'usage: arh new -n N [-t TITLE]'; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
   esac
 done
-[ -n "$n" ] || dl_die "which iteration? dl new -n N"
+[ -n "$n" ] || arh_die "which iteration? arh new -n N"
 
-dl_load_project
-dir="$DL_ITERS/iteration$n"
-[ -d "$dir" ] || dl_die "iteration $n is not claimed. Run: dl claim -t '...'"
-[ -f "$dir/README.md" ] && dl_die "$dir/README.md already exists — pre-declarations are never rewritten"
+arh_load_project
+dir="$ARH_ITERS/iteration$n"
+[ -d "$dir" ] || arh_die "iteration $n is not claimed. Run: arh claim -t '...'"
+[ -f "$dir/README.md" ] && arh_die "$dir/README.md already exists — pre-declarations are never rewritten"
 
 if [ -z "$title" ] && [ -f "$dir/CLAIM.json" ]; then
   title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" | head -1)
 fi
 
-rules=$(dl_config_get "$DL_PROJ" rules "")
+rules=$(arh_config_get "$ARH_PROJ" rules "")
 rule_lines=""
 for r in $rules; do
-  [ -f "$DL_ROOT/rules/$r.md" ] || continue
-  desc=$(sed -n '1s/^# *//p' "$DL_ROOT/rules/$r.md")
+  [ -f "$ARH_ROOT/rules/$r.md" ] || continue
+  desc=$(sed -n '1s/^# *//p' "$ARH_ROOT/rules/$r.md")
   rule_lines="${rule_lines}- \`$r\` — ${desc}"$'\n'
 done
 
 sed -e "s|{{N}}|$n|g" \
     -e "s|{{TITLE}}|${title:-<state the question>}|g" \
-    -e "s|{{DATE}}|$(dl_today)|g" \
-    -e "s|{{AGENT}}|$(dl_agent_name)|g" \
-    "$DL_HOME/templates/iteration/README.md" > "$dir/README.md"
+    -e "s|{{DATE}}|$(arh_today)|g" \
+    -e "s|{{AGENT}}|$(arh_agent_name)|g" \
+    "$ARH_HOME/templates/iteration/README.md" > "$dir/README.md"
 
 if [ -n "$rule_lines" ]; then
   tmp=$(mktemp); printf '%s' "$rule_lines" > "$tmp"
@@ -44,11 +44,10 @@ if [ -n "$rule_lines" ]; then
       "$dir/README.md" > "$dir/README.md.new" && mv "$dir/README.md.new" "$dir/README.md"
   rm -f "$tmp"
 else
-  # No `sed -i`: the GNU and BSD forms are incompatible.
   sed 's/{{RULES}}//' "$dir/README.md" > "$dir/README.md.new"
   mv "$dir/README.md.new" "$dir/README.md"
 fi
 
 printf 'wrote %s\n' "$dir/README.md"
-printf '\nComplete every section, then:  dl gate predeclare -n %s\n' "$n"
+printf '\nComplete every section, then:  arh gate predeclare -n %s\n' "$n"
 printf 'No result may be recorded until that gate passes and freezes the hash.\n'

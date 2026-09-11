@@ -4,7 +4,7 @@ about: Something in the tooling does not work
 labels: bug
 ---
 
-**Version** — output of `dl --version`
+**Version** — output of `arh --version`
 **Platform** — OS, `bash --version`, scheduler and container runtime from `site.md`
 
 ## What happened
@@ -16,7 +16,7 @@ labels: bug
 ```bash
 ```
 
-## `dl doctor` output
+## `arh doctor` output
 
 ```
 ```

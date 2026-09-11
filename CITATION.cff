@@ -1,22 +1,21 @@
 cff-version: 1.2.0
 message: If you use this framework, please cite it.
-title: "AutoResearch HPC: an auditable, self-correcting protocol for automated research on HPC"
+title: "AutoResearch HPC: an auditable protocol for AI-assisted research on HPC"
 abstract: >-
-  A domain-agnostic framework for running automated research as an append-only
-  loop across multiple agent harnesses. It enforces atomic iteration claiming,
-  hash-frozen pre-declaration, append-only correction, and cross-checking by a
-  harness from a different model family, on the grounds that a model reviewing
-  its own output verifies that the work looks correctly generated rather than
-  that it is correct.
+  A domain-agnostic framework for AI-assisted research on existing compute
+  clusters. It combines atomic iteration claiming, hash-frozen pre-declaration,
+  append-only correction, workflow execution, durable evidence and cross-checking
+  by a separately configured model family. Cross-checks are treated as evidence,
+  not as a scientific truth guarantee.
 type: software
 license: MIT
-version: 0.1.0
-date-released: "2026-09-09"
+version: 0.2.0
+date-released: "2026-09-11"
 repository-code: "https://github.com/HudoGriz/autoresearch-hpc"
 keywords:
   - reproducible research
   - research software engineering
-  - autonomous agents
+  - AI-assisted research
   - pre-registration
   - high-performance computing
   - provenance

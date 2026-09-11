@@ -5,7 +5,7 @@
 approval_policy   = "on-request"
 sandbox_mode      = "workspace-write"
 
-# Cross-check roles are invoked headlessly by `dl ask`:
+# Cross-check roles are invoked headlessly by `arh ask`:
 #   codex exec "<composed prompt>"
 # The prompt is composed from skills/cross-check/roles/<role>.md plus the
 # iteration's pre-declaration and report.

@@ -1,43 +1,38 @@
 #!/usr/bin/env bash
-# Bootstrap TASK dependencies inside Singularity; never launch the Nextflow driver here.
+# Bootstrap task dependencies inside Singularity/Apptainer.
 set -euo pipefail
 [ $# -eq 2 ] || { echo 'usage: scripts/setup-runtime.sh PROJECT RUNTIME.sif' >&2; exit 2; }
 project=$(cd "$1" && pwd)
 image=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
-[ -d "$project/.dl" ] || { echo 'run dl init first' >&2; exit 1; }
+if [ -d "$project/.arh" ]; then state="$project/.arh"; elif [ -d "$project/.arh" ]; then state="$project/.arh"; else echo 'run arh init first' >&2; exit 1; fi
 [ -f "$image" ] || { echo 'runtime SIF is missing' >&2; exit 1; }
+if command -v singularity >/dev/null 2>&1; then runtime=singularity
+elif command -v apptainer >/dev/null 2>&1; then runtime=apptainer
+else echo 'singularity/apptainer is missing' >&2; exit 1; fi
 version=26.04.6
-prefix="$project/.dl/envs/nextflow/$version"
-mkdir -p "$project/.dl/mamba" "$project/.dl/home" "$project/.dl/tmp"
-export APPTAINER_CACHEDIR="$project/.dl/container-cache"
-export APPTAINER_TMPDIR="$project/.dl/tmp"
+prefix="$state/envs/nextflow/$version"
+mkdir -p "$state/mamba" "$state/home" "$state/tmp"
+export APPTAINER_CACHEDIR="$state/container-cache"
+export APPTAINER_TMPDIR="$state/tmp"
 if [ ! -x "$prefix/bin/nextflow" ]; then
-  singularity exec --cleanenv --containall --home "$project/.dl/home" --bind "$project:$project:rw" \
-    --env "MAMBA_ROOT_PREFIX=$project/.dl/mamba,CONDA_PKGS_DIRS=$project/.dl/mamba/pkgs,XDG_CACHE_HOME=$project/.dl/mamba/cache" \
+  "$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
+    --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
     "$image" micromamba create -y -p "$prefix" -c conda-forge -c bioconda \
       "nextflow=$version" 'python=3.12' 'git=2.49' 'bash=5.2' 'procps-ng=4.0.4'
 fi
-if [ ! -x "$prefix/bin/ps" ]; then
-  singularity exec --cleanenv --containall --home "$project/.dl/home" --bind "$project:$project:rw" \
-    --env "MAMBA_ROOT_PREFIX=$project/.dl/mamba,CONDA_PKGS_DIRS=$project/.dl/mamba/pkgs,XDG_CACHE_HOME=$project/.dl/mamba/cache" \
-    "$image" micromamba install -y -p "$prefix" -c conda-forge 'procps-ng=4.0.4'
-fi
-# Run the exact environment binary; no activation and no nextflow from host PATH.
-singularity exec --cleanenv --containall --home "$project/.dl/home" --bind "$project:$project:rw" \
-  --env "MAMBA_ROOT_PREFIX=$project/.dl/mamba,CONDA_PKGS_DIRS=$project/.dl/mamba/pkgs,XDG_CACHE_HOME=$project/.dl/mamba/cache" \
-  "$image" micromamba list -p "$prefix" --explicit > "$project/.dl/nextflow-explicit.lock"
-digest=$(sha256sum "$image" | awk '{print $1}')
-singularity exec --cleanenv --containall --home "$project/.dl/home" --bind "$project:$project:rw" \
-  "$image" "$prefix/bin/python3" - "$project" "$image" "$prefix" "$digest" "$version" <<'PY'
+"$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
+  --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
+  "$image" micromamba list -p "$prefix" --explicit > "$state/nextflow-explicit.lock"
+if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum "$image" | awk '{print $1}'); else digest=$(shasum -a 256 "$image" | awk '{print $1}'); fi
+python3 - "$state/config/site.md" "$image" "$prefix" "$digest" "$version" "$runtime" <<'PY'
 from pathlib import Path
 import re,sys
-project,image,prefix,digest,version=sys.argv[1:]
-p=Path(project)/'.dl/config/site.md'; text=p.read_text()
-values={'runtime_image':image,'runtime_prefix':prefix,'runtime_sha256':digest,'nextflow_version':version,'container_runtime':'singularity'}
+p=Path(sys.argv[1]); text=p.read_text()
+values={'runtime_image':sys.argv[2],'runtime_prefix':sys.argv[3],'runtime_sha256':sys.argv[4],
+        'nextflow_version':sys.argv[5],'container_runtime':sys.argv[6]}
 for key,value in values.items():
-    pattern=r'(?m)^'+re.escape(key)+r'\s*=.*$'
-    if re.search(pattern,text): text=re.sub(pattern,lambda m:key+' = '+value,text)
-    else: text+='\n```dl-config\n'+key+' = '+value+'\n```\n'
+    pat=r'(?m)^'+re.escape(key)+r'\s*=.*$'
+    text=re.sub(pat, f'{key} = {value}', text) if re.search(pat,text) else text+f'\n```arh-config\n{key} = {value}\n```\n'
 p.write_text(text)
 PY
 printf 'Runtime ready: %s\nEnvironment: %s\n' "$image" "$prefix"

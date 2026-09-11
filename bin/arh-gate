@@ -2,10 +2,10 @@
 # Acceptance gates. The protocol's teeth.
 set -euo pipefail
 # shellcheck source=lib/common.sh
-. "${DL_HOME:?}/lib/common.sh"
+. "${ARH_HOME:?}/lib/common.sh"
 
 sub="${1:-}"; shift || true
-case "$sub" in -h|--help|"") echo 'usage: dl gate {predeclare|results|rules} [-n N | FILE]'; exit 0 ;; esac
+case "$sub" in -h|--help|"") echo 'usage: arh gate {predeclare|results|rules} [-n N | FILE]'; exit 0 ;; esac
 
 n=""; file=""
 while [ $# -gt 0 ]; do
@@ -14,24 +14,24 @@ while [ $# -gt 0 ]; do
     *) file="$1"; shift ;;
   esac
 done
-dl_load_project
+arh_load_project
 
 fails=0
-rule_ids() { dl_config_get "$DL_PROJ" rules ""; }
+rule_ids() { arh_config_get "$ARH_PROJ" rules ""; }
 
 # check_rules <file> <phase:predeclaration|report>
 check_rules() {
   local doc="$1" phase="$2" r rf id sev applies forbid requires body
   body=$(tr 'A-Z' 'a-z' < "$doc")
   for r in $(rule_ids); do
-    rf="$DL_ROOT/rules/$r.md"
-    [ -f "$rf" ] || { dl_fail "rule file missing: $rf"; fails=$((fails+1)); continue; }
-    applies=$(dl_config_get "$rf" applies "report")
+    rf="$ARH_ROOT/rules/$r.md"
+    [ -f "$rf" ] || { arh_fail "rule file missing: $rf"; fails=$((fails+1)); continue; }
+    applies=$(arh_config_get "$rf" applies "report")
     case " $applies " in *" $phase "*) ;; *) continue ;; esac
-    id=$(dl_config_get "$rf" id "$r")
-    sev=$(dl_config_get "$rf" severity error)
-    forbid=$(dl_config_get "$rf" forbid "")
-    requires=$(dl_config_get "$rf" requires "")
+    id=$(arh_config_get "$rf" id "$r")
+    sev=$(arh_config_get "$rf" severity error)
+    forbid=$(arh_config_get "$rf" forbid "")
+    requires=$(arh_config_get "$rf" requires "")
 
     local hit_forbid=0 hit_req=0
     [ -n "$forbid" ]   && printf '%s' "$body" | grep -qEi -- "$forbid"   && hit_forbid=1
@@ -40,47 +40,47 @@ check_rules() {
     if [ -n "$forbid" ]; then
       # Forbidden language is allowed only alongside the required qualifier.
       if [ "$hit_forbid" = 1 ] && [ "$hit_req" = 0 ]; then
-        dl_fail "$id — uses '$forbid' language without stating '$requires'"
+        arh_fail "$id — uses '$forbid' language without stating '$requires'"
         [ "$sev" = error ] && fails=$((fails+1)); continue
       fi
     elif [ -n "$requires" ] && [ "$hit_req" = 0 ]; then
-      dl_fail "$id — document never states: $requires"
+      arh_fail "$id — document never states: $requires"
       [ "$sev" = error ] && fails=$((fails+1)); continue
     fi
-    dl_ok "$id"
+    arh_ok "$id"
   done
 }
 
 case "$sub" in
   predeclare)
-    [ -n "$n" ] || dl_die "dl gate predeclare -n N"
-    dir="$DL_ITERS/iteration$n"
+    [ -n "$n" ] || arh_die "arh gate predeclare -n N"
+    dir="$ARH_ITERS/iteration$n"
     readme="$dir/README.md"
-    [ -f "$readme" ] || dl_die "no pre-declaration at $readme (run: dl new -n $n)"
-    dl_guard_path "$dir/PREDECLARATION.sha256"
-    [ ! -e "$dir/PREDECLARATION.sha256" ] || dl_die "already frozen; corrections require a new iteration"
+    [ -f "$readme" ] || arh_die "no pre-declaration at $readme (run: arh new -n $n)"
+    arh_guard_path "$dir/PREDECLARATION.sha256"
+    [ ! -e "$dir/PREDECLARATION.sha256" ] || arh_die "already frozen; corrections require a new iteration"
     printf 'gate: pre-declaration, iteration %s\n' "$n"
 
     # Results must not exist yet. A pre-declaration written after the answer is
     # not a pre-declaration.
     if [ -n "$(find "$dir/results" \( -type f -o -type l \) 2>/dev/null | head -1)" ]; then
-      dl_fail "results/ is already populated — this cannot be pre-declared"
+      arh_fail "results/ is already populated — this cannot be pre-declared"
       fails=$((fails+1))
     else
-      dl_ok "results/ is empty"
+      arh_ok "results/ is empty"
     fi
 
     # required_sections is a comma-separated list of headings; each must appear
     # as a heading in the README. Split on commas so multi-word names survive.
     old_ifs=$IFS; IFS=','
-    for sec in $(dl_config_get "$DL_PROJ" required_sections ""); do
+    for sec in $(arh_config_get "$ARH_PROJ" required_sections ""); do
       IFS=$old_ifs
       sec=$(printf '%s' "$sec" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
       [ -n "$sec" ] || continue
       if grep -qiE "^#{1,6}.*$(printf '%s' "$sec" | sed 's/[][\.*^$/]/\\&/g')" "$readme"; then
-        dl_ok "section: $sec"
+        arh_ok "section: $sec"
       else
-        dl_fail "section missing: $sec"; fails=$((fails+1))
+        arh_fail "section missing: $sec"; fails=$((fails+1))
       fi
       IFS=','
     done
@@ -90,9 +90,9 @@ case "$sub" in
     # Template placeholders open at column 0 and may wrap over several lines,
     # so anchor on the opening bracket rather than trying to match the pair.
     if grep -qE '^<[[:alpha:]]|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$readme"; then
-      dl_fail "template placeholders remain unfilled"; fails=$((fails+1))
+      arh_fail "template placeholders remain unfilled"; fails=$((fails+1))
     else
-      dl_ok "no placeholders remain"
+      arh_ok "no placeholders remain"
     fi
 
     check_rules "$readme" predeclaration
@@ -100,44 +100,44 @@ case "$sub" in
     if [ "$fails" -gt 0 ]; then
       printf '\ngate FAILED (%s). Nothing was frozen; fix and re-run.\n' "$fails" >&2; exit 1
     fi
-    ( set -C; { dl_sha256 "$readme"; dl_now; } > "$dir/PREDECLARATION.sha256" ) || dl_die "freeze already exists"
+    ( set -C; { arh_sha256 "$readme"; arh_now; } > "$dir/PREDECLARATION.sha256" ) || arh_die "freeze already exists"
     printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
     printf 'The README hash is frozen; later edits will fail validation. Corrections go in a new iteration.\n'
     ;;
 
   results)
-    [ -n "$n" ] || dl_die "dl gate results -n N"
-    dir="$DL_ITERS/iteration$n"
+    [ -n "$n" ] || arh_die "arh gate results -n N"
+    dir="$ARH_ITERS/iteration$n"
     readme="$dir/README.md"
     frozen="$dir/PREDECLARATION.sha256"
     printf 'gate: results, iteration %s\n' "$n"
 
     if [ ! -f "$frozen" ]; then
-      dl_fail "no frozen pre-declaration — results were produced outside the protocol"
+      arh_fail "no frozen pre-declaration — results were produced outside the protocol"
       fails=$((fails+1))
     else
-      want=$(head -1 "$frozen"); got=$(dl_sha256 "$readme")
+      want=$(head -1 "$frozen"); got=$(arh_sha256 "$readme")
       if [ "$want" = "$got" ]; then
-        dl_ok "pre-declaration unchanged since freeze"
+        arh_ok "pre-declaration unchanged since freeze"
       else
-        dl_fail "README.md CHANGED after pre-declaration was frozen"
-        dl_info "frozen: $want"
-        dl_info "now:    $got"
+        arh_fail "README.md CHANGED after pre-declaration was frozen"
+        arh_info "frozen: $want"
+        arh_info "now:    $got"
         fails=$((fails+1))
       fi
     fi
 
     report="$dir/results/report/iteration${n}_report.md"
-    if [ -f "$report" ]; then dl_ok "report present"; check_rules "$report" report
-    else dl_fail "no report at ${report#"$DL_ROOT"/}"; fails=$((fails+1)); fi
+    if [ -f "$report" ]; then arh_ok "report present"; check_rules "$report" report
+    else arh_fail "no report at ${report#"$ARH_ROOT"/}"; fails=$((fails+1)); fi
 
-    if [ "$(dl_config_get "$DL_PROJ" require_crosscheck true)" = true ]; then
-      if dl_crosschecks "$dir" | grep -q .; then
-        dl_ok "completed foreign review(s); verdicts are evidence, not endorsement"
-        python3 "$DL_HOME/lib/harness.py" describe "$dir"
+    if [ "$(arh_config_get "$ARH_PROJ" require_crosscheck true)" = true ]; then
+      if arh_crosschecks "$dir" | grep -q .; then
+        arh_ok "completed foreign review(s); verdicts are evidence, not endorsement"
+        python3 "$ARH_HOME/lib/harness.py" describe "$dir"
       else
-        dl_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
-        python3 "$DL_HOME/lib/harness.py" describe "$dir"
+        arh_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
+        python3 "$ARH_HOME/lib/harness.py" describe "$dir"
         fails=$((fails+1))
       fi
     fi
@@ -147,12 +147,12 @@ case "$sub" in
     ;;
 
   rules)
-    [ -n "$file" ] || dl_die "dl gate rules FILE"
-    [ -f "$file" ] || dl_die "no such file: $file"
+    [ -n "$file" ] || arh_die "arh gate rules FILE"
+    [ -f "$file" ] || arh_die "no such file: $file"
     printf 'gate: standing rules, %s\n' "$file"
     check_rules "$file" report
     [ "$fails" -gt 0 ] && { printf '\n%s rule violation(s).\n' "$fails" >&2; exit 1; }
     printf '\nAll standing rules satisfied.\n'
     ;;
-  *) dl_die "unknown gate: $sub" ;;
+  *) arh_die "unknown gate: $sub" ;;
 esac

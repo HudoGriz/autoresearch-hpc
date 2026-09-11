@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Atomically claim the next iteration number.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+title=""; agent=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t|--title) title="$2"; shift 2 ;;
+    -a|--agent) agent="$2"; shift 2 ;;
+    -h|--help)  echo 'usage: arh claim -t TITLE [-a AGENT]'; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+[ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
+
+arh_load_project
+[ -n "$agent" ] || agent=$(arh_agent_name)
+mkdir -p "$ARH_ITERS"
+
+n=$(
+  { find "$ARH_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
+      | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p'
+    awk -F'\t' 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}' "$ARH_REGISTRY" 2>/dev/null
+  } | sort -n | tail -1
+)
+n=$(( ${n:-0} + 1 ))
+
+dir=""
+for _ in $(seq 1 100); do
+  if mkdir "$ARH_ITERS/iteration$n" 2>/dev/null; then dir="$ARH_ITERS/iteration$n"; break; fi
+  n=$((n + 1))
+done
+[ -n "$dir" ] || arh_die "could not claim an iteration number after 100 attempts"
+
+cat > "$dir/CLAIM.json" <<EOF
+{
+  "iteration": $n,
+  "agent": "$(arh_agent_name)",
+  "declared_agent": "$agent",
+  "claimed": "$(arh_now)",
+  "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),
+  "status": "CLAIMED",
+  "session": "${ARH_SESSION:-}"
+}
+EOF
+
+_append_row() { printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$agent" "$(arh_now)" CLAIMED "$title" >> "$ARH_REGISTRY"; }
+if command -v flock >/dev/null 2>&1; then
+  exec 9>>"$ARH_REGISTRY.lock"; flock 9; _append_row; exec 9>&-
+else
+  until mkdir "$ARH_REGISTRY.lock.d" 2>/dev/null; do sleep 0.2; done
+  _append_row; rmdir "$ARH_REGISTRY.lock.d"
+fi
+
+mkdir -p "$dir"/{scripts,results,logs,resources,metadata}
+printf '%s\n' "$n"
+printf 'claimed iteration %s at %s\n' "$n" "$dir" >&2
+printf 'next: arh new -n %s   (complete the pre-declaration BEFORE running anything)\n' "$n" >&2

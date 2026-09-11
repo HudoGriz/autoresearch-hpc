@@ -6,11 +6,11 @@
 # reads iteration outputs and never writes to them.
 set -euo pipefail
 # shellcheck source=lib/common.sh
-. "${DL_HOME:?}/lib/common.sh"
+. "${ARH_HOME:?}/lib/common.sh"
 
 sub="${1:-}"; shift || true
 case "$sub" in
-  -h|--help|"") echo 'usage: dl verify {new|gate|list} [OBJECT] [-m MODE]'; exit 0 ;;
+  -h|--help|"") echo 'usage: arh verify {new|gate|list} [OBJECT] [-m MODE]'; exit 0 ;;
 esac
 
 obj=""; mode=""
@@ -20,79 +20,79 @@ while [ $# -gt 0 ]; do
     *) obj="$1"; shift ;;
   esac
 done
-dl_load_project
-mkdir -p "$DL_VERIFY"
+arh_load_project
+mkdir -p "$ARH_VERIFY"
 
 case "$sub" in
   new)
-    [ -n "$obj" ] || dl_die "which object? dl verify new <name> [-m recalculation|re-implementation|replication]"
-    case "$obj" in */*|.*) dl_die "object name must be a single path segment: $obj" ;; esac
-    dir="$DL_VERIFY/$obj"
-    mkdir "$dir" 2>/dev/null || dl_die "verification '$obj' already exists"
+    [ -n "$obj" ] || arh_die "which object? arh verify new <name> [-m recalculation|re-implementation|replication]"
+    case "$obj" in */*|.*) arh_die "object name must be a single path segment: $obj" ;; esac
+    dir="$ARH_VERIFY/$obj"
+    mkdir "$dir" 2>/dev/null || arh_die "verification '$obj' already exists"
     mkdir -p "$dir"/{scripts,results,logs,resources}
-    sed -e "s|<object>|$obj|g" -e "s|{{DATE}}|$(dl_today)|g" \
-        "$DL_HOME/templates/verification/PREDECLARATION.md" > "$dir/PREDECLARATION.md"
+    sed -e "s|<object>|$obj|g" -e "s|{{DATE}}|$(arh_today)|g" \
+        "$ARH_HOME/templates/verification/PREDECLARATION.md" > "$dir/PREDECLARATION.md"
     [ -n "$mode" ] && printf '\n<!-- mode declared at creation: %s -->\n' "$mode" >> "$dir/PREDECLARATION.md"
     printf 'wrote %s\n\n' "$dir/PREDECLARATION.md"
-    printf 'Complete it, then:  dl verify gate %s\n' "$obj"
+    printf 'Complete it, then:  arh verify gate %s\n' "$obj"
     printf 'A verification that picks its analytic variant after seeing the answer\n'
     printf 'is not a verification, so the gate freezes this file before you run.\n'
     ;;
 
   gate)
-    [ -n "$obj" ] || dl_die "which object? dl verify gate <name>"
-    dir="$DL_VERIFY/$obj"
+    [ -n "$obj" ] || arh_die "which object? arh verify gate <name>"
+    dir="$ARH_VERIFY/$obj"
     pre="$dir/PREDECLARATION.md"
-    [ -f "$pre" ] || dl_die "no pre-declaration at ${pre#"$DL_ROOT"/}"
+    [ -f "$pre" ] || arh_die "no pre-declaration at ${pre#"$ARH_ROOT"/}"
     printf 'gate: verification pre-declaration, %s\n' "$obj"
     fails=0
 
     if [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ]; then
-      dl_fail "results/ is already populated — this cannot be pre-declared"; fails=$((fails+1))
+      arh_fail "results/ is already populated — this cannot be pre-declared"; fails=$((fails+1))
     else
-      dl_ok "results/ is empty"
+      arh_ok "results/ is empty"
     fi
 
     for sec in "What is being verified" "Mode" "Analytic variant" \
                "Success criterion" "What a failure would mean"; do
-      if grep -qiF "$sec" "$pre"; then dl_ok "section: $sec"
-      else dl_fail "section missing: $sec"; fails=$((fails+1)); fi
+      if grep -qiF "$sec" "$pre"; then arh_ok "section: $sec"
+      else arh_fail "section missing: $sec"; fails=$((fails+1)); fi
     done
 
     if grep -qE '^<|\{\{[A-Z_]+\}\}|\bTODO\b|\bTBD\b' "$pre"; then
-      dl_fail "template placeholders remain unfilled"; fails=$((fails+1))
+      arh_fail "template placeholders remain unfilled"; fails=$((fails+1))
     else
-      dl_ok "no placeholders remain"
+      arh_ok "no placeholders remain"
     fi
 
     # §6.4 — reproducing the size of a set is not reproducing the set.
     if grep -qiE 'membership|by name|which elements|element-wise' "$pre"; then
-      dl_ok "success criterion is stated as membership"
+      arh_ok "success criterion is stated as membership"
     else
-      dl_fail "success criterion must name which elements must come back, not how many"
+      arh_fail "success criterion must name which elements must come back, not how many"
       fails=$((fails+1))
     fi
 
     [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s). Nothing was frozen.\n' "$fails" >&2; exit 1; }
-    dl_sha256 "$pre" > "$dir/PREDECLARATION.sha256"
-    printf '%s\n' "$(dl_now)" >> "$dir/PREDECLARATION.sha256"
+    arh_sha256 "$pre" > "$dir/PREDECLARATION.sha256"
+    printf '%s\n' "$(arh_now)" >> "$dir/PREDECLARATION.sha256"
     printf '\ngate PASSED. Frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
     ;;
 
   list)
     found=0
-    for d in "$DL_VERIFY"/*/; do
+    for d in "$ARH_VERIFY"/*/; do
       [ -d "$d" ] || continue
       found=1; name=$(basename "$d")
       if [ -f "$d/PREDECLARATION.sha256" ]; then
-        [ "$(head -1 "$d/PREDECLARATION.sha256")" = "$(dl_sha256 "$d/PREDECLARATION.md" 2>/dev/null)" ] \
+        [ "$(head -1 "$d/PREDECLARATION.sha256")" = "$(arh_sha256 "$d/PREDECLARATION.md" 2>/dev/null)" ] \
           && st=frozen || st=ALTERED
       else st=draft; fi
       [ -f "$d/RESULT.md" ] && res=result || res='-'
       printf '%-28s %-9s %s\n' "$name" "$st" "$res"
     done
-    [ "$found" = 0 ] && printf '(no verifications yet — dl verify new <object>)\n'
+    [ "$found" = 0 ] && printf '(no verifications yet — arh verify new <object>)\n'
     exit 0
     ;;
-  *) dl_die "unknown: $sub" ;;
+  *) arh_die "unknown: $sub" ;;
 esac

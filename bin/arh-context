@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. "${ARH_HOME:?}/lib/common.sh"
+[ "${1-}" = --help ] && { echo 'usage: arh context -n N'; exit 0; }
+[ "${1-}" = -n ] && [ -n "${2-}" ] || arh_die 'usage: arh context -n N'
+arh_load_project
+exec python3 "$ARH_HOME/lib/context.py" "$2"

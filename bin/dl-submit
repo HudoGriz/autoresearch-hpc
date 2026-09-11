@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Nextflow owns scheduling; this adapter checks the research plan.
-set -euo pipefail
-. "${DL_HOME:?}/lib/common.sh"
-case "${1-}" in -h|--help) echo 'usage: dl submit WORKFLOW.nf [-n NAME] [--params FILE] [--resume] [-w]'; exit 0 ;; esac
-dl_load_project
-[ "${DL_IN_RUNTIME:-0}" != 1 ] || dl_die "run the Nextflow controller on the host for scheduler access"
-exec python3 "$DL_HOME/lib/nextflow.py" "$@"

@@ -7,42 +7,30 @@ which standing rules every iteration inherits. Site details belong in
 ## Paths
 
 `immutable_inputs` is a space-separated list of directories that must never be
-written to. `dl guard` aborts on any write path outside the project root or
-inside one of these, and `dl run` binds each of them read-only.
+written to. `arh guard` aborts on any write path outside the project root or
+inside one of these, and `arh run` binds each of them read-only.
 
 ## Standing rules
 
-`rules` names the files under `rules/` that every iteration inherits. Each rule
-is a Markdown file with a `dl-config` block declaring how it is enforced. Rules
-are *conclusion boundaries* — they constrain what an iteration is allowed to
-claim, not what it is allowed to compute.
-
-Add project-specific rules by dropping a new file in `rules/` and naming it here.
+`rules` names files under `rules/` that every iteration inherits. Each rule is a
+Markdown file with an `arh-config` block declaring how it is enforced. Rules are
+conclusion boundaries — they constrain what an iteration may claim, not what it
+may compute.
 
 ## Pre-declaration
 
-`required_sections` is a **comma-separated** list of headings an iteration
-`README.md` must contain
-before any result may be recorded. `dl gate predeclare` enforces this, then
-freezes the file's hash; `dl gate results` fails if the README changed after
-results appeared. This is preregistration enforced mechanically — it is the
-core of the protocol, so shorten this list only deliberately.
+`required_sections` is a comma-separated list of headings an iteration README
+must contain before any result may be recorded. `arh gate predeclare` enforces
+this, then freezes the file hash; `arh gate results` fails if it changed after
+results appeared.
 
-```dl-config
+```arh-config
 ledger            = PROGRESS.md
 iterations_dir    = iterations
 verification_dir  = verification
 
-# Directories that must never be written to (space-separated, absolute).
 immutable_inputs  =
-
-# Standing rules inherited by every iteration.
 rules             = association-not-causation null-is-upper-bound negative-controls-required detection-limit-stated
-
-# Headings an iteration README must carry before results are accepted.
 required_sections = Question, Estimand, Instrument, Acceptance criteria, Negative controls, Detection limit, Prediction
-
-# Refuse to conclude an iteration whose claims were never cross-checked
-# by a harness from a different model family.
 require_crosscheck = true
 ```

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Assert that paths are writable under the project and outside immutable inputs.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+[ $# -ge 1 ] || arh_die "usage: arh guard PATH..."
+[ "${1-}" = "--help" ] && { echo 'usage: arh guard PATH...'; exit 0; }
+arh_load_project
+arh_guard_path "$@"
+printf 'all %s path(s) writable under %s\n' "$#" "$ARH_ROOT"
