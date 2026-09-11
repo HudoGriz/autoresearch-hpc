@@ -71,7 +71,7 @@ else
     got=$(sha256_file "$cached") || exit 1
     if [ "$got" = "$mm_sha" ]; then
       micromamba="$cached"
-      source_kind=project-cache
+      source_kind='project-cache'
     else
       echo "discarding cached micromamba with wrong checksum: $cached" >&2
       rm -f "$cached"
