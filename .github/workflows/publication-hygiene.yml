@@ -20,12 +20,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Test release-audit redaction
+        run: |
+          python3 -m unittest test.test_public_release_audit
       - name: Scan current tracked tree
         run: |
           python3 scripts/public-release-audit.py --tree --json publication-audit.json
       - name: Reproduce synthetic publication fixture
         run: |
           bash examples/mean-shift/check.sh
+      - name: Upload redacted tree audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-tree-audit-${{ github.sha }}
+          path: publication-audit.json
+          if-no-files-found: error
+          retention-days: 90
 
   history:
     name: Full-history audit
@@ -38,3 +49,11 @@ jobs:
       - name: Scan history
         run: |
           python3 scripts/public-release-audit.py --history --json publication-history-audit.json
+      - name: Upload redacted history audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-history-audit-${{ github.sha }}
+          path: publication-history-audit.json
+          if-no-files-found: warn
+          retention-days: 30
