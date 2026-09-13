@@ -1,340 +1,265 @@
 # Proposals
 
-**Original proposal register.** Updated decisions and implementation status are
-in [the 2026-09-09 review](framework-review.md#proposal-by-proposal-decisions).
-The original proposals below are preserved as design history. Nothing here is
-committed to. Evidence for each is in [`prior-art.md`](prior-art.md);
-positioning is in [`related-work.md`](related-work.md).
+This is the historical proposal register. Updated implementation decisions live
+in [the framework review](framework-review.md#proposal-by-proposal-decisions).
+For publication priorities, use [`publication-plan.md`](publication-plan.md)
+rather than this list.
 
-Status is one of `PROPOSED` · `ACCEPTED` · `REJECTED` · `DONE`. Everything is
-`PROPOSED` until you say otherwise. Effort is calendar-honest for one person who
-already knows the codebase.
+The purpose of keeping the register is to preserve design rationale without
+turning every interesting idea into a requirement for the first release.
+Publication-facing examples are synthetic; private study details do not belong
+in this repository.
 
-| # | Proposal | Effort | Status |
-|---|---|---|---|
-| [P1](#p1) | Rule waivers, with a required reason | half a day | `PROPOSED` |
-| [P2](#p2) | Trusted timestamping of pre-declarations | half a day | `PROPOSED` |
+| # | Proposal | Original effort estimate | Status in this register |
+|---|---|---:|---|
+| [P1](#p1) | Rule waivers, with a required reason | 0.5 day | `PROPOSED` |
+| [P2](#p2) | Trusted timestamping of pre-declarations | 0.5 day | `PROPOSED` |
 | [P3](#p3) | Typed DAG nodes and edges | 1 day | `PROPOSED` |
-| [P4](#p4) | Digest-pin container images | half a day | `PROPOSED` |
-| [P5](#p5) | Execution-time provenance capture in `arh submit` | 1–2 days | `PROPOSED` |
-| [P6](#p6) | Workflow-engine runner (Nextflow / Snakemake) | 2–3 days | `PROPOSED` |
-| [P7](#p7) | `arh graph` — the knowledge graph | 1–2 weeks | `PROPOSED` |
-| [P8](#p8) | Align `finding.schema.json` with the claim-aware profile | half a day | `PROPOSED` |
+| [P4](#p4) | Digest-pin container images | 0.5 day | `PROPOSED` |
+| [P5](#p5) | Execution-time provenance capture | 1–2 days | `PROPOSED` |
+| [P6](#p6) | Workflow-engine runner | 2–3 days | `PROPOSED` |
+| [P7](#p7) | Rebuildable knowledge graph | 1–2 weeks | `PROPOSED` |
+| [P8](#p8) | Align finding schema with external profiles | 0.5 day | `PROPOSED` |
 | [P9](#p9) | RO-Crate export | 2–3 days | `PROPOSED` |
 | [P10](#p10) | Nanopublications for findings | 3–4 days | `PROPOSED` |
 | [P11](#p11) | Standing rules as SHACL shapes | 2–3 days | `PROPOSED` |
-| [P12](#p12) | in-toto attestations as the record format | 3–4 days | `PROPOSED` |
+| [P12](#p12) | in-toto attestations | 3–4 days | `PROPOSED` |
 | [P13](#p13) | MCP server for `arh` | 2 days | `PROPOSED` |
 | [P14](#p14) | Reports as build artifacts | 2 days | `PROPOSED` |
-| [P15](#p15) | Guix/Nix for bit-reproducible environments | 1–2 weeks | `PROPOSED` |
-| [P16](#p16) | Benchmark the cross-check roles | 1–2 weeks | `PROPOSED` |
-| [R1](#r1) | Repository release chores | 1 hour | `BLOCKED — needs your identity` |
+| [P15](#p15) | Guix/Nix environments | 1–2 weeks | `PROPOSED` |
+| [P16](#p16) | Benchmark cross-check roles | 1–2 weeks | `PROPOSED` |
+
+> The implementation has moved since this register was written. Some ideas above
+> are now partially or substantially implemented. The register is design history,
+> not a live feature matrix.
 
 ---
 
 ## P1 — Rule waivers, with a required reason {#p1}
 
-**Problem.** Standing rules are all-or-nothing. When a rule is wrong for one
-iteration, the only escape is deleting it from `project.md` — silently, for the
-whole project, leaving no trace.
+**Problem.** Standing rules that are all-or-nothing invite users to delete a rule
+project-wide when it is inappropriate for one iteration.
 
-> A rule that cannot be waived honestly will be evaded dishonestly.
+**Proposal.** Per-iteration waivers with a mandatory reason. Gates should print
+active waivers, and reports should carry them forward so exceptions remain
+visible.
 
-**Proposal.** Per-iteration waivers with a mandatory reason. `arh gate` *prints*
-active waivers rather than passing quietly, and the waiver is carried into the
-report so a reader sees which rule was set aside and why.
-
-**Evidence.** nf-core allows specific lint tests to be disabled in
-`.nf-core.yml`, with per-file granularity, and only "in exceptional
-circumstances… if agreed upon by the community". See `prior-art.md` §2.2.
-
-**Risk.** Waivers become routine. Mitigate by surfacing the count in
-`arh status` — a project with many waived rules should look like one.
+**Risk.** Waivers become routine. Surface waiver counts in project status and
+make them conspicuous rather than silent.
 
 ---
 
 ## P2 — Trusted timestamping of pre-declarations {#p2}
 
-**Problem.** `PREDECLARATION.sha256` proves the pre-declaration has not
-*changed*. It does not prove it *predates the results* — anyone can delete it
-and regenerate it from an edited README. For a preregistration mechanism that is
-the half that matters when a result is challenged.
+**Problem.** `PREDECLARATION.sha256` proves that a declaration has not changed;
+it does not prove to an external party that the declaration existed before the
+results.
 
-**Proposal.** Follow eLabFTW's RFC 3161 flow: export, hash, request a token from
-a Time Stamping Authority, store the export and the token together.
+**Proposal.** Add an optional third-party timestamp path such as RFC 3161,
+OpenTimestamps, or a transparency-log-backed attestation. Sites without network
+egress must remain usable, so external timestamping should be separable from the
+local gate.
 
-| Option | Cost | Proves |
-|---|---|---|
-| Signed git tag pushed to a public remote | ~10 lines | a third party attests the hash existed by date X |
-| **OpenTimestamps** (`ots stamp`) | one binary, no account | Bitcoin-anchored, verifiable indefinitely |
-| RFC 3161 TSA token | free public TSAs | the standard; what ELNs actually use |
-| Sigstore cosign + Rekor | needs OIDC | ties the stamp to *who*, in a public log |
-
-**Recommendation:** OpenTimestamps — no account, no key management, one line in
-`arh gate predeclare`. Add RFC 3161 as an option for sites that require it.
-
-**Risk.** External dependency at gate time. Make it non-blocking with a
-`arh gate stamp` catch-up command, so a cluster without egress still works.
+**Publication note.** Do not claim trusted temporal priority until such an
+external mechanism is implemented and evaluated.
 
 ---
 
 ## P3 — Typed DAG nodes and edges {#p3}
 
-**Problem.** `arh dag check` can verify a node appears in the graph, but not that
-the terminal claim actually *derives* from the declared inputs. A step that only
-passes data through is indistinguishable from one that produces something.
+**Problem.** Presence in a graph does not prove that a terminal claim derives
+from declared inputs.
 
-**Proposal.** Adopt AiiDA's model: node `kind` of `data` / `calculation` /
-`workflow`, and edge types `input` / `create` / `return` / `call`. Then enforce:
+**Proposal.** Adopt typed provenance nodes/edges (for example data,
+calculation/workflow and input/create/return/call relationships) and require a
+valid derivation path from declared inputs to the terminal claim.
 
-> Data provenance must be a strict DAG. Logical provenance may contain cycles —
-> a workflow can legitimately return its own input.
-
-`arh dag check` gains a real test: the terminal claim must have a `create`-path
-back to a declared input.
-
-**Evidence.** `prior-art.md` §2.1.
-
-**Risk.** More to fill in by hand. Mitigate by defaulting `kind` to
-`calculation` and only requiring the distinction where the check would fire.
+**Risk.** Manual burden. Require richer typing only where it enables a concrete
+check.
 
 ---
 
 ## P4 — Digest-pin container images {#p4}
 
-**Problem.** `image_samtools = /opt/….sif` is a *path*. Swap the file and
-nothing notices. The README claims runs are reproducible; without this they are
-merely pinned by name.
+**Problem.** A path is not content identity; a file can change in place.
 
-**Proposal.** Record each image's sha256 on first use; `arh run` refuses a
-changed digest unless the config is updated deliberately. Support
-`docker://…@sha256:…` for remote images.
-
-**Risk.** None material. This one is close to free and closes an overstatement.
+**Proposal.** Record and verify SHA-256 for local images and require digest-
+qualified remote references. This should fail before execution when declared
+content identity no longer matches.
 
 ---
 
-## P5 — Execution-time provenance capture in `arh submit` {#p5}
+## P5 — Execution-time provenance capture {#p5}
 
-**Problem.** `arh submit` records almost nothing. The human is expected to write
-down what ran, which they will not do reliably.
+**Problem.** Human-authored execution notes are incomplete and drift from what
+actually ran.
 
-**Proposal.** Capture automatically at execution: code version, parameters,
-input and output hashes, container digest, hostname, scheduler job id, wall time,
-exit status. Write it beside the job's logs. Make the record **re-executable**,
-not merely descriptive.
+**Proposal.** Capture code identity, parameters, input/output identity,
+container identity, scheduler metadata, timing and exit status at execution
+time. Prefer records that are sufficient to reconstruct or replay the run.
 
-**Evidence.** Sumatra's `smt run` and DataLad's `datalad run` / `datalad rerun`
-have done exactly this for years. `prior-art.md` §2.4.
-
-**Risk.** Hashing large outputs is slow. Make hashing opt-out per job.
+**Risk.** Hashing very large data can be expensive; allow explicitly documented
+policies rather than silently skipping identity.
 
 ---
 
-## P6 — Workflow-engine runner (Nextflow / Snakemake) {#p6}
+## P6 — Workflow-engine runner {#p6}
 
-**Problem.** `arh submit` is a thin `sbatch` wrapper — no DAG, no resume, no
-per-rule containers, no provenance.
+**Problem.** AutoResearch HPC should not become a second scheduler or workflow
+engine.
 
-**Proposal.** `runner = slurm | snakemake | nextflow` in `site.md`.
-Scheduling is now delegated to Nextflow; extend its site configuration rather than adding a custom scheduler.
+**Proposal.** Delegate execution to an established workflow engine and extend
+site configuration rather than reimplementing scheduling, DAG execution and
+cache semantics.
 
-**Note.** Nextflow is the obvious choice here given you already run nf-core
-pipelines; Snakemake has the better built-in reporting.
-
-**Risk.** Scope creep — this framework is not a workflow engine and should not
-become one. Keep the runner a dispatch target, not an abstraction over both.
+**Design constraint.** Keep the runner a dispatch target, not a bespoke
+abstraction over every workflow system.
 
 ---
 
-## P7 — `arh graph`, the knowledge graph {#p7}
+## P7 — Rebuildable knowledge graph {#p7}
 
-**Problem.** The iteration record and the literature vault are **the same graph
-seen from two sides**, and they never meet.
+**Problem.** As append-only research histories grow, links between literature,
+methods, intermediate artifacts, superseded findings and later corrections
+become difficult to navigate from prose alone.
 
-A literature note can recommend a method with a caveat, while an iteration
-records that the same method failed to run. Those two facts belong on one
-node, and a reader of either file alone gets a misleading picture.
+A synthetic example is sufficient to illustrate the need: a literature record
+may state that method `M` is valid only under a paired design, while an iteration
+records that a specific analysis used an independent-groups formulation and was
+rejected. Those two facts should be navigable from the same method/claim node.
 
-> The literature says what should work. The iterations say what did.
+**Proposal.** Build a disposable graph index from versioned source files rather
+than making a graph database authoritative. Reuse PROV-O/CiTO where possible,
+with a small `arh:` vocabulary for protocol-specific concepts. See
+[`knowledge-graph-design.md`](knowledge-graph-design.md).
 
-**Proposal.** Four thin layers, three of which already exist as files. Full
-design in [`knowledge-graph-design.md`](knowledge-graph-design.md).
+**Two hard rules.** The graph is rebuildable from files, and provenance edges are
+not invented by an LLM.
 
-| Layer | Choice |
-|---|---|
-| Truth | files in git — iteration record **+ the existing Obsidian vault** |
-| Vocabulary | PROV-O + CiTO + FaBiO + a small local `arh:` |
-| Generation | Morph-KGC RML mappings, enriched from OpenAlex (no auth needed) |
-| Store & view | Oxigraph default · Neo4j+MCP for agent querying · Cytoscape.js + Mermaid |
-
-```bash
-arh graph build | enrich | query | view | check
-```
-
-**Two hard rules.** The database is a rebuildable index, never the source of
-truth — Kùzu was archived in October 2025 and anyone who made it their truth is
-now migrating. And **no LLM-inferred edges**: a provenance record whose edges
-were guessed by a model is not evidence.
-
-**Suggested first slice:** `build` + `view` only — extract the vault and the
-iteration record to RDF, render a static Cytoscape.js page. No external
-dependencies, and it shows the join immediately.
-
-**Risk.** The largest item here, and the easiest to over-build. If the first
-slice does not produce a picture worth looking at, stop.
+**Publication priority.** Low for the first paper. Independent reproduction and
+evaluation close a much more important evidence gap.
 
 ---
 
-## P8 — Align `finding.schema.json` with the claim-aware profile {#p8}
+## P8 — Align `finding.schema.json` with external claim/provenance profiles {#p8}
 
-**Problem.** Our finding type is private. An emerging profile covers the same
-ground.
+**Problem.** A private finding type is harder to exchange with other research
+infrastructure.
 
-**Proposal.** Adopt the [claim-aware observability](https://arxiv.org/abs/2608.18312)
-minimum: stable artifact ID, kind, payload hash, creator operator, timestamp,
-status. We are close already; this makes us interoperable rather than bespoke,
-and gives a citation.
+**Proposal.** Map stable artifact ID, kind, payload hash, creator, timestamp and
+status onto a maintained external profile where that creates real
+interoperability.
 
-**Risk.** The profile is new and may move. Cheap enough to redo.
+**Risk.** Emerging profiles can move. Keep the internal record stable enough to
+remap later.
 
 ---
 
 ## P9 — RO-Crate export {#p9}
 
-**Proposal.** `arh crate` emitting a
-[Workflow Run RO-Crate](https://doi.org/10.1371/journal.pone.0309210) per
-concluded iteration: depositable to WorkflowHub/Zenodo, W3C PROV aligned,
-citable. This is the publication path for an *iteration*.
+**Proposal.** Export a concluded iteration as Workflow Run RO-Crate so it can be
+archived or deposited using established provenance conventions.
 
-**Depends on:** P5 (there is little provenance to package until then).
+**Depends on.** Sufficient execution-time provenance to make the crate more than
+a wrapper around prose.
 
 ---
 
 ## P10 — Nanopublications for findings {#p10}
 
-**Proposal.** Emit each finding as a nanopublication — assertion, provenance and
-publication-info graphs, individually citable. This is how a *finding* leaves
-the repo and enters the literature graph, and it maps almost one-to-one onto
-`finding.schema.json`.
+**Proposal.** Optionally emit supported findings as assertion + provenance +
+publication-info graphs.
 
-**Depends on:** P8, and ideally P7.
-
-**Risk.** Publishing claims into a public graph is irreversible. Only findings
-with status `supported` should ever be emitted, never `candidate`.
+**Risk.** Public claim publication can be irreversible. Never publish
+`candidate` findings automatically.
 
 ---
 
 ## P11 — Standing rules as SHACL shapes {#p11}
 
-**Problem.** Rules are regexes over prose. That catches a sound analysis written
-up in overreaching language — the common case — but it is lexical, and can be
-satisfied by rephrasing.
+**Problem.** Regex rules over prose catch language problems but can be satisfied
+by rephrasing.
 
-**Proposal.** Once findings are RDF, express the same rules as SHACL shapes over
-the data: *every finding with status `supported` must have a `detectionLimit`
-carrying a value, units and a basis*. Structural, not lexical.
+**Proposal.** If a structured graph exists, add structural constraints such as
+requiring every supported finding to carry a detection limit with value, units
+and basis.
 
-**Keep the regex rules.** They catch a different failure and both are needed.
-
-**Depends on:** P7.
+**Keep the prose checks.** Lexical and structural validation catch different
+failure classes.
 
 ---
 
-## P12 — in-toto attestations as the record format {#p12}
+## P12 — in-toto attestations {#p12}
 
-**Proposal.** Replace ad-hoc `.sha256` files and `CROSSCHECK_*.md` with signed
-in-toto statements (subject = iteration artifacts, predicate = pre-declaration /
-cross-check / gate result). Verifiable with standard supply-chain tooling;
-GitHub Actions provides artifact attestations for free.
+**Proposal.** Represent key protocol transitions with standard attestations so
+pre-declaration, cross-check and gate evidence can be verified by external
+tooling.
 
-**Overlaps P2** — decide whether timestamping is a small addition to the current
-format or the trigger to move to in-toto wholesale. Doing P2 cheaply first and
-P12 later is the low-risk order.
+**Relationship to P2.** Trusted timestamping is a smaller problem; do not adopt a
+large attestation stack merely to obtain a timestamp.
 
 ---
 
 ## P13 — MCP server for `arh` {#p13}
 
-**Proposal.** Expose claim / gate / ask / status / graph-query as MCP tools, so
-any MCP client participates without shelling out. Also the natural seam with
-PROV-AGENT, which already speaks MCP.
+**Proposal.** Expose stable operations such as claim, gate, ask and status as MCP
+tools for agent clients.
 
-**Note.** `arh status --json` already makes `arh` callable from code; this is
-about *agent* ergonomics, not capability.
+**Note.** Machine-readable CLI output already provides a simpler integration
+surface. MCP is an ergonomics feature, not a publication blocker.
 
 ---
 
 ## P14 — Reports as build artifacts {#p14}
 
-**Problem.** `iterationN_report.md` is hand-written and can silently drift from
-`results/`. Numbers get retyped.
+**Problem.** Hand-transcribed numbers can drift from result files.
 
-**Proposal.** Follow showyourwork: numbers and figures in a report are
-*generated* from results, not transcribed. At minimum, a check that every number
-in the report appears in a result file.
-
-**Risk.** Over-rigid templating makes reports unwritable. Start with the check,
-not the generator.
+**Proposal.** Generate or verify load-bearing report values from result
+artifacts. Start with consistency checks before imposing a report generator.
 
 ---
 
 ## P15 — Guix/Nix for bit-reproducible environments {#p15}
 
-**Problem.** Container *builds* are rarely reproducible, so "pinned" is not
-"reproducible".
+**Problem.** Content-identified containers improve replayability but do not prove
+that an image itself can be rebuilt bit-for-bit.
 
-**Proposal.** Guix + Apptainer gives bit-for-bit rebuilds from a git commit and
-composes with HPC deployment.
+**Proposal.** Document Guix/Nix as an optional stronger environment path where a
+site needs it.
 
-**Risk.** Large lift, and it imposes Guix on every user of the framework. Likely
-belongs as a documented option rather than a default. **Lowest priority here** —
-P4 captures most of the practical benefit for a fraction of the cost.
+**Risk.** High operational cost and inappropriate as a mandatory dependency.
 
 ---
 
 ## P16 — Benchmark the cross-check roles {#p16}
 
-**Problem.** We assert that adversary / estimand-auditor / reimplementer catch
-real defects. We have one anecdote — codex catching the toy analysis pooling
-paired observations — and no measurement.
+**Problem.** It is easy to demonstrate that a reviewer sometimes catches an
+error and much harder to quantify what the review roles contribute.
 
-**Proposal.** Evaluate against SPOT, CORE-Bench and BadScientist. Then, if the
-study team agrees, derive an in-the-wild benchmark from the reference project's
-own record: iterations where a later one overturned an earlier gives
-(pre-declaration, results, flawed conclusion, known correction) with ground truth.
+**Proposal.** Evaluate shipped review roles on a frozen corpus of known defects
+and clean controls. Candidate defect classes include paired-vs-independent
+analysis, post-result threshold selection, negative-control failure, set
+membership mismatch, estimand denominator mismatch and unsupported detection
+limits.
 
-**This is the strongest publication artifact available** — real errors, not
-synthetic injections. It is also the item most dependent on other people
-agreeing.
+Report sensitivity by defect class, false positives on clean cases, qualified or
+abstaining verdicts, and repeatability across reruns. Preserve prompts and raw
+review records.
 
----
-
-## R1 — Repository release chores {#r1}
-
-Blocked on information only you have:
-
-- Repository badge and clone URL now target `HudoGriz/autoresearch-hpc`.
-- `CITATION.cff:15` — `repository-code` URL
-- `CITATION.cff:24-25` — your name, ORCID if you have one
-- `LICENSE:3` — copyright holder
-- add a remote and push; first push is CI's first real run
-- re-sign the commits: all are unsigned (no pinentry in the authoring
-  environment). `git rebase --exec 'git commit --amend --no-edit -S' --root`
+This is a high-value publication artifact because it turns an anecdotal benefit
+into a measurable one. See [`evaluation-plan.md`](evaluation-plan.md).
 
 ---
 
-## Suggested order, if you want one
+## Publication-first ordering
 
-**Now, cheap, closes overstatements:** P4, P1, P2 — in that order. Each is under
-a day and each fixes something the repo currently claims but does not do.
+For the first short software paper, prioritize:
 
-**Next, the practical win:** P5 then P6. Provenance capture makes P9 possible;
-the runner is the biggest day-to-day gain.
+1. sanitized public release and citable archive;
+2. deterministic public example;
+3. failure-injection evaluation;
+4. one independent reproduction;
+5. cross-check benchmark if time permits.
 
-**Then the ambitious one:** P7 first slice only. Stop if the picture is not
-worth looking at.
-
-**Publication track, when the study team is ready:** P8 → P10, and P16.
-
-**Probably never:** P15 as a default.
+Do **not** delay submission to build P7, P10, P11, P13 or P15. They may support
+future work but do not address the principal evidence gap for the first paper.
