@@ -111,14 +111,24 @@ evidence and cold project resumption. The same small synthetic analysis is run
 with and without the protocol layer so execution behavior can be distinguished
 from AutoResearch HPC's added checks.
 
+An engineering pilot of the provider-free deterministic subset ran from a clean
+GitHub Actions checkout on 13 September 2026. Eight injected scenarios were
+executed: incomplete pre-declaration, result-before-freeze, frozen-declaration
+tampering, eight concurrent claims, an immutable-input write, same-family review,
+stale reviewed evidence, and cold resumption from a fresh working directory.
+All eight produced the pre-specified behavior. This pilot is retained in
+`paper/pilot-results.md` and is explicitly not the final release-tag evaluation;
+failed-task and interrupt/recovery scenarios remain in the integration path, and
+the observed per-gate timings are not interpreted as workflow overhead.
+
 A second benchmark will evaluate review roles against a frozen corpus of known
 analysis defects and clean controls, reporting defect-class sensitivity,
 false-positive rate, qualified/abstaining verdicts and repeatability. Cross-model
 agreement will not be interpreted as independent scientific validation.
 
-`TODO-EVIDENCE:` add the final failure-injection result table, runtime overhead,
-public example hashes and the independent-user reproduction outcome from the
-release candidate.
+`TODO-EVIDENCE:` replace the pilot with the final release-tag failure-injection
+result table; add runtime overhead, public example hashes, release-candidate
+Slurm evidence and the independent-user reproduction outcome.
 
 ## Research impact
 
