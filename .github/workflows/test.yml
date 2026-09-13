@@ -35,6 +35,8 @@ jobs:
           export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md"
           test/run_tests.sh
           python3 test/test_hardening.py
+      - name: Publication example
+        run: bash examples/mean-shift/check.sh
       - name: Protocol conformance is actually enforced
         run: |
           for c in "concurrent claims" "unfilled" "results exist" \
@@ -51,7 +53,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning --shell=bash \
-            bin/arh bin/arh-* lib/*.sh harness/install.sh scripts/setup-nextflow.sh test/run_tests.sh
+            bin/arh bin/arh-* lib/*.sh harness/install.sh scripts/setup-nextflow.sh \
+            test/run_tests.sh examples/mean-shift/check.sh
 
   schemas:
     runs-on: ubuntu-latest
