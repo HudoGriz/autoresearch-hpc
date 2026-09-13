@@ -20,7 +20,7 @@
   <a href="docs/hpc-execution.md">HPC setup</a> ·
   <a href="PROTOCOL.md">Protocol</a> ·
   <a href="docs/validation.md">Validation</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="docs/publication-plan.md">Publication plan</a>
 </p>
 
 ---
@@ -226,17 +226,29 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 AutoResearch HPC is **experimental and pre-1.0**. The current baseline passes **137 core checks and 37 boundary regressions**. Earlier validation runs added real Slurm success/failure, native cache reuse and an immutable-input container probe.
 
-It has also been used on a real nine-iteration exome structural-variant study on a Slurm + Singularity cluster. The review, submission and provenance defects that study surfaced are fixed; see the [changelog](CHANGELOG.md).
+Internal field deployment exposed review, submission and provenance defects that are now represented by regression tests. The source research material and machine-specific audit record are intentionally not part of this software repository; publication-facing evaluation uses synthetic fixtures and separately reportable execution evidence.
 
 ```bash
 export ARH_TEST_SITE=/absolute/path/to/configured/local/site.md
 test/run_tests.sh
 python3 test/test_hardening.py
+bash examples/mean-shift/check.sh
 ```
 
 The protocol is a cooperative research-integrity system, not a hostile-code sandbox or trusted timestamp authority. Local hashes detect later changes; they do not prove temporal priority against an actor controlling the filesystem. External model services receive the context supplied to them, so local/HPC execution does not imply air-gapped inference.
 
 [Read the tested behavior and retained limitations →](docs/validation.md)
+
+## Publication and evaluation
+
+The project is now intentionally shifting from **adding features** to **building evidence**. The first publication target is a short research-software paper supported by a citable release, a completely public synthetic example, controlled failure injection and an independent installation/reproduction.
+
+- [Publication readiness roadmap](docs/publication-plan.md)
+- [Pre-specified evaluation plan](docs/evaluation-plan.md)
+- [Deterministic synthetic example](examples/mean-shift/README.md)
+- [Working short-paper draft](paper/draft.md)
+
+Ambitious additions such as a knowledge graph or MCP server are not blockers for the first paper.
 
 ## Documentation
 
@@ -247,6 +259,8 @@ The protocol is a cooperative research-integrity system, not a hostile-code sand
 | **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
+| **Publication roadmap** | [Release, evaluation, external reproduction and manuscript plan](docs/publication-plan.md) |
+| **Evaluation protocol** | [Failure injection, portability, overhead and review benchmark](docs/evaluation-plan.md) |
 | **Migration / hardening** | [`arh migrate` for 0.1 studies, and implementation notes](docs/migration-hardening.md) |
 | **Positioning** | [What this project is — and is not](docs/positioning.md) |
 | **Changes** | [CHANGELOG.md](CHANGELOG.md) |
@@ -258,9 +272,3 @@ AutoResearch HPC is an independent project. It builds on ideas and infrastructur
 
 - **[Nextflow](https://www.nextflow.io/)** — workflow execution, scheduling and caching.
 - **[Ponytail](https://github.com/DietrichGebert/ponytail)** — default coding guidance.
-- **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** — adapted adversarial review guidance.
-- **[autoresearch](https://github.com/karpathy/autoresearch)** — inspiration for understandable agent-driven experimentation.
-
-## License
-
-MIT. See [LICENSE](LICENSE). Citation metadata is available in [CITATION.cff](CITATION.cff).
