@@ -1,0 +1,31 @@
+# Paper workspace
+
+`draft.md` is a **venue-neutral working manuscript**, not yet a submission file.
+It is intentionally conservative: placeholders marked `TODO-EVIDENCE` identify
+claims that require public evaluation evidence before submission.
+
+## Near-term path
+
+The current plan is to prepare the software and evidence for a short
+**Software Impacts** submission first. Adapt the final text to that journal's
+required Original Software Publication template only after the public release
+candidate and evaluation artifacts exist.
+
+## JOSS path
+
+The same draft already follows the major JOSS content headings: summary,
+statement of need, state of the field, software design, research impact, and AI
+usage disclosure. JOSS is a later target because its current screening requires
+at least six months of public active development plus demonstrated research
+impact.
+
+Before any submission:
+
+- replace all `TODO-EVIDENCE` markers with evidence or remove the claim;
+- add final authors, affiliations, acknowledgements and funding;
+- add a proper bibliography;
+- cite the immutable software release/DOI;
+- report the failure-injection evaluation and independent reproduction;
+- verify the target venue's current author instructions again.
+
+The publication roadmap is in [`../docs/publication-plan.md`](../docs/publication-plan.md).
