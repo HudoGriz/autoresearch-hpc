@@ -7,52 +7,46 @@ proposal — what it would look like if built.
 
 ## The short answer
 
-**Do not adopt a "knowledge graph framework".** Every candidate either drags in
-a server you must operate, or a vendor who may disappear —
-[Kùzu was archived in October 2025](https://www.theregister.com/software/2025/10/14/kuzudb_graph_database_abandoned/)
-after Apple acquired it.
+**Do not adopt a "knowledge graph framework" as the source of truth.** Keep the
+research record in ordinary files and make any graph a disposable, rebuildable
+index.
 
-Build it from four thin layers instead, of which **three already exist as files
-in the project**:
+A possible implementation has four thin layers:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Truth | Files in git — iteration record + Obsidian vault | Already there; survives any tool dying |
+| Truth | Files in git — iteration record + literature notes | Durable and reviewable |
 | Vocabulary | PROV-O + CiTO + FaBiO + a small local `arh:` | Reuse standards; invent only what is genuinely ours |
 | Generation | [Morph-KGC](https://github.com/morph-kgc/morph-kgc) RML mappings, enriched from [OpenAlex](https://openalex.org) | Declarative, reviewable, versioned |
-| Store & view | Oxigraph (default) · Neo4j + MCP (agent querying) · Cytoscape.js (viewing) | All disposable and rebuildable |
+| Store & view | Oxigraph (default) · Neo4j + MCP (agent querying) · Cytoscape.js (viewing) | Disposable and rebuildable |
 
-## The insight that makes this worth doing
+## The insight that makes this potentially useful
 
-The iteration record and the literature vault are **the same graph seen from two
-sides**, and they currently never meet.
+The iteration record and the literature record are **the same graph seen from
+two sides**, but ordinary project files rarely connect them mechanically.
 
-A literature note can recommend a method with a caveat, while an iteration
-records that the same method failed to run and the candidate was never tested
-with it.
-
-Those two facts belong on the same node. One says what the method *should* do;
-the other says what it *did*. Nothing in the current setup brings them together,
-and a reader of either file alone gets a misleading picture.
+A synthetic example illustrates the gap. Suppose a literature note records that
+method `M` is valid only when a paired design is encoded correctly. A later
+iteration records that an attempted analysis silently treated paired samples as
+independent and was therefore rejected. Those facts should meet on the same
+method/claim node:
 
 > **The literature says what should work. The iterations say what did. Joining
-> them is the entire point of the graph.**
+> them is the point of the graph.**
+
+No private research example is required to express that design.
 
 ## Layer 1 — truth stays in files
 
-Two halves, both already present:
-
 **Project side** — `CLAIM.json`, the frozen `README.md`, `DAG.md`,
-`finding.json`, `CROSSCHECK_*.md`, arm `FATE`, `PREDECLARATION.sha256`.
+`finding.json`, `CROSSCHECK_*.md`, arm `FATE`, and
+`PREDECLARATION.sha256`.
 
-**Literature side** — the Obsidian vault. It is already machine-readable and
-nobody has noticed: YAML frontmatter is structured metadata, `[[wikilinks]]` are
-edges, and the templates already carry the right fields. The Article Note
-Template has `DOI`, `Study type`, `Genome build`, `Software/version`,
-**`Parameters or decisions informed`** and **`Quotable facts to verify`** — the
-last two are precisely the edges into the iteration record.
+**Literature side** — ordinary structured notes or bibliographic records. YAML
+frontmatter, DOI fields and explicit links can already encode useful metadata
+without making the graph database authoritative.
 
-Nothing enters the graph that does not exist as a file first.
+Nothing enters the graph that does not exist as a source artifact first.
 
 ## Layer 2 — vocabulary: reuse, invent sparingly
 
@@ -60,21 +54,22 @@ Nothing enters the graph that does not exist as a file first.
 |---|---|---|
 | Iteration | `prov:Activity` | `prov:startedAtTime`, `prov:wasAssociatedWith` the harness |
 | Finding | `prov:Entity` | `prov:wasGeneratedBy` the iteration |
-| Harness / agent | `prov:Agent` | claude, codex, opencode — attribution is already recorded |
+| Harness / agent | `prov:Agent` | attribution is already recorded |
 | Derivation | `prov:wasDerivedFrom` | how a finding depends on inputs and earlier findings |
-| Paper | `fabio:ResearchPaper` | from the vault's DOIs |
-| **Paper supports finding** | `cito:supports` | |
-| **Paper contradicts finding** | `cito:disagreesWith` | |
-| **Method taken from paper** | `cito:usesMethodIn` | this is what the Evidence Matrix encodes informally |
-| **Cited as evidence** | `cito:citesAsEvidence` | |
+| Paper | `fabio:ResearchPaper` | from DOI/bibliographic metadata |
+| **Paper supports finding** | `cito:supports` | typed citation relation |
+| **Paper contradicts finding** | `cito:disagreesWith` | typed citation relation |
+| **Method taken from paper** | `cito:usesMethodIn` | method provenance |
+| **Cited as evidence** | `cito:citesAsEvidence` | evidence provenance |
 
-[CiTO](https://sparontologies.github.io/cito/current/cito.html) is the important
-one. It exists precisely to type *why* something is cited, which is the
-distinction the Evidence Matrix makes in prose and no bibliography makes at all.
+[CiTO](https://sparontologies.github.io/cito/current/cito.html) is useful because
+it types *why* something is cited rather than representing every citation as the
+same edge.
 
-A small local vocabulary covers what is genuinely ours and has no standard term:
+A small local vocabulary would cover concepts that are specific to the
+protocol:
 
-```
+```text
 arh:Arm  arh:fate  arh:Gate  arh:preDeclarationHash  arh:preDeclaredAt
 arh:CrossCheck  arh:verdict  arh:verifierFamily  arh:producerFamily
 arh:detectionLimit  arh:negativeControlBehaved  arh:supersededBy
@@ -83,81 +78,80 @@ arh:DagNode  arh:nodeKind  arh:branchCount
 
 ## Layer 3 — generation
 
-```
+```text
 iteration files ─┐
-Obsidian vault ──┼─→ CSV/JSON ─→ Morph-KGC (RML mappings) ─→ RDF ─→ Oxigraph
+literature notes ┼─→ CSV/JSON ─→ Morph-KGC (RML mappings) ─→ RDF ─→ Oxigraph
 OpenAlex ────────┘
 ```
 
-**Morph-KGC** with RML mappings, not bespoke conversion code. The mapping is
-then itself a reviewable, versioned artifact — and when the schema changes, the
-diff shows what changed about the *meaning*, not about someone's Python.
+**Morph-KGC** with RML mappings is preferable to bespoke conversion code because
+the mapping itself becomes a reviewable, versioned artifact.
 
-**OpenAlex** for literature metadata: 250M+ works, fully open API, **no
-authentication**, run by the nonprofit OurResearch. Feed it the DOIs already in
-the vault's frontmatter and get authors, venue, year, citations and open-access
-status back. No key to manage, nothing to expire.
+**OpenAlex** can supply open literature metadata for DOIs already present in the
+project record, avoiding a new private API credential in the default path.
 
 ## Layer 4 — store, query, view
 
-**Oxigraph** as the default store: embedded, SPARQL, no daemon, one directory.
-Rebuildable from files in a single command, so if it dies the way Kùzu did, the
-cost is an afternoon.
+**Oxigraph** is a reasonable default store: embedded, SPARQL-capable and without
+a required daemon.
 
-**Neo4j + [`mcp-neo4j-cypher`](https://github.com/neo4j-contrib/mcp-neo4j)** when
-interactive agent querying earns its keep — its MCP and Text2Cypher tooling is
-materially ahead of anything else. Run it under Apptainer inside a SLURM
-allocation; see [`prior-art.md`](prior-art.md) §4.5.
+**Neo4j + [`mcp-neo4j-cypher`](https://github.com/neo4j-contrib/mcp-neo4j)** may
+be useful if interactive agent querying later justifies the operational cost.
 
-**Viewing**, three tiers, none needing a server:
+For viewing, prefer layers that do not create a new source of truth:
 
-- **Obsidian's own graph view** — already installed, already works, zero effort
-- **Mermaid** for a single iteration's DAG — already in `DAG.md`, renders on GitHub
-- **Cytoscape.js** static page for the whole project graph — offline, embeddable
-- **Graphviz** when a figure has to go in a paper
+- **Mermaid** for a single iteration DAG;
+- **Cytoscape.js** for a static project graph;
+- **Graphviz** for publication figures.
 
 ## Proposed interface
 
 ```bash
-arh graph build     # files → RDF via the RML mappings
-arh graph enrich    # DOIs → OpenAlex → literature metadata
-arh graph query     # SPARQL; or emit a Cypher load script for Neo4j
+arh graph build     # files -> RDF via RML mappings
+arh graph enrich    # DOIs -> literature metadata
+arh graph query     # SPARQL; optionally emit a Cypher load script
 arh graph view      # static Cytoscape.js page
-arh graph check     # SHACL shapes over the result (see below)
+arh graph check     # structural checks over the generated graph
 ```
 
-## What the graph is actually for
+## What the graph would be for
 
-Questions that are currently unanswerable without reading 6,800 lines of
-`PROGRESS.md` by hand:
+Questions that become difficult as an append-only project grows include:
 
 - Which findings were superseded, by what, and how long did each take to overturn?
-- Which claims rest on a method the Evidence Matrix flags as caveated — and did
-  that caveat actually bite?
+- Which claims depend on a method carrying an explicit literature caveat?
 - Which papers support a finding that a later iteration retracted?
-- Which DAG nodes have no `create`-path from a declared input?
-- Which arms were `INFEASIBLE`, and does the literature explain why?
-- Which cross-check verdicts were `UNSOUND` and rejected, and were the rejections
-  later vindicated?
+- Which DAG nodes have no creation path from a declared input?
+- Which arms were infeasible, and is there recorded evidence explaining why?
+- Which cross-check objections were rejected, and what later evidence bears on
+  those decisions?
 
-That last one is the loop learning about itself.
+The graph is therefore primarily a navigational and consistency layer over the
+existing evidence.
 
 ## SHACL, later
 
-Once findings are RDF, the standing rules can become **SHACL shapes over the
-data** rather than regexes over prose: *every finding with status `supported`
-must have a `arh:detectionLimit` carrying a value, units and a basis*. That is a
-structural constraint, and unlike a regex it cannot be satisfied by rephrasing.
-The regex rules stay — they catch a sound analysis written up in overreaching
-language, which is a different and commoner failure.
+If findings are represented as RDF, standing rules could later become **SHACL
+shapes over structured data** in addition to regex checks over prose. For
+example, every finding with status `supported` could be required to carry a
+detection limit with value, units and basis.
+
+The prose rules should remain: structural and lexical checks catch different
+failure classes.
 
 ## Two things not to do
 
-**Do not let an LLM infer the edges.** `LLMGraphTransformer` and
-`PropertyGraphIndex` are well-supported and wrong here: a provenance record whose
-edges were guessed by a model is not evidence. Every `cito:supports` must be
-asserted by a person or produced by an iteration, and must carry its source.
-LLM extraction is fine for *searching* the prose; never for the backbone.
+**Do not let an LLM infer provenance edges.** LLM extraction may help search
+prose, but a provenance backbone whose edges were guessed by a model is not
+reliable evidence. Typed support/derivation edges must be grounded in source
+artifacts.
 
-**Do not make the database the source of truth.** It is an index. If it cannot
-be dropped and rebuilt from files in one command, the design is wrong.
+**Do not make the graph database the source of truth.** It is an index. If it
+cannot be dropped and rebuilt from versioned files in one command, the design is
+wrong.
+
+## Publication priority
+
+This proposal is **not required for the first software paper**. The current
+publication gap is independent validation and reproducible evaluation, not graph
+infrastructure. See [`publication-plan.md`](publication-plan.md).
