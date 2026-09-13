@@ -17,7 +17,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
@@ -28,6 +27,7 @@ TEXT_EXTENSIONS = {
     ".json", ".toml", ".ini", ".cfg", ".conf", ".cff", ".nf", ".groovy",
     ".tsv", ".csv", ".xml", ".html", ".rst", ".lock",
 }
+SELF_PATH = "scripts/public-release-audit.py"
 
 # Patterns that should never be committed to a public source release.
 ERROR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -133,11 +133,14 @@ def read_text_file(path: Path, max_bytes: int) -> str | None:
 def scan_tree(root: Path, max_bytes: int) -> list[Finding]:
     findings: list[Finding] = []
     for path in tracked_files(root):
-        rel = path.relative_to(root)
+        rel = path.relative_to(root).as_posix()
+        # The scanner necessarily contains the signatures it searches for.
+        if rel == SELF_PATH:
+            continue
         text = read_text_file(path, max_bytes)
         if text is None:
             continue
-        findings.extend(scan_text(text, str(rel)))
+        findings.extend(scan_text(text, rel))
     return findings
 
 
@@ -183,6 +186,8 @@ def historical_blob_findings(max_bytes: int) -> list[Finding]:
         if sha in seen:
             continue
         seen.add(sha)
+        if path == SELF_PATH:
+            continue
         suffix = Path(path).suffix.lower()
         if suffix not in TEXT_EXTENSIONS:
             continue
