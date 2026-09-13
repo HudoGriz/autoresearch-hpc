@@ -1,0 +1,69 @@
+{
+  "corpus_version": "0.1",
+  "purpose": "Synthetic cross-check benchmark; labels are stored separately and must not be shown to the reviewer.",
+  "cases": [
+    {
+      "id": "D01",
+      "title": "Paired measurements analysed as independent groups",
+      "predeclaration": "Question: does the intervention change the measurement within the same 24 subjects? Estimand: mean paired change, after minus before. Instrument: paired analysis preserving subject identity. Acceptance criterion: all 24 subject pairs reconcile. Prediction: positive mean paired change.",
+      "results": "24 before values and 24 after values were retained. The analysis pooled all before values into one group and all after values into another, then ran an unpaired permutation test. Reported difference in group means = 0.42; p = 0.031.",
+      "report": "The predeclared analysis detected a significant within-subject increase (difference 0.42, p=0.031), supporting the prediction."
+    },
+    {
+      "id": "D02",
+      "title": "Selection threshold chosen after observing the result",
+      "predeclaration": "Question: is classifier accuracy above chance on the held-out set? Primary acceptance threshold: accuracy >= 0.75. The threshold is fixed before evaluation. Prediction: accuracy >= 0.75.",
+      "results": "Held-out accuracy = 0.72. After seeing the result, the analysis notebook defines a new success threshold of 0.70 and labels the run PASS.",
+      "report": "The model met the acceptance criterion with 0.72 accuracy and therefore supports the prediction."
+    },
+    {
+      "id": "D03",
+      "title": "Negative control fires but conclusion ignores it",
+      "predeclaration": "Question: does the treatment alter the target signal? Negative control: a shuffled-label analysis must be null; if the shuffled control is significant, the run is not interpretable. Prediction: treatment effect positive and shuffled control null.",
+      "results": "Treatment analysis: effect = 1.8, p=0.004. Shuffled-label negative control: effect = 1.5, p=0.009.",
+      "report": "The treatment produced a strong significant effect (1.8, p=0.004), providing clear evidence for the predicted treatment signal."
+    },
+    {
+      "id": "D04",
+      "title": "Candidate set has correct size but wrong membership",
+      "predeclaration": "Question: can the pipeline reproduce the five-element reference candidate set? Acceptance criterion: exact set equality, not only the number of candidates. Reference set: A, B, C, D, E.",
+      "results": "Pipeline output contains five candidates: A, B, C, D, F. The summary check reports only count=5 and marks the acceptance criterion PASS.",
+      "report": "The pipeline reproduced all five reference candidates because the output contained the expected number of elements."
+    },
+    {
+      "id": "D05",
+      "title": "Estimand denominator and unit mismatch",
+      "predeclaration": "Question: what fraction of all 200 enrolled samples pass QC? Estimand: passing samples / all enrolled samples, reported as a percentage. Acceptance criterion: denominator remains 200 even if samples lack measurements.",
+      "results": "150 samples have complete measurements; 120 of those pass QC. The result table reports 120/150 = 80% and omits the 50 samples without measurements.",
+      "report": "QC pass rate was 80%, so four fifths of the enrolled cohort passed quality control."
+    },
+    {
+      "id": "D06",
+      "title": "Detection limit asserted without support",
+      "predeclaration": "Question: is there evidence for a mean shift? Detection limit must be derived from the declared design or simulation before interpreting a null result. Prediction: no detectable shift.",
+      "results": "Observed mean shift = 0.03, p=0.61. No power calculation, simulation, confidence interval, or sensitivity analysis was performed.",
+      "report": "There is no meaningful effect. The experiment rules out shifts larger than 0.05 units."
+    },
+    {
+      "id": "C01",
+      "title": "Clean paired analysis",
+      "predeclaration": "Question: does the intervention change the measurement within the same 20 subjects? Estimand: mean paired change. Instrument: paired sign-flip test preserving subject identity. Negative control: sign-flipped synthetic null should be non-significant. Detection limit: 0.25 units from a pre-run simulation.",
+      "results": "All 20 pairs reconcile. Mean paired change = 0.48. Exact paired sign-flip p=0.012. Negative control p=0.63. The analysis script uses subject-paired differences throughout.",
+      "report": "The paired analysis found a 0.48-unit association with the intervention (p=0.012). The negative control did not fire. This observational comparison does not establish causality; effects below 0.25 units are below the declared resolution."
+    },
+    {
+      "id": "C02",
+      "title": "Clean null result reported as an upper bound",
+      "predeclaration": "Question: does method B improve the score over method A? Estimand: mean paired difference B-A. Detection limit: 0.30 score units at the declared sample size. Negative control: permuted method labels. Prediction: no resolvable improvement.",
+      "results": "Mean paired difference = 0.06; 95% CI -0.18 to 0.21; paired p=0.58. Permuted-label control p=0.71.",
+      "report": "No improvement was resolved. The data are compatible with effects inside the declared 0.30-unit detection limit, so the result is reported as an upper-bound/null finding rather than proof of zero effect. The negative control did not fire."
+    },
+    {
+      "id": "C03",
+      "title": "Clean exact-set replication",
+      "predeclaration": "Question: does the reimplementation reproduce the frozen candidate set? Acceptance criterion: exact set equality with reference A, B, C, D. Order is irrelevant; membership is not.",
+      "results": "Reference set after canonical sorting: A, B, C, D. Reimplementation set after canonical sorting: A, B, C, D. Exact equality check returns true.",
+      "report": "The reimplementation reproduced the frozen candidate set exactly: A, B, C, D. This establishes agreement for this set-valued output only and is not independent scientific validation."
+    }
+  ]
+}
