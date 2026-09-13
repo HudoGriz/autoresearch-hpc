@@ -7,7 +7,9 @@ mode is intentionally stricter and is expected to fail until any sensitive
 history has been rewritten.
 
 This is a lightweight publication-safety check, not a replacement for a full
-secret scanner such as Gitleaks/TruffleHog.
+secret scanner such as Gitleaks/TruffleHog. Findings that may themselves contain
+credentials, session identifiers, private addresses or personal email are
+redacted in terminal and JSON output.
 """
 
 from __future__ import annotations
@@ -51,6 +53,19 @@ PRIVATE_IP = re.compile(
     r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?!\d)"
 )
 
+REDACT_KINDS = {
+    "private key",
+    "GitHub token",
+    "AWS access key",
+    "OpenAI-style secret",
+    "Anthropic secret",
+    "Slack token",
+    "Claude session URL",
+    "private-network address",
+    "public author email",
+    "public committer email",
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -86,23 +101,23 @@ def safe_excerpt(text: str, start: int, width: int = 100) -> str:
     return line
 
 
+def finding_excerpt(kind: str, text: str, start: int) -> str:
+    if kind in REDACT_KINDS:
+        return "<redacted; inspect the named source locally>"
+    return safe_excerpt(text, start)
+
+
 def scan_text(text: str, location: str) -> list[Finding]:
     findings: list[Finding] = []
     for kind, pattern in ERROR_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(Finding("error", kind, location, safe_excerpt(text, match.start())))
+            findings.append(Finding("error", kind, location, finding_excerpt(kind, text, match.start())))
     for kind, pattern in WARNING_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(Finding("warning", kind, location, safe_excerpt(text, match.start())))
+            findings.append(Finding("warning", kind, location, finding_excerpt(kind, text, match.start())))
     for match in PRIVATE_IP.finditer(text):
-        findings.append(
-            Finding(
-                "warning",
-                "private-network address",
-                location,
-                safe_excerpt(text, match.start()),
-            )
-        )
+        kind = "private-network address"
+        findings.append(Finding("warning", kind, location, finding_excerpt(kind, text, match.start())))
     return findings
 
 
@@ -154,20 +169,17 @@ def commit_history_findings() -> list[Finding]:
         parts = record.strip("\n\x00").split("\x00", 5)
         if len(parts) != 6:
             continue
-        sha, author_name, author_email, committer_name, committer_email, message = parts
+        sha, _author_name, author_email, _committer_name, committer_email, message = parts
         loc = f"commit {sha[:12]}"
         findings.extend(scan_text(message, f"{loc} message"))
-        for role, name, email in (
-            ("author", author_name, author_email),
-            ("committer", committer_name, committer_email),
-        ):
+        for role, email in (("author", author_email), ("committer", committer_email)):
             if email and "@users.noreply.github.com" not in email and email != "noreply@github.com":
                 findings.append(
                     Finding(
                         "warning",
                         f"public {role} email",
                         loc,
-                        f"{name} <{email}>",
+                        "<redacted email; inspect commit metadata locally>",
                     )
                 )
     return findings
