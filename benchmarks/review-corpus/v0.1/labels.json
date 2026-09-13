@@ -1,0 +1,51 @@
+{
+  "corpus_version": "0.1",
+  "warning": "Ground truth. Never include this file in a reviewer prompt.",
+  "labels": {
+    "D01": {
+      "class": "paired_as_independent",
+      "defective": true,
+      "required_finding": "The analysis breaks the declared paired estimand by treating before/after measurements as independent groups."
+    },
+    "D02": {
+      "class": "post_result_threshold_selection",
+      "defective": true,
+      "required_finding": "The acceptance threshold was changed after observing 0.72, so the reported pass does not satisfy the frozen 0.75 criterion."
+    },
+    "D03": {
+      "class": "negative_control_ignored",
+      "defective": true,
+      "required_finding": "The shuffled-label negative control is significant, which makes the primary result uninterpretable under the declaration."
+    },
+    "D04": {
+      "class": "set_membership_mismatch",
+      "defective": true,
+      "required_finding": "The output has the right cardinality but F replaces E; exact set equality therefore fails."
+    },
+    "D05": {
+      "class": "estimand_denominator_mismatch",
+      "defective": true,
+      "required_finding": "The declared denominator is all 200 enrolled samples, so 120 passes corresponds to 60%, not 80%."
+    },
+    "D06": {
+      "class": "unsupported_detection_limit",
+      "defective": true,
+      "required_finding": "The claimed 0.05-unit exclusion/detection bound is unsupported because no declared sensitivity calculation was performed."
+    },
+    "C01": {
+      "class": "clean_paired_analysis",
+      "defective": false,
+      "required_finding": null
+    },
+    "C02": {
+      "class": "clean_bounded_null",
+      "defective": false,
+      "required_finding": null
+    },
+    "C03": {
+      "class": "clean_exact_set_replication",
+      "defective": false,
+      "required_finding": null
+    }
+  }
+}
