@@ -35,8 +35,6 @@ jobs:
           export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md"
           test/run_tests.sh
           python3 test/test_hardening.py
-      - name: Publication example
-        run: bash examples/mean-shift/check.sh
       - name: Protocol conformance is actually enforced
         run: |
           for c in "concurrent claims" "unfilled" "results exist" \
@@ -44,6 +42,14 @@ jobs:
                    "does not leak the code"; do
             grep -qi -- "$c" test/run_tests.sh || { echo "uncovered: $c"; exit 1; }
           done
+
+  publication-example:
+    name: Publication example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce deterministic synthetic result
+        run: bash examples/mean-shift/check.sh
 
   shellcheck:
     runs-on: ubuntu-latest
