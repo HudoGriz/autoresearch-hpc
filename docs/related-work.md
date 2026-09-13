@@ -7,9 +7,7 @@ experiment, or write the paper. The systems that do — [AI Scientist
 v2](https://arxiv.org/abs/2504.08066), [Kosmos](https://arxiv.org/abs/2511.02824),
 [Robin](https://www.futurehouse.org/), [Biomni](https://doi.org/10.1101/2025.05.30.656746),
 [Agent Laboratory](https://arxiv.org/abs/2501.04227),
-[AgentRxiv](https://arxiv.org/abs/2503.18102) — are **generators**, and they are
-good at it. Kosmos reports processing 1,500 papers and 42,000 lines of analysis
-code in a single run.
+[AgentRxiv](https://arxiv.org/abs/2503.18102) — are **generators**.
 
 This is the layer underneath: the record-keeping and verification substrate that
 makes whatever a generator produces auditable and correctable. It composes with
@@ -18,8 +16,8 @@ that fills in a pre-declaration.
 
 ## The failure modes it targets
 
-The critique literature converges on a consistent set, and none of them is
-fixed by a stronger model:
+The critique literature converges on a consistent set, and none of them is fixed
+simply by using a stronger model:
 
 | Failure | Documented in | Mechanism here |
 |---|---|---|
@@ -38,7 +36,7 @@ rather than by a registry.
 
 **Append-only records**, from lab notebooks and version control. The novelty is
 only in refusing the edit: a superseded conclusion stays visible, because the
-sequence of having been wrong is itself the evidence that the loop works.
+sequence of having been wrong is itself evidence about the research process.
 
 **`AGENTS.md`**, the emerging cross-harness instruction convention — one
 contract, read natively by Codex, OpenCode, Cursor and Copilot, and by Claude
@@ -52,21 +50,25 @@ natural export target for a concluded iteration. Not yet implemented; the
 
 ## Where the design came from
 
-The protocol is a generalisation of a working genomics project: 69 append-only
-iterations over thirteen months, worked concurrently by more than one agent
-harness, with a separate verification track. Every mechanism here exists because
-something went wrong without it.
+The protocol was generalized from an internal agent-assisted computational
+research workflow. The source study is intentionally not part of this software
+repository; publication-facing documentation keeps only the failure **classes**
+that motivated the design.
 
-- Two agents created the same iteration directory eleven minutes apart. Hence
-  §2.1: the directory is the lock.
-- A framing error — a *state* standing in for a *change* — propagated through
-  five iterations before it was caught, and the correction then re-imposed half
-  of it via a threshold. Hence the `estimand-auditor` role, §3.3, and §4.4.
-- A candidate set reproduced at the right *size* turned out to differ in
-  membership; one element was a binning artefact. Hence §6.4.
-- An aligner silently dropped the tags the whole analysis depended on, and every
-  downstream step ran clean. Hence §5.6 and `GOTCHAS.md`.
+Those classes included:
 
-The generalisation is deliberate but untested elsewhere: it is one project, one
-lab, one domain. Treat the protocol as a hypothesis about how automated
-discovery should be governed, not as a validated result.
+- concurrent agents attempting to allocate the same unit of work, motivating
+  atomic iteration claiming;
+- an analysis question drifting from the intended change/contrast, motivating
+  explicit estimands and a dedicated estimand-auditor role;
+- a set-valued result appearing to reproduce when only its cardinality matched,
+  motivating membership-aware verification;
+- upstream metadata required by an analysis disappearing while downstream tools
+  continued successfully, motivating explicit data-loss assertions and durable
+  gotchas.
+
+These observations motivated the implementation; they are not external
+validation. The publication evaluation is therefore designed around synthetic
+failure injection and independent reproduction. See
+[`publication-plan.md`](publication-plan.md) and
+[`evaluation-plan.md`](evaluation-plan.md).
