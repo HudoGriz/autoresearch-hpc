@@ -5,9 +5,10 @@ Versions are protocol/tooling versions; see `PROTOCOL.md`.
 
 ## [Unreleased]
 
-Most fixes below were found by running AutoResearch HPC on a real study: nine iterations of an
-exome structural-variant project on a Slurm + Singularity cluster, with Codex as
-the foreign reviewer.
+Most fixes below were found during internal field deployment on a Slurm +
+Singularity workflow with a separately configured reviewer. The source research
+material is intentionally not part of this software release; the failure classes
+that mattered are preserved as tests and generic documentation instead.
 
 ### Fixed
 - **Reviews no longer die on stderr volume.** `codex exec` echoes the whole
@@ -95,6 +96,9 @@ the foreign reviewer.
   `test_sigterm_to_wrapper_releases_lock`,
   `test_dead_owner_lock_reclaimed_and_scripts_hashed` and
   `test_live_owner_lock_is_kept`.
+- **Publication-readiness track:** `docs/publication-plan.md`,
+  `docs/evaluation-plan.md`, a venue-neutral short-paper draft, and a synthetic
+  deterministic mean-shift example that is checked in CI.
 
 ### Changed
 - Host bootstrap no longer requires micromamba to be installed beforehand. The
@@ -105,6 +109,8 @@ the foreign reviewer.
   low-resolution JPEG and the unreferenced WebP are gone. Setup steps are
   numbered consistently, and the README documents SSH cloning and
   `ARH_PROJECT`.
+- Publication-facing documentation now uses synthetic or generalized examples
+  rather than details copied from the internal source study.
 
 ## [0.2.0] — 2026-09-11
 
