@@ -1,0 +1,6 @@
+{
+  "estimand": "mean(after - before)",
+  "mean_difference": 1.833333333333,
+  "n": 12,
+  "sign_flip_p_value": 0.00048828125
+}
