@@ -1,0 +1,35 @@
+name: publication evaluation
+
+on:
+  push:
+    branches: [publication/readiness]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  deterministic-gates:
+    name: Deterministic failure injection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run publication evaluation subset
+        run: |
+          python3 test/publication_evaluation.py --json publication-evaluation.json
+      - name: Show paper-ready result table
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('publication-evaluation.json')
+          if not p.exists():
+              raise SystemExit('evaluation JSON was not produced')
+          d = json.loads(p.read_text())
+          print('| ID | Scenario | Passed | Duration (ms) |')
+          print('|---|---|---:|---:|')
+          for r in d['results']:
+              print(f"| {r['id']} | {r['scenario']} | {'yes' if r['passed'] else 'NO'} | {r['duration_ms']:.3f} |")
+          print(f"\n{d['passed']}/{d['scenarios_run']} scenarios passed")
+          PY
