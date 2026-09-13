@@ -63,6 +63,12 @@ single-process tests need only enough repetitions to establish stability.
 | E9 | interrupt a running submission | signal reaches controller/task and lock is released or recoverable | cleanup correctness |
 | E10 | resume in a fresh shell with no chat history | `arh status`, `arh next` and ledger identify the state | correct next action |
 
+The provider-free E1/E2/E3/E4/E5/E7/E8/E10 subset is implemented in
+`test/publication_evaluation.py`. E6/E9 are captured separately through
+`test/publication_execution_evaluation.py` because they require the configured
+Nextflow/container integration environment. Both write machine-readable JSON and
+must be rerun on the exact publication release tag.
+
 Report failures as failures. Do not silently exclude scenarios that expose a bug.
 
 ## Reproducibility fixture
@@ -111,7 +117,13 @@ Do not claim that a foreign model family is independent scientific validation.
 The benchmark asks a narrower question: can the supplied review roles identify
 known defects in supplied artifacts?
 
-Build a frozen corpus of cases with known labels, for example:
+The first synthetic corpus is frozen under
+`benchmarks/review-corpus/v0.1/`. It contains six single-defect cases and three
+clean controls. Reviewer-visible artifacts (`cases.json`) and hidden ground truth
+(`labels.json`) are deliberately separate, and CI checks the corpus structure so
+labels cannot accidentally appear as visible case fields.
+
+Version 0.1 covers:
 
 - paired design analysed as independent groups;
 - selection threshold chosen after observing the result;
@@ -119,19 +131,29 @@ Build a frozen corpus of cases with known labels, for example:
 - candidate set has the right size but wrong members;
 - unit/denominator mismatch in the estimand;
 - declared detection limit not supported by the analysis;
-- clean controls with no injected defect.
+- three clean controls with no injected defect.
 
-For each role/model combination report:
+For each role/model combination, run every case at least three times with a
+frozen model/provider configuration. Preserve each raw response and harness
+metadata. Report:
 
 - true-positive rate by defect class;
 - false-positive rate on clean cases;
 - abstention/qualified verdict rate;
 - agreement between repeated runs;
-- prompt/output budget used.
+- prompt/output budget used where available;
+- provider failures and latency separately from accuracy.
+
+Primary scoring remains case-level. A defective case is a true positive when the
+response identifies the labelled defect or an equivalent formulation. A clean
+case is a false positive when the response asserts a material defect that is not
+present in the visible evidence. Additional plausible findings require blinded
+human adjudication and do not alter v0.1 ground truth in place.
 
 Preserve the exact frozen prompts, model/provider identifiers available to the
-harness, and raw review records. Do not tune the corpus after seeing results
-without versioning it as a new benchmark release.
+harness, and raw review records. Once any model has been evaluated against v0.1,
+do not tune those cases after seeing results. Corrections create a new corpus
+version.
 
 ## Independent usability test
 
