@@ -37,7 +37,7 @@ These are implementation decisions under the operator's request to evaluate and 
 | P4: digest pinning | Implemented | Require an explicit expected digest, rather than silently trusting first use. `none` remains an explicitly unpinned smoke-test mode. |
 | P5: execution provenance | Implemented local subset | Local code hash and completion metadata shipped. Full input/output manifests, container linkage, scheduler accounting and replay remain necessary before claiming complete provenance. |
 | P6: workflow runner | Defer adapter | Nextflow is a sensible first supported engine when a real pipeline exists. Do not conflate scheduler choice with workflow-engine choice. Integration tests need an actual workflow and execution environment. |
-| P7: knowledge graph | Defer stack; accept file-derived index design | No Obsidian vault or referenced example iteration exists in this checkout. The example is unverified external context. Start from explicit typed relations and stable artifact IDs. Morph-KGC, Oxigraph and Cytoscape are dependencies; “no external dependencies” contradicts that stack. Choose one query need before building multiple stores. |
+| P7: knowledge graph | Defer stack; accept file-derived index design | Keep publication-facing examples synthetic. Start from explicit typed relations and stable artifact IDs. Morph-KGC, Oxigraph and Cytoscape are dependencies; choose one concrete query need before building multiple stores. |
 | P8: claim profile | Defer external alignment | Stable IDs, hashes, creators and statuses are useful independently. A new paper is not automatically an interoperability standard; specify a versioned local schema and a mapping first. |
 | P9: RO-Crate | Accept later | Good archival export after execution manifests exist. Export locally; publication requires its own authorization. |
 | P10: nanopublications | Defer | A publication mechanism is premature before stable finding identifiers and adjudication. Candidate status should be represented accurately; public publication must be an explicit action. |
@@ -47,7 +47,7 @@ These are implementation decisions under the operator's request to evaluate and 
 | P14: generated reports | Accept explicit bindings; reject number-search heuristic | “Every number appears in a result file” can accept a wrong denominator and reject dates or citations. Bind named report metrics to machine-readable result fields and units instead. |
 | P15: Nix/Guix | Optional documentation only | Content pinning and deterministic analysis are the immediate wins. Do not impose a new environment manager as a prerequisite. |
 | P16: role benchmark | Highest research priority, not completed here | A live review is an integration test, not a sensitivity estimate. Predeclare a labeled defect set, false-positive controls, models, repetitions, cost and held-out evaluation before collecting results. |
-| R1: release chores | Leave identity/publication steps pending | Fix local documentation paths, but do not invent the owner's name or remote, publish the repository or rewrite commit history. Unsigned historical commits alone do not justify a repository-wide rebase. |
+| R1: release chores | Leave identity/publication steps pending | Fix local documentation paths, but do not invent the owner's identity, publish the repository or rewrite commit history automatically. Unsigned historical commits alone do not justify a repository-wide rebase. |
 
 ## Corrections to the design claims
 
@@ -60,28 +60,16 @@ These are implementation decisions under the operator's request to evaluate and 
 
 ## Validation and remaining scope
 
-The original baseline passed 136 checks. Validation evidence and the live Claude review are retained in `.audit-study/iterations/iteration1/`. Claude identified additional defects, corrected and tested in append-only iteration 2. Both declarations were frozen before their respective tests. The authoritative completion record is `.audit-study/PROGRESS.md`.
+The original baseline passed 136 checks. Validation evidence and a live review are retained in the maintainer's ignored local audit study. The public source release summarizes the tested behavior without publishing machine-specific or source-study artifacts.
 
-This rebuild strengthens the existing protocol. It does not ship all sixteen proposals or claim unattended scientific discovery is solved. Remaining work includes enforced blind execution, full scheduler accounting, append-only storage outside the writer's authority, complete input/output provenance, review adjudication and benchmarked scientific error detection. SLURM/PBS, actual container execution and macOS were not exercised on this host.
-
+This rebuild strengthens the existing protocol. It does not ship all sixteen proposals or claim unattended scientific discovery is solved. Remaining work includes enforced blind execution, full scheduler accounting, append-only storage outside the writer's authority, complete input/output provenance, review adjudication and benchmarked scientific error detection.
 
 ## Foreign-review corrections
 
-Claude returned QUALIFIED on iteration 1. Iteration 2 fixes its concurrent job
-temporary-path collision, the local digest-shaped filename bypass and literal
-prompt substitution. It also binds new reviews to all result artifacts, stores
-reviewed documentation/code snapshots in the iteration, surfaces counted verdicts,
-clarifies invalid review diagnostics, warns on unpinned host execution, validates
-configured harness names, permits numeric `<` thresholds, normalizes signal exit
-codes and returns an unverified status for remote waited jobs.
+A bounded live review returned `QUALIFIED` during hardening. Follow-up work fixed concurrent-job temporary-path collisions, a local digest-shaped filename bypass, literal prompt substitution, binding reviews to result artifacts, review snapshots, verdict diagnostics, unpinned-host warnings, harness-name validation, numeric threshold parsing and signal exit-code normalization.
 
-The first review received source text affected by the placeholder bug it diagnosed;
-the follow-up receives literal source. The 136-check suite was adapted in two
-places: supply execution metadata for its simulated legacy review and restore a
-deliberate tamper before unrelated later tests. The equal count is not an empirical
-no-regression estimate; it records passing maintained behavior checks. Tests were
-written and corrected during engineering work, not treated as a preregistered
-scientific efficacy benchmark. Full objection dispositions are in iteration 2.
+The maintained test count is not an empirical no-regression estimate; it records passing behavior checks that were written and corrected during engineering work, not a preregistered scientific-efficacy benchmark.
 
 This document describes the earlier hardening baseline. See [validation](validation.md)
-for subsequent real Singularity/Slurm validation and the source-release evidence scope.
+for subsequent Singularity/Slurm validation and the source-release evidence scope, and see
+[publication plan](publication-plan.md) for the external-evidence work required before a paper submission.
