@@ -73,6 +73,9 @@ class PublicReleaseAuditTests(unittest.TestCase):
         temp, root = self.make_repo()
         self.addCleanup(temp.cleanup)
         marker = "synthetic " + "private " + "marker"
+        (root / ".release-audit-markers").write_text(
+            f"private-study fixture\t{marker}\n", encoding="utf-8",
+        )
         (root / "notes.md").write_text(marker + "\n", encoding="utf-8")
         run("git", "add", "notes.md", cwd=root)
         proc = run(

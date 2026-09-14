@@ -20,6 +20,7 @@ __pycache__/
 
 # Local audit records and machine-specific runtime state are not published.
 /.audit-study/
+.release-audit-markers
 .env
 .env.*
 !.env.example

@@ -42,11 +42,25 @@ ERROR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Claude session URL", re.compile(r"https://claude\.ai/code/session_[A-Za-z0-9_-]+")),
 )
 
-# Known project-specific material that should not ship in the public tree. These
-# are warnings so the script can be introduced before the final history rewrite;
-# release candidates should use --fail-on-warnings.
-WARNING_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-)
+# Project-specific material that should not ship in the public tree. The markers
+# are private themselves, so they are read from an untracked file instead of being
+# committed here: one "kind<TAB>regex" per line, "#" starts a comment. Matches are
+# warnings; release candidates should use --fail-on-warnings.
+MARKERS_ENV = "ARH_RELEASE_AUDIT_MARKERS"
+DEFAULT_MARKERS = ".release-audit-markers"
+WARNING_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = ()
+
+
+def load_markers(path: Path) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    markers = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        kind, sep, pattern = line.partition("\t")
+        if not sep:
+            raise SystemExit(f"error: {path}: expected 'kind<TAB>regex', got {line!r}")
+        markers.append((kind.strip(), re.compile(pattern, re.I)))
+    return tuple(markers)
 
 PRIVATE_IP = re.compile(
     r"(?<!\d)(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
@@ -249,9 +263,18 @@ def main() -> int:
     parser.add_argument("--fail-on-warnings", action="store_true", help="treat warnings as release-blocking")
     parser.add_argument("--json", metavar="PATH", help="write machine-readable findings")
     parser.add_argument("--max-bytes", type=int, default=1_000_000, help="maximum text blob size to inspect")
+    parser.add_argument("--markers", metavar="PATH", help=f"untracked private-marker file (default: ${MARKERS_ENV} or {DEFAULT_MARKERS})")
     args = parser.parse_args()
 
     root = repo_root()
+    global WARNING_PATTERNS
+    markers = Path(args.markers or os.environ.get(MARKERS_ENV) or root / DEFAULT_MARKERS)
+    if markers.is_file():
+        WARNING_PATTERNS = load_markers(markers)
+    elif args.markers:
+        raise SystemExit(f"error: marker file not found: {markers}")
+    elif args.fail_on_warnings:
+        print("note: no private-marker file; project-specific markers were not checked")
     findings = scan_tree(root, args.max_bytes)
     if args.history:
         findings.extend(commit_history_findings())

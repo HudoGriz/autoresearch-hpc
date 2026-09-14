@@ -26,8 +26,9 @@ The CI workflow `.github/workflows/publication-hygiene.yml` runs the normal tree
 audit on this branch and also reproduces the deterministic synthetic example.
 
 The lightweight audit looks for common credential forms, private-key material,
-Claude session URLs, private-network addresses and a small set of known
-private-study markers. It is deliberately conservative. Before publication,
+Claude session URLs, private-network addresses and private-study markers
+listed in an untracked `.release-audit-markers` file (one `kind<TAB>regex` per
+line; `ARH_RELEASE_AUDIT_MARKERS` or `--markers` override the location). It is deliberately conservative. Before publication,
 also run an established secret scanner over the repository and its history.
 
 ## 2. Audit all Git history
