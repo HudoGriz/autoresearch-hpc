@@ -19,7 +19,7 @@ borrow from**.
 | [Sumatra](https://github.com/open-research/sumatra) | "Automated electronic lab notebook for computational projects" | Closest ancestor in spirit; captures at execution time |
 | [DataLad](https://joss.theoj.org/papers/10.21105/joss.03262.pdf) | git-annex data management with `datalad run` / `rerun` | Provenance records that are *executable*, not just descriptive |
 | [showyourwork](https://show-your.work/en/latest/intro/) | Snakemake + tectonic + CI; the article is a build target | Every figure traceable to the code and data that made it |
-| [Popper convention](http://alumni.soe.ucsc.edu/~msevilla/papers/jimenez-ipdpsw17.pdf) | A *convention*, not a tool, for reproducible systems evaluation | Direct genre precedent for `PROTOCOL.md` |
+| [Popper convention](https://doi.org/10.1109/IPDPSW.2017.157) | A *convention*, not a tool, for reproducible systems evaluation | Direct genre precedent for `PROTOCOL.md` |
 
 ---
 
@@ -149,9 +149,9 @@ records, cross-check records. A `arh graph build` materialises those into
 whatever store you like; `arh graph rebuild` reconstructs it from scratch.
 
 This is not architectural fastidiousness. **Kùzu — the obvious embedded choice
-until recently — was acquired by Apple, its repository archived on 10 October
-2025 and its website shut down**
-([The Register](https://www.theregister.com/software/2025/10/14/kuzudb_graph_database_abandoned/)).
+until recently — had its repository archived without warning on 10 October 2025**
+([The Register](https://www.theregister.com/software/2025/10/14/kuzudb-graph-database-abandoned-community-mulls-options/1142229)); a European Commission filing later confirmed that Apple
+had acqui-hired the team ([G.V()](https://gdotv.com/blog/kuzu-legacy-embedded-graph-database-landscape/)).
 Anyone who had made it their source of truth is now migrating. Treat the store
 as disposable and that event costs you an afternoon instead of a project.
 
