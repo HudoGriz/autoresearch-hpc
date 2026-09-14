@@ -47,7 +47,7 @@ harness_gemini_version_cmd = gemini --version
 producer   = claude
 verifier   = codex
 
-ask_timeout = 180
+ask_timeout = 900
 ask_max_input_bytes = 24000
 ask_max_output_bytes = 8000
 ask_output_words = 500
