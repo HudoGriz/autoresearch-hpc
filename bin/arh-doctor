@@ -86,6 +86,7 @@ pf=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" a)
 vf=$(arh_config_get "$ARH_HARN" "harness_${verifier}_family" b)
 if [ "$pf" = "$vf" ]; then arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1))
 else arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"; fi
+arh_warn_agent_mismatch
 
 printf '\nrules:\n'
 for r in $(arh_config_get "$ARH_PROJ" rules ""); do

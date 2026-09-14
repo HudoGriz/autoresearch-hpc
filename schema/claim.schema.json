@@ -9,6 +9,7 @@
   "properties": {
     "iteration": { "type": "integer", "minimum": 1 },
     "agent": { "type": "string", "description": "Harness that executed the claim, detected from the environment." },
+    "agent_source": { "type": "string", "description": "What determined `agent`: ARH_AGENT, a harness environment marker, or USER. Markers can be inherited from an outer session." },
     "declared_agent": { "type": "string", "description": "Agent name the operator declared, which may differ from the detected one." },
     "claimed": { "type": "string", "format": "date-time" },
     "title": { "type": "string", "minLength": 1, "description": "The question, stated as a question." },

@@ -95,6 +95,28 @@ arh_agent_name() {
   else printf '%s' "${USER:-unknown}"; fi
 }
 
+# What decided arh_agent_name. Harness markers are inherited by child processes, so a
+# Codex session started from inside Claude Code still carries CLAUDECODE; claims record
+# the source so a wrong inference is visible in the record.
+arh_agent_source() {
+  if [ -n "${ARH_AGENT:-}" ]; then printf 'ARH_AGENT'
+  elif [ -n "${CLAUDECODE:-}" ]; then printf 'CLAUDECODE'
+  elif [ -n "${CODEX_SANDBOX:-}${CODEX_HOME:-}" ]; then printf 'CODEX_SANDBOX/CODEX_HOME'
+  elif [ -n "${OPENCODE:-}" ]; then printf 'OPENCODE'
+  else printf 'USER'; fi
+}
+
+# Warn when a harness marker names a different agent than the configured producer.
+arh_warn_agent_mismatch() {
+  local name source producer
+  name=$(arh_agent_name); source=$(arh_agent_source)
+  producer=$(arh_config_get "$ARH_HARN" producer "")
+  case "$source" in ARH_AGENT|USER) return 0 ;; esac
+  [ -n "$producer" ] && [ "$name" != "$producer" ] || return 0
+  arh_warn "agent '$name' was inferred from $source, but the configured producer is '$producer'."
+  arh_warn "if this session is $producer, set ARH_AGENT=$producer (the marker may be inherited from an outer session)"
+}
+
 arh_guard_path() {
   local p abs immutable ip
   immutable=$(arh_config_get "$ARH_PROJ" immutable_inputs "")

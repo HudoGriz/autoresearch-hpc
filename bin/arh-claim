@@ -17,6 +17,7 @@ done
 
 arh_load_project
 [ -n "$agent" ] || agent=$(arh_agent_name)
+arh_warn_agent_mismatch
 mkdir -p "$ARH_ITERS"
 
 n=$(
@@ -38,6 +39,7 @@ cat > "$dir/CLAIM.json" <<EOF
 {
   "iteration": $n,
   "agent": "$(arh_agent_name)",
+  "agent_source": "$(arh_agent_source)",
   "declared_agent": "$agent",
   "claimed": "$(arh_now)",
   "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),

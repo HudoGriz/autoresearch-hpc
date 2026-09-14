@@ -384,6 +384,21 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
         (self.it / 'REVIEW_RESPONSE.md').write_text('Finding 1: accepted.\n')
         self.assertNotIn('no REVIEW_RESPONSE.md', self.gate().stdout)
 
+    def test_claim_records_agent_source(self):
+        env = {k: v for k, v in self.env.items() if not k.startswith(('CLAUDE', 'CODEX', 'OPENCODE', 'ARH_AGENT'))}
+        def claim(title, **extra):
+            result = subprocess.run([str(ROOT / 'bin/arh'), 'claim', '-t', title], env={**env, **extra},
+                                    cwd=self.root, capture_output=True, text=True, timeout=90)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            record = json.loads((self.root / f'iterations/iteration{result.stdout.strip()}/CLAIM.json').read_text())
+            return record, result.stderr
+        record, stderr = claim('inherited marker', CLAUDECODE='1')
+        self.assertEqual((record['agent'], record['agent_source']), ('claude', 'CLAUDECODE'))
+        self.assertIn("configured producer is 'source'", stderr)
+        record, stderr = claim('explicit agent', CLAUDECODE='1', ARH_AGENT='source')
+        self.assertEqual((record['agent'], record['agent_source']), ('source', 'ARH_AGENT'))
+        self.assertNotIn('configured producer', stderr)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
