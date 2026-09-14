@@ -160,8 +160,8 @@ Progress:
 - [ ] Add release-candidate E6 task-failure artifact.
 - [ ] Add release-candidate E9 interrupt/recovery artifact.
 - [ ] Measure false refusals on valid controls.
-- [ ] Measure direct vs Nextflow vs ARH wall-clock overhead with repetitions.
-- [ ] Measure durable evidence volume/count.
+- [ ] Measure direct vs Nextflow vs ARH wall-clock overhead with repetitions (pilot done: `paper/overhead-pilot.md`; rerun on release tag).
+- [ ] Measure durable evidence volume/count (pilot done: `paper/overhead-pilot.md`; rerun on release tag).
 - [ ] Freeze and run the separate stochastic review-role benchmark.
 - [ ] Rerun all publication tables on the exact tagged release.
 

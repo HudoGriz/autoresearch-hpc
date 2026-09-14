@@ -1,0 +1,156 @@
+{
+  "kind": "autoresearch-hpc protocol overhead measurement",
+  "commit": "b0d689cc5ea2c56dd10b89e40ec19ba8b6e2ec7a",
+  "executor": "local",
+  "host_cpus": 120,
+  "host_python": "3.9.23",
+  "nextflow_version": "26.04.6",
+  "warmup_runs_excluded": 1,
+  "load_average_1_5_15": {
+    "start": [
+      1.07,
+      0.92,
+      0.88
+    ],
+    "end": [
+      10.4,
+      13.88,
+      7.46
+    ]
+  },
+  "outputs_identical_across_conditions": true,
+  "mismatches": [],
+  "execution": {
+    "12 pairs (fixture)": {
+      "timings": {
+        "direct-host": {
+          "n": 5,
+          "median_s": 0.031,
+          "min_s": 0.03,
+          "max_s": 0.032
+        },
+        "direct-container": {
+          "n": 5,
+          "median_s": 0.25,
+          "min_s": 0.244,
+          "max_s": 0.262
+        },
+        "nextflow": {
+          "n": 5,
+          "median_s": 3.525,
+          "min_s": 3.497,
+          "max_s": 3.597
+        },
+        "arh-submit": {
+          "n": 5,
+          "median_s": 4.621,
+          "min_s": 4.59,
+          "max_s": 4.678
+        }
+      },
+      "arh_minus_nextflow_s": 1.096,
+      "arh_over_nextflow_pct": 31.1,
+      "arh_over_direct_host_pct": 14806.5
+    },
+    "24 pairs (generated)": {
+      "timings": {
+        "direct-host": {
+          "n": 3,
+          "median_s": 33.715,
+          "min_s": 33.606,
+          "max_s": 34.072
+        },
+        "direct-container": {
+          "n": 3,
+          "median_s": 31.816,
+          "min_s": 31.438,
+          "max_s": 33.272
+        },
+        "nextflow": {
+          "n": 3,
+          "median_s": 35.545,
+          "min_s": 34.872,
+          "max_s": 39.086
+        },
+        "arh-submit": {
+          "n": 3,
+          "median_s": 36.062,
+          "min_s": 36.0,
+          "max_s": 38.334
+        }
+      },
+      "arh_minus_nextflow_s": 0.517,
+      "arh_over_nextflow_pct": 1.5,
+      "arh_over_direct_host_pct": 7.0
+    }
+  },
+  "protocol_commands": {
+    "arh claim": {
+      "n": 5,
+      "median_s": 0.104,
+      "min_s": 0.101,
+      "max_s": 0.106
+    },
+    "arh new": {
+      "n": 5,
+      "median_s": 0.105,
+      "min_s": 0.102,
+      "max_s": 0.107
+    },
+    "arh gate predeclare": {
+      "n": 5,
+      "median_s": 0.233,
+      "min_s": 0.224,
+      "max_s": 0.244
+    },
+    "arh ask (local mock reviewer)": {
+      "n": 1,
+      "median_s": 0.521,
+      "min_s": 0.521,
+      "max_s": 0.521
+    },
+    "arh ask (unchanged review reused)": {
+      "n": 5,
+      "median_s": 0.395,
+      "min_s": 0.388,
+      "max_s": 0.401
+    },
+    "arh gate results": {
+      "n": 5,
+      "median_s": 0.311,
+      "min_s": 0.305,
+      "max_s": 0.326
+    },
+    "arh ledger render": {
+      "n": 5,
+      "median_s": 0.41,
+      "min_s": 0.405,
+      "max_s": 0.422
+    },
+    "arh ledger check": {
+      "n": 5,
+      "median_s": 0.497,
+      "min_s": 0.49,
+      "max_s": 0.515
+    }
+  },
+  "evidence_bytes": {
+    "receipt_and_logs_per_run_median": 1872586,
+    "nextflow_work_per_run_median": 13502,
+    "iteration_protocol_records": 7624,
+    "receipt_files_median": {
+      "console.log": 333,
+      "execution.config": 1047,
+      "nextflow.log": 11606,
+      "report.html": 1603354,
+      "run.json": 4024,
+      "timeline.html": 252003,
+      "trace.tsv": 219
+    }
+  },
+  "notes": [
+    "Timings are wall-clock on one host with the local executor; queueing on a real scheduler is excluded.",
+    "direct-host uses the host Python; container conditions use the task environment's Python.",
+    "arh ask uses a local mock reviewer; provider review latency is measured in the replication benchmark instead."
+  ]
+}

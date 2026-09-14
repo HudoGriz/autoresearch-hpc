@@ -21,7 +21,7 @@ release tag.
 | ARH works with a real Slurm environment | prior internal Slurm validation summary | capture release-candidate Slurm run with public-safe metadata | partial |
 | ARH can use pinned task environments | digest enforcement + Apptainer CI | clean release checkout reproduction and recorded digest | partial |
 | automatic host bootstrap does not require preinstalled micromamba | bootstrap implementation + CI path | clean independent installation from public docs | partial |
-| protocol overhead is small enough for research workflows | pilot records individual gate wall times but is not an overhead experiment | direct vs Nextflow vs ARH timing table, including 30–60 s task and repeats | missing |
+| protocol overhead is small enough for research workflows | overhead pilot: +0.52 s (1.5%) over Nextflow on a ~30 s task, +1.1 s on a trivial task; protocol commands 0.1–0.5 s (`paper/overhead-pilot.md`) | rerun on release tag; add a Slurm-queued variant | strong pilot |
 | cross-check roles help identify known defects | anecdotal engineering experience only | frozen defect corpus, repeats, TPR/FPR/qualified rate | missing |
 | software is usable outside the developer's environment | architecture + CI only | one independent reproduction; preferably second scheduler/site | missing |
 | software is useful beyond one scientific domain | domain-agnostic design only | second public use case or external adoption | missing |
