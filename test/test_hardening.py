@@ -14,6 +14,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Submission tests need a configured controller and task runtime; without one they
+# would fail for reasons unrelated to the protocol (and, on a Slurm host, submit real jobs).
+needs_site = unittest.skipUnless(os.environ.get('ARH_TEST_SITE'),
+                                 'set ARH_TEST_SITE to a configured local site.md (see README)')
+
+
 class Protocol(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='arh-hardening-')
@@ -135,6 +141,7 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
     def test_missing_rule_rejected(self):
         (self.root / 'rules/detection-limit-stated.md').unlink(); self.gate(good=False)
 
+    @needs_site
     def test_local_failure_propagates(self):
         script=self.it / 'scripts/it1_01_fail.sh'; script.write_text('set -euo pipefail\nexit 9\n')
         result=self.call('submit', str(script), '-w', good=False)
@@ -235,12 +242,14 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
         self.assertLess(len(first.encode()),8000)
         self.assertEqual(json.loads(first)['predeclaration'],'frozen')
 
+    @needs_site
     def test_named_launch_lock(self):
         lock=self.it/'metadata/nextflow/busy/.launch-lock'; lock.mkdir(parents=True)
         script=self.it/'scripts/it1_01_busy.nf'; script.write_text('workflow {}')
         result=self.call('submit',str(script),'-n','busy',good=False)
         self.assertIn('already running',result.stderr)
 
+    @needs_site
     def test_live_owner_lock_is_kept(self):
         lock=self.it/'metadata/nextflow/busy/.launch-lock'; lock.mkdir(parents=True)
         (lock/'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': os.getpid()}))
@@ -248,6 +257,7 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
         result=self.call('submit',str(script),'-n','busy',good=False)
         self.assertIn('already running',result.stderr); self.assertTrue(lock.is_dir())
 
+    @needs_site
     def test_dead_owner_lock_reclaimed_and_scripts_hashed(self):
         # A wrapper killed before its `finally` left .launch-lock behind and every later submit
         # under that name refused; the receipt also hashed the workflow but not the scripts it
@@ -262,6 +272,7 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
         record=json.loads(next((self.it/'logs/nextflow/ok').glob('attempt-*/run.json')).read_text())
         self.assertIn('iterations/iteration1/scripts/it1_00_helper.py',record['script_sha256'])
 
+    @needs_site
     def test_sigterm_to_wrapper_releases_lock(self):
         # Stopping a submit by signalling its wrapper left the lock behind (2026-09-11). The
         # wrapper now forwards the signal to Nextflow, records it, and releases the lock.
