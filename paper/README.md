@@ -11,6 +11,10 @@ The current plan is to prepare the software and evidence for a short
 required Original Software Publication template only after the public release
 candidate and evaluation artifacts exist.
 
+`software-impacts.md` is the working copy in that template's structure (abstract,
+keywords, code metadata C1–C9, body sections). It mirrors `draft.md`; update both
+together until submission.
+
 ## JOSS path
 
 The same draft already follows the major JOSS content headings: summary,
