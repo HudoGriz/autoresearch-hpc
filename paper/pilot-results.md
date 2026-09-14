@@ -42,6 +42,25 @@ analysis will measure direct analysis, Nextflow-only and ARH execution separatel
 with repeated runs and a longer 30–60 second task, as pre-specified in
 `docs/evaluation-plan.md`.
 
+## Execution-controller scenarios (E6, E9)
+
+These two scenarios need the configured Nextflow controller and task runtime, so they
+run in `test/publication_execution_evaluation.py` inside the Linux Singularity
+integration job rather than in the fast provider-free suite.
+
+- Evaluated commit: `e2657ebcdca174b54780759fbb5609b7f278f4f8` (CI merge commit for `9a642a4`)
+- GitHub Actions workflow `test`, run `34824408618`, job `Singularity integration (Linux)`
+- Artifact: `publication-execution-evaluation-e2657ebcdca174b54780759fbb5609b7f278f4f8`
+- Result: **2 / 2 scenarios passed**
+
+| ID | Injected condition | Expected ARH behavior | Pilot result | Time (ms) |
+|---|---|---|---|---:|
+| E6 | submitted task exits non-zero | failure propagates and a non-zero run receipt remains | passed: submit exit 1, receipt exit 1 | 6797.332 |
+| E9 | active submission receives SIGTERM | signal is recorded and the launch lock is released | passed | 6862.206 |
+
+All ten pre-specified deterministic scenarios now have a passing pilot run, but from
+two commits and two workflows. The final table must rerun all ten on the release tag.
+
 ## Observations
 
 The concurrency injection allocated iteration numbers 3 through 10 exactly once

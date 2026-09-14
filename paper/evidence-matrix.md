@@ -14,7 +14,7 @@ release tag.
 |---|---|---|---|
 | ARH freezes a pre-declaration and detects later edits | regression suite + pilot E1–E3 passed | rerun E1–E3 on release tag and archive JSON | strong pilot |
 | concurrent agents do not allocate the same iteration | atomic claim implementation + pilot E4: 8 concurrent claims, 8 unique IDs | repeat E4 on release tag and report collision count | strong pilot |
-| failed execution remains visible | run receipts/logging + failure regressions | release-tag E6 artifact and retained failed receipt | partial |
+| failed execution remains visible | run receipts/logging + failure regressions + pilot E6 passed in Singularity CI (run 34824408618) | rerun E6 on release tag and archive JSON | strong pilot |
 | same-family cross-check is refused by default | gate/harness implementation + pilot E7 passed before provider call | rerun E7 on release tag | strong pilot |
 | stale review evidence becomes ineligible | hash-bound review records + pilot E8 passed | rerun E8 on release tag | strong pilot |
 | a study can resume without chat history | `PROGRESS.md`, status/next/context + pilot E10 passed from a fresh cwd | independent tester completes RQ2 with no prior chat | partial |
@@ -69,10 +69,10 @@ entries with release-tag results before submission.
 | E3 | frozen declaration edited | refuse | results gate detected mismatch | yes | TODO |
 | E4 | concurrent claim | unique IDs | 8/8 IDs unique | yes | TODO |
 | E5 | immutable input write | refuse | guard refused | yes | TODO |
-| E6 | task exits non-zero | preserve failure | integration behavior exists; not in fast pilot | — | TODO |
+| E6 | task exits non-zero | preserve failure | submit exit 1; non-zero receipt retained (CI run 34824408618) | yes | TODO |
 | E7 | same-family reviewer | refuse | review request refused | yes | TODO |
 | E8 | reviewed evidence changes | stale review rejected | old review ineligible | yes | TODO |
-| E9 | interrupted submission | recoverable lock/state | integration behavior exists; not in fast pilot | — | TODO |
+| E9 | interrupted submission | recoverable lock/state | SIGTERM recorded; launch lock released (CI run 34824408618) | yes | TODO |
 | E10 | cold resume | correct next state | status/next resolved from fresh cwd | yes | TODO |
 
 ### Table 2 — portability/reproduction

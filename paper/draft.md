@@ -118,7 +118,8 @@ tampering, eight concurrent claims, an immutable-input write, same-family review
 stale reviewed evidence, and cold resumption from a fresh working directory.
 All eight produced the pre-specified behavior. This pilot is retained in
 `paper/pilot-results.md` and is explicitly not the final release-tag evaluation;
-failed-task and interrupt/recovery scenarios remain in the integration path, and
+the failed-task (E6) and interrupt (E9) scenarios passed separately in the
+Singularity integration job, and
 the observed per-gate timings are not interpreted as workflow overhead.
 
 A second benchmark will evaluate review roles against a frozen corpus of known
