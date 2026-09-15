@@ -135,3 +135,30 @@ arh_guard_path() {
 arh_crosschecks() {
   python3 "$ARH_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
 }
+
+# Build an environment prefix once: arh_build_once PREFIX COMMAND... A prefix is complete when it
+# holds .arh-complete. Concurrent builders wait on PREFIX.building; a build left behind by a dead
+# process on this host is removed and redone. COMMAND runs where `set -e` does not apply, so it must
+# return non-zero itself when a step fails.
+arh_build_once() {
+  local prefix="$1" lock="$1.building" waited=0 host pid; shift
+  mkdir -p "$(dirname "$prefix")"
+  until mkdir "$lock" 2>/dev/null; do
+    [ -f "$prefix/.arh-complete" ] && return 0
+    host=""; pid=""
+    read -r host pid 2>/dev/null < "$lock/owner" || true
+    if [ "$host" = "$(uname -n)" ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
+      continue
+    fi
+    [ $((waited % 300)) -ne 0 ] || arh_warn "waiting for another setup to finish building $prefix"
+    sleep 5; waited=$((waited + 5))
+  done
+  printf '%s %s\n' "$(uname -n)" "$$" > "$lock/owner"
+  if [ ! -f "$prefix/.arh-complete" ]; then
+    rm -rf "$prefix"
+    if ! "$@"; then rm -rf "$prefix" "$lock"; return 1; fi
+    touch "$prefix/.arh-complete"
+  fi
+  rm -rf "$lock"
+}

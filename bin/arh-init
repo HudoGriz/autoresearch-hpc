@@ -3,7 +3,7 @@
 set -euo pipefail
 . "${ARH_HOME:?}/lib/common.sh"
 
-target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0
+target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0; env_cache=""
 usage() {
   cat <<'USAGE'
 usage: arh init [dir] [options]
@@ -13,6 +13,8 @@ Options:
   --micromamba PATH                 optional micromamba override for host Nextflow setup
   --runtime IMAGE.sif               task runtime image to configure
   --bootstrap                       build the host Nextflow environment now; downloads a pinned project-local micromamba if needed
+  --env-cache DIR                   build the pinned Nextflow and task environments once in DIR and share them
+                                    between projects (DIR must be reachable from compute nodes at the same path)
   -h, --help                        show this help
 
 Without flags, `arh init` discovers the scheduler/container command and creates
@@ -28,6 +30,7 @@ while [ $# -gt 0 ]; do
     --micromamba) micromamba="$2"; shift 2 ;;
     --runtime) runtime="$2"; shift 2 ;;
     --bootstrap) bootstrap=1; shift ;;
+    --env-cache) env_cache="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
@@ -83,6 +86,9 @@ for key,value in {'scheduler':sys.argv[2], 'container_runtime':sys.argv[3]}.item
 p.write_text(text)
 PY
 
+if [ -n "$env_cache" ]; then
+  mkdir -p "$env_cache"; ARH_ENV_CACHE=$(cd "$env_cache" && pwd); export ARH_ENV_CACHE
+fi
 if [ "$bootstrap" = 1 ]; then
   if [ -n "$micromamba" ]; then
     "$ARH_HOME/scripts/setup-nextflow.sh" "$target" "$micromamba"

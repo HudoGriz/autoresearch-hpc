@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
           bin/arh doctor || true
       - name: Test suite
         run: |
-          export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md"
+          export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md" ARH_TEST_NETWORK=1
           test/run_tests.sh
           python3 test/test_hardening.py
       - name: Publication execution-controller evaluation

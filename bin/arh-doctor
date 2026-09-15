@@ -17,6 +17,17 @@ if (arh_find_project) >/dev/null 2>&1; then
     arh_fail "project records protocol $recorded, the framework is $framework — run: arh migrate $ARH_ROOT"
     warn=$((warn+1))
   fi
+  # Agents read the study's copies of AGENTS.md and skills/, which a framework update does not touch.
+  drift=$(python3 - "$ARH_HOME" "$ARH_ROOT" <<'PY'
+import sys
+from pathlib import Path
+home, root = map(Path, sys.argv[1:3])
+files = [Path('AGENTS.md')] + [p.relative_to(home) for p in sorted((home / 'skills').rglob('*')) if p.is_file()]
+print(sum(1 for f in files if not (root / f).is_file() or (root / f).read_bytes() != (home / f).read_bytes()))
+PY
+)
+  if [ "${drift:-0}" = 0 ]; then arh_ok "agent contract and skills match the framework"
+  else arh_warn "$drift agent-facing file(s) (AGENTS.md, skills/) differ from the framework's; arh migrate $ARH_ROOT lists them"; fi
 else
   arh_warn "not inside a project"
   arh_info "create one with: arh init /shared/my-study"
@@ -86,6 +97,14 @@ pf=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" a)
 vf=$(arh_config_get "$ARH_HARN" "harness_${verifier}_family" b)
 if [ "$pf" = "$vf" ]; then arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1))
 else arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"; fi
+for h in $(arh_config_get "$ARH_HARN" verifier_fallback ""); do
+  ff=$(arh_config_get "$ARH_HARN" "harness_${h}_family" unknown)
+  case "$ff" in
+    unknown|mixed|"") arh_fail "verifier_fallback $h has no concrete model family ($ff)"; warn=$((warn+1)) ;;
+    "$pf") arh_fail "verifier_fallback $h shares the producer's family '$pf'"; warn=$((warn+1)) ;;
+    *) arh_ok "verifier_fallback $h ($ff)" ;;
+  esac
+done
 arh_warn_agent_mismatch
 
 printf '\nrules:\n'

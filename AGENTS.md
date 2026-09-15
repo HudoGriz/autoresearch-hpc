@@ -56,6 +56,54 @@ arh verify new <object> -m re-implementation
 arh verify gate <object>
 ```
 
+## Writing a workflow for `arh submit`
+
+`arh submit` runs a Nextflow workflow that belongs to a claimed iteration with a
+frozen pre-declaration, and blocks until Nextflow exits. A minimal workflow:
+
+```nextflow
+params.outdir = 'results'      // arh submit sets iterations/iterationN/results/<name>
+params.inputs = '/absolute/path/to/a/declared/immutable/input'
+
+process ANALYSE {
+    cpus 4                     // optional; defaults come from .arh/config/site.md
+    memory '16 GB'
+    time '2h'
+    publishDir params.outdir, mode: 'copy'
+
+    input:
+    path script
+
+    output:
+    path 'out/*'
+
+    script:
+    """
+    mkdir -p out
+    python3 ${script} --inputs ${params.inputs} --out out
+    """
+}
+
+workflow {
+    ANALYSE(channel.fromPath("${projectDir}/itN_01_analyse.py", checkIfExists: true))
+}
+```
+
+- Every process runs in the pinned task image on the site's scheduler. It sees
+  the project at its own absolute path (read-write), the `immutable_inputs` of
+  `.arh/config/project.md` (read-only) and the task environment `runtime_prefix`
+  (read-only; its `python3`, `bash` and `git` are on `PATH`). Nothing else is bound.
+- Pass scripts in as `path` inputs, as above, so `-resume` notices when they change.
+- Nextflow runs offline and in strict syntax: no plugin downloads, no Groovy
+  `import`. `arh submit WORKFLOW.nf --lint` checks a workflow without running it.
+- Evidence stays under the iteration: `logs/nextflow/<name>/attempt-*/`
+  (`console.log`, `trace.tsv`, `run.json`) and `metadata/nextflow/<name>/work/`.
+  A failed run prints the tail of its console log.
+- Scientific packages: `arh env create NAME pkg=version ...` solves them once in
+  the task image, locks them in `.arh/NAME-explicit.lock` and prints the prefix to
+  call from a process (`<prefix>/bin/python`, `<prefix>/bin/Rscript`). A different
+  package set is a new NAME. Do not build environments by hand.
+
 ## Rules that are not negotiable
 
 1. **Claim before you create.** `arh claim` is the only way to take an iteration
@@ -100,6 +148,33 @@ arh verify gate <object>
 Treat the challenge as the trigger for a **new iteration**, not an instruction
 to edit the old one. Record the challenge as motivation. The operator is an
 adversary in this protocol by design.
+
+## A failed acceptance criterion is a result
+
+When an acceptance criterion fails (an undocumented code, counts that do not
+reconcile), do not stop and do not work around it inside the frozen design.
+Report the failure as this iteration's result, have it reviewed and conclude it.
+Then claim a new iteration whose pre-declaration states how the problem is
+handled. Stop as blocked only when no iteration can proceed at all: missing data
+or access, or a broken environment.
+
+## Running unattended
+
+A headless session (`claude -p`, `codex exec`, a batch driver) gets no completion
+notices, and it ends as soon as its reply ends.
+
+- Run `arh submit`, `arh ask` and `arh env create` in the foreground; they block
+  until done. Never background them and never end a reply to wait for one. Work
+  already running (an earlier session, another agent) is waited for with
+  `arh wait -n N`. A pending review is not a reason to end the session.
+- `arh ask` exit 75: the provider refused on a usage or rate limit, or on
+  authentication. No review round was spent. Wait until the reset time it
+  prints, then run the same command again.
+- `arh ask` exit 77: the provider refused the content. No round was spent, and
+  waiting will not help. Any `verifier_fallback` was already tried; if none gave a
+  review, record the refusal as what blocks the iteration.
+- Set `ARH_AGENT` to your harness name (`claude`, `codex`, …). Otherwise it is
+  inferred from environment variables that an outer session may have left behind.
 
 ## Style
 

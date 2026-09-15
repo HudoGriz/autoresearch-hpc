@@ -18,7 +18,8 @@ while [ $# -gt 0 ]; do
     --same-family)  same_family=1; shift ;;
     --dry-run)      dry=1; shift ;;
     --note)         extra="$2"; shift 2 ;;
-    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run]'; exit 0 ;;
+    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run] [--note TEXT]
+exit 75: provider usage/rate limit or authentication; 77: provider refused the content. Neither spends a review round.'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
 done
@@ -48,21 +49,33 @@ if [ "$role" != reimplementer ] && [ -f "$report_file" ]; then
 fi
 
 producer=$(arh_config_get "$ARH_HARN" producer claude)
-[ -n "$harness" ] || harness=$(arh_config_get "$ARH_HARN" verifier codex)
-
-case "$producer:$harness" in *..*|*/*) arh_die "invalid configured harness name" ;; esac
-
+case "$producer" in *..*|*/*) arh_die "invalid configured harness name" ;; esac
 pfam=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" unknown)
-vfam=$(arh_config_get "$ARH_HARN" "harness_${harness}_family" unknown)
-case "$pfam:$vfam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) arh_die "configure concrete producer and verifier model families" ;; esac
-if [ "$pfam" = "$vfam" ] && [ "$same_family" = 0 ]; then
-  arh_die "producer ($producer/$pfam) and verifier ($harness/$vfam) are the same model family.
+
+# Why harness $1 cannot give this review; nothing when it can.
+ineligible() {
+  local fam
+  case "$1" in ""|*..*|*/*) echo "invalid configured harness name"; return ;; esac
+  fam=$(arh_config_get "$ARH_HARN" "harness_${1}_family" unknown)
+  case "$pfam:$fam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) echo "configure concrete producer and verifier model families"; return ;; esac
+  if [ "$pfam" = "$fam" ] && [ "$same_family" = 0 ]; then
+    echo "producer ($producer/$pfam) and verifier ($1/$fam) are the same model family.
        A model does not reliably catch its own reasoning errors. Choose another
        harness, or pass --same-family to record a weaker check that cannot satisfy the results gate."
-fi
+    return
+  fi
+  [ -n "$(arh_config_get "$ARH_HARN" "harness_${1}_cmd" "")" ] \
+    || echo "no command configured for harness '$1' (see .arh/config/harnesses.md)"
+}
 
-cmd=$(arh_config_get "$ARH_HARN" "harness_${harness}_cmd" "")
-[ -n "$cmd" ] || arh_die "no command configured for harness '$harness' (see .arh/config/harnesses.md)"
+# An explicit --harness is used alone. Otherwise the configured verifier goes first, and each
+# verifier_fallback is tried in turn only after a content-policy refusal (exit 77): waiting does
+# not change such a refusal, but another model family may still review the work.
+if [ -n "$harness" ]; then candidates=$harness
+else candidates="$(arh_config_get "$ARH_HARN" verifier codex) $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
+primary=${candidates%% *}
+why=$(ineligible "$primary")
+[ -z "$why" ] || arh_die "$why"
 # Roles that must not see the original implementation. For these the prompt
 # carries the frozen DAG without the implementation. Filesystem isolation must
 # be provided externally; prompt omission alone is a cooperative boundary.
@@ -72,7 +85,7 @@ case "$role" in reimplementer) blind=1 ;; esac
 arh_guard_path "$dir"
 prompt=$(mktemp "$dir/logs/prompt.XXXXXX")
 lock=""
-cleanup() { rm -f "$prompt"; [ -z "$lock" ] || rmdir "$lock"; }
+cleanup() { rm -f "$prompt"; [ -z "$lock" ] || { rm -f "$lock/owner.json"; rmdir "$lock"; }; }
 trap cleanup EXIT
 {
   cat "$roledoc"
@@ -116,51 +129,76 @@ trap cleanup EXIT
 } > "$prompt"
 max_input=$(arh_config_get "$ARH_HARN" ask_max_input_bytes 24000)
 max_rounds=$(arh_config_get "$ARH_HARN" ask_max_rounds 2)
-if [ "$dry" = 0 ]; then
-  lock="$dir/.review-lock"
-  mkdir "$lock" 2>/dev/null || { lock=""; arh_die "another review is running"; }
-fi
-cached=$(python3 "$ARH_HOME/lib/harness.py" budget "$dir" "$prompt" "$cmd" "$role" "$harness" "$pfam" "$vfam" "$max_input" "$max_rounds" "$extra" "$dry")
-if [ -n "$cached" ] && [ "$dry" = 0 ]; then
-  printf 'reused unchanged review (no model call): %s\n' "$cached"
-  grep -m1 '^VERDICT:' "$cached"
-  exit 0
-fi
-
-out=$(mktemp "$dir/CROSSCHECK_${role}_${harness}_$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
-mv "$out" "$out.md"
-out="$out.md"
-
 if [ "$dry" = 1 ]; then
-  rm -f "$out"
-  printf '# dry run — would invoke: %s\n\n' "$harness"; cat "$prompt"; exit 0
+  python3 "$ARH_HOME/lib/harness.py" budget "$dir" "$prompt" "$(arh_config_get "$ARH_HARN" "harness_${primary}_cmd" "")" \
+    "$role" "$primary" "$pfam" "$(arh_config_get "$ARH_HARN" "harness_${primary}_family" unknown)" \
+    "$max_input" "$max_rounds" "$extra" 1 >/dev/null
+  printf '# dry run — would invoke: %s\n\n' "$primary"; cat "$prompt"; exit 0
 fi
 
-printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
-  "$role" "$harness" "$vfam" "$producer" "$pfam" >&2
-
-{
-  printf '# Cross-check — iteration %s\n\n' "$n"
-  printf '| field | value |\n|---|---|\n'
-  printf '| role | `%s` |\n| verifying harness | `%s` (%s) |\n' "$role" "$harness" "$vfam"
-  printf '| producing harness | `%s` (%s) |\n| same family | %s |\n' "$producer" "$pfam" \
-         "$([ "$same_family" = 1 ] && echo 'yes — WEAKER CHECK' || echo no)"
-  printf '| run | %s |\n\n---\n\n' "$(arh_now)"
-} > "$out"
+# The lock records its owner, so `arh wait` can tell a running review from one whose process died,
+# and a lock left by a dead process on this host is reclaimed instead of refusing every later review.
+lock="$dir/.review-lock"
+if ! held=$(python3 "$ARH_HOME/lib/locks.py" acquire "$lock" "$$" "review lock" 2>&1); then
+  lock=""; arh_die "another review is running${held#held}"
+fi
+[ -z "$held" ] || printf '%s\n' "$held" >&2
 
 timeout_s=$(arh_config_get "$ARH_HARN" ask_timeout 900)
-# Parse quoted arguments without shell expansion; timeout is portable.
-set +e
-python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" \
-  "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${harness}_version_cmd" "")"
-rc=$?
-set -e
-cp "$prompt" "$out.prompt"
-[ -s "$out.err" ] || rm -f "$out.err"
+rc=0; tried=""
+for h in $candidates; do
+  if [ "$h" != "$primary" ]; then
+    why=$(ineligible "$h")
+    if [ -n "$why" ]; then arh_warn "fallback verifier '$h' skipped: ${why%%$'\n'*}"; continue; fi
+    arh_warn "trying fallback verifier '$h'"
+  fi
+  vfam=$(arh_config_get "$ARH_HARN" "harness_${h}_family" unknown)
+  cmd=$(arh_config_get "$ARH_HARN" "harness_${h}_cmd" "")
+  cached=$(python3 "$ARH_HOME/lib/harness.py" budget "$dir" "$prompt" "$cmd" "$role" "$h" "$pfam" "$vfam" "$max_input" "$max_rounds" "$extra" 0)
+  if [ -n "$cached" ]; then
+    printf 'reused unchanged review (no model call): %s\n' "$cached"
+    grep -m1 '^VERDICT:' "$cached"
+    exit 0
+  fi
+
+  out=$(mktemp "$dir/CROSSCHECK_${role}_${h}_$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
+  mv "$out" "$out.md"
+  out="$out.md"
+  printf 'cross-check: role=%s harness=%s (%s) vs producer=%s (%s)\n' \
+    "$role" "$h" "$vfam" "$producer" "$pfam" >&2
+  {
+    printf '# Cross-check — iteration %s\n\n' "$n"
+    printf '| field | value |\n|---|---|\n'
+    printf '| role | `%s` |\n| verifying harness | `%s` (%s) |\n' "$role" "$h" "$vfam"
+    printf '| producing harness | `%s` (%s) |\n| same family | %s |\n' "$producer" "$pfam" \
+           "$([ "$same_family" = 1 ] && echo 'yes — WEAKER CHECK' || echo no)"
+    printf '| run | %s |\n\n---\n\n' "$(arh_now)"
+  } > "$out"
+
+  # Parse quoted arguments without shell expansion; timeout is portable.
+  set +e
+  python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" \
+    "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${h}_version_cmd" "")"
+  rc=$?
+  set -e
+  cp "$prompt" "$out.prompt"
+  [ -s "$out.err" ] || rm -f "$out.err"
+  tried="$tried $h"
+  [ "$rc" -eq 77 ] || break
+  arh_warn "verifier '$h' refused to review this content (content policy); record kept at $out"
+done
 
 if [ "$rc" -eq 75 ]; then
-  arh_warn "verifier unavailable: the provider refused the call (quota, rate limit or auth).
-       This attempt did not consume a review round; record kept at $out"
+  arh_warn "verifier unavailable: the provider refused the call (usage or rate limit, or authentication).
+       This attempt did not consume a review round; record kept at $out
+       Wait for the reset the provider states (\"provider said\" above), then run the same arh ask again."
+  exit "$rc"
+fi
+if [ "$rc" -eq 77 ]; then
+  arh_warn "no verifier would review this content (tried:$tried): refused on content-policy grounds.
+       This did not consume a review round. Waiting will not change it. Configure a harness from
+       another model family as verifier_fallback in .arh/config/harnesses.md, or record the refusal
+       as what blocks the iteration."
   exit "$rc"
 fi
 if [ "$rc" -ne 0 ]; then

@@ -46,6 +46,9 @@ harness_gemini_version_cmd = gemini --version
 
 producer   = claude
 verifier   = codex
+# Tried in order only after the verifier refuses the content (arh ask exit 77). Each needs a
+# concrete model family other than the producer's, e.g.: verifier_fallback = gemini
+verifier_fallback =
 
 ask_timeout = 900
 ask_max_input_bytes = 24000
@@ -53,6 +56,22 @@ ask_max_output_bytes = 8000
 ask_output_words = 500
 ask_max_rounds = 2
 ```
+
+## Refusals, fallbacks and token usage
+
+`arh ask` exits 75 when the provider refuses the call on a usage or rate limit, or on
+authentication, and prints the provider's own line with any reset time it states. It
+exits 77 when the provider refuses the content itself (a safety classifier). Neither
+consumes a review round. After a content refusal, each harness in `verifier_fallback`
+is tried in turn.
+
+A command template may contain `{usage}`, a file path the command can write a JSON
+object of token counts or cost to; `arh ask` stores it in the review record as `usage`.
+The framework's `harness/claude/review.sh` and `harness/codex/review.sh` do this. The
+prompt stays the first argument, `{usage}` the second, CLI options follow:
+
+    harness_claude_cmd = /path/to/autoresearch-hpc/harness/claude/review.sh {prompt} {usage} --model <model>
+    harness_codex_cmd  = /path/to/autoresearch-hpc/harness/codex/review.sh {prompt} {usage} -m <model>
 
 Command templates are parsed as quoted arguments without shell evaluation; use
 a wrapper script for pipelines or environment setup. Reviews from `mixed` or

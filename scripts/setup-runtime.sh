@@ -11,23 +11,38 @@ if command -v singularity >/dev/null 2>&1; then runtime=singularity
 elif command -v apptainer >/dev/null 2>&1; then runtime=apptainer
 else echo 'singularity/apptainer is missing' >&2; exit 1; fi
 version=26.04.6
-prefix="$state/envs/nextflow/$version"
-mkdir -p "$state/mamba" "$state/home" "$state/tmp"
+packages=("nextflow=$version" 'python=3.12' 'git=2.49' 'bash=5.2' 'procps-ng=4.0.4')
+if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum "$image" | awk '{print $1}'); else digest=$(shasum -a 256 "$image" | awk '{print $1}'); fi
+mkdir -p "$state/home" "$state/tmp"
 export APPTAINER_CACHEDIR="$state/container-cache"
 export APPTAINER_TMPDIR="$state/tmp"
-if [ ! -x "$prefix/bin/nextflow" ]; then
-  "$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
-    --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
-    "$image" micromamba create -y -p "$prefix" -c conda-forge -c bioconda \
-      "nextflow=$version" 'python=3.12' 'git=2.49' 'bash=5.2' 'procps-ng=4.0.4'
+binds=(--bind "$project:$project:rw")
+if [ -n "${ARH_ENV_CACHE:-}" ]; then
+  # Shared and content-addressed by image digest and package pins, as in setup-nextflow.sh.
+  mkdir -p "$ARH_ENV_CACHE"; cache=$(cd "$ARH_ENV_CACHE" && pwd)
+  if command -v sha256sum >/dev/null 2>&1; then key=$(printf '%s\n' "$digest" "${packages[@]}" | sha256sum | cut -c1-16)
+  else key=$(printf '%s\n' "$digest" "${packages[@]}" | shasum -a 256 | cut -c1-16); fi
+  prefix="$cache/runtime/$version-$key"; mamba="$cache/mamba"
+  binds+=(--bind "$cache:$cache:rw")
+else
+  prefix="$state/envs/nextflow/$version"; mamba="$state/mamba"
+fi
+mkdir -p "$mamba"
+in_image() {
+  "$runtime" exec --cleanenv --containall --home "$state/home" "${binds[@]}" \
+    --env "MAMBA_ROOT_PREFIX=$mamba,CONDA_PKGS_DIRS=$mamba/pkgs,XDG_CACHE_HOME=$mamba/cache" \
+    "$image" micromamba "$@"
+}
+create_env() { in_image create -y -p "$prefix" -c conda-forge -c bioconda "${packages[@]}"; }
+if [ -n "${ARH_ENV_CACHE:-}" ]; then
+  # shellcheck source=lib/common.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+  arh_build_once "$prefix" create_env || { echo "failed to build $prefix" >&2; exit 1; }
+elif [ ! -x "$prefix/bin/nextflow" ]; then
+  create_env
 fi
 # Replayable lock (@EXPLICIT plus URL#md5 lines), as in setup-nextflow.sh.
-{ echo '@EXPLICIT'
-  "$runtime" exec --cleanenv --containall --home "$state/home" --bind "$project:$project:rw" \
-    --env "MAMBA_ROOT_PREFIX=$state/mamba,CONDA_PKGS_DIRS=$state/mamba/pkgs,XDG_CACHE_HOME=$state/mamba/cache" \
-    "$image" micromamba list -p "$prefix" --explicit --md5 | grep -E '^https?://'
-} > "$state/nextflow-explicit.lock"
-if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum "$image" | awk '{print $1}'); else digest=$(shasum -a 256 "$image" | awk '{print $1}'); fi
+{ echo '@EXPLICIT'; in_image list -p "$prefix" --explicit --md5 | grep -E '^https?://'; } > "$state/nextflow-explicit.lock"
 # setup-nextflow.sh rewrites the same file; serialise so concurrent setups cannot drop keys.
 lock="$state/config/.site.lock"; i=0
 until mkdir "$lock" 2>/dev/null; do

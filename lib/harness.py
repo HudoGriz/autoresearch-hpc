@@ -44,22 +44,44 @@ def valid_records(directory):
     return valid
 
 
-# A provider that refuses the call (quota, rate limit, authentication) is an unavailable
-# verifier, not a review. Some CLIs exit 0 when this happens (`codex exec` printed
-# "You've hit your usage limit" and exited 0), so it is recognised from the text of a response
-# that carries no VERDICT line.
-PROVIDER_ERROR = re.compile(
-    r"usage limit|rate.?limit|quota|too many requests|\b429\b|\b401\b|\b403\b|"
-    r"unauthori[sz]ed|authentication|insufficient.?(credit|balance)|try again (at|in)|overloaded",
-    re.I)
+# A provider that refuses the call is an unavailable verifier, not a review. Some CLIs exit 0 when
+# this happens (`codex exec` printed "You've hit your usage limit" and exited 0), so it is
+# recognised from the text of a response that carries no VERDICT line. A content-policy refusal is
+# kept apart from limits: waiting does not help, and another model family may still review. Codex
+# refused a public RNA-seq count table as "flagged for possible biological risk" (2026-09-15).
+PROVIDER_ERRORS = (
+    ('refusal', 77, re.compile(
+        r"flagged for possible|violat\w* (our |the )?(usage|content|acceptable use) polic|"
+        r"content (policy|filter|management)|safety (system|classifier|filter)|"
+        r"unable to respond to this request|invalid_prompt", re.I)),
+    ('limit', 75, re.compile(
+        r"usage limit|session limit|rate.?limit|quota|too many requests|\b429\b|"
+        r"insufficient.?(credit|balance)|try again (at|in)|overloaded", re.I)),
+    ('auth', 75, re.compile(r"\b401\b|\b403\b|unauthori[sz]ed|authentication|not logged in", re.I)),
+)
+RETRY_HINT = re.compile(r"\b(?:try again (?:at|in)|resets?(?: at)?) [^.\n\u00b7(]*\d[^.\n\u00b7(]*", re.I)
+
+
+def classify(text):
+    """(kind, exit code, the provider's own line, retry hint) for a provider refusal, else None."""
+    for kind, code, pattern in PROVIDER_ERRORS:
+        line = next((l.strip() for l in text.splitlines() if pattern.search(l)), None)
+        if line:
+            hint = RETRY_HINT.search(text)
+            return kind, code, line[:300], hint.group(0).strip() if hint else None
+    return None
+
+
+def record_field(path, key):
+    try:
+        return json.loads(Path(str(path) + '.json').read_text()).get(key)
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def provider_error(path):
     """True if the cross-check record at PATH was a provider refusal, not a review."""
-    try:
-        return bool(json.loads(Path(str(path) + '.json').read_text()).get('provider_error'))
-    except (OSError, ValueError):
-        return False
+    return bool(record_field(path, 'provider_error'))
 
 
 def budget():
@@ -112,8 +134,10 @@ def run():
     version_cmd = sys.argv[11] if len(sys.argv) > 11 else ''
     version = cli_version(version_cmd, cwd)
     prompt = Path(prompt_file).read_text()
-    values = {'{prompt}': prompt, '{cwd}': cwd}
-    argv = [re.sub(r'\{prompt\}|\{cwd\}', lambda match: values[match.group()], arg)
+    # {usage}: a path the command may write a JSON object of token counts or cost to.
+    usage_file = output + '.usage.json' if '{usage}' in command else None
+    values = {'{prompt}': prompt, '{cwd}': cwd, '{usage}': usage_file}
+    argv = [re.sub(r'\{prompt\}|\{cwd\}|\{usage\}', lambda match: values[match.group()], arg)
             for arg in shlex.split(command)]
     if not argv:
         raise ValueError('empty harness command')
@@ -139,6 +163,7 @@ def run():
             selector.register(process.stdout, selectors.EVENT_READ, (stdout, limit))
             selector.register(process.stderr, selectors.EVENT_READ, (stderr, 16384))
             received = {process.stdout: 0, process.stderr: 0}
+            tail = b''                  # a refusal is usually the last thing a CLI writes
             rc = None
             while selector.get_map():
                 if time.time() - started >= timeout:
@@ -157,6 +182,8 @@ def run():
                     available = max(0, maximum - received[key.fileobj])
                     target.write(chunk[:available])
                     received[key.fileobj] += len(chunk)
+                    if key.fileobj is process.stderr:
+                        tail = (tail + chunk)[-8192:]
                     # Only the review (stdout) is bounded. stderr is diagnostic: it is truncated
                     # on disk but drained, never fatal — `codex exec` echoes the whole prompt to
                     # stderr, so a stderr cap killed every review whose prompt exceeded it.
@@ -180,6 +207,8 @@ def run():
                     pass
                 status = process.wait()
             rc = status if rc is None else rc
+            if received[process.stderr] > 16384:
+                stderr.write(b'\n[stderr truncated; its last 8 KB follow]\n' + tail)
             if rc == 66:
                 stderr.write(b'\nReview output exceeded its byte limit; response is incomplete.\n')
         finally:
@@ -188,15 +217,23 @@ def run():
     text = Path(output).read_text(errors="replace")
     verdicts = re.findall(r'^VERDICT: (SOUND|QUALIFIED|UNSOUND)\s*$', text, re.M)
     verdict = verdicts[0] if len(verdicts) == 1 else None
-    refused = False
+    provider = None
     if not verdict:
         err = Path(output + '.err')
-        refused = bool(PROVIDER_ERROR.search(text + '\n' + (err.read_text(errors="replace")
-                                                            if err.exists() else '')))
-        if refused:
-            rc = 75
+        provider = classify(text + '\n' + (err.read_text(errors="replace") if err.exists() else ''))
+        if provider:
+            rc = provider[1]
+            print('provider said: ' + provider[2], file=sys.stderr)
         elif rc == 0:
             rc = 65
+    usage = None
+    if usage_file and Path(usage_file).is_file():
+        try:
+            if Path(usage_file).stat().st_size <= 65536:
+                usage = json.loads(Path(usage_file).read_text(errors="replace"))
+        except ValueError:
+            usage = None
+        Path(usage_file).unlink()
     directory = Path(output).parent
     report = directory / 'results/report' / (directory.name + '_report.md')
     data = dict(exit_code=rc, verdict=verdict, producer_family=pf, verifier_family=vf,
@@ -204,7 +241,9 @@ def run():
                 command_template=command, cwd=cwd, prompt_sha256=digest(prompt_file),
                 review_sha256=digest(output), report_sha256=reviewed_report,
                 predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts,
-                provider_error=refused, verifier_version=version, verifier_version_cmd=version_cmd or None)
+                provider_error=provider is not None, provider_error_kind=provider and provider[0],
+                provider_message=provider and provider[2], retry_hint=provider and provider[3],
+                usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None)
     with open(output + '.json', 'x') as record:
         json.dump(data, record, indent=2)
         record.write('\n')
@@ -223,6 +262,8 @@ if __name__ == '__main__':
             if str(path) in valid:
                 data = json.loads(Path(str(path) + '.json').read_text())
                 print(path.name + ': ' + data['verdict'])
+            elif record_field(path, 'provider_error_kind') == 'refusal':
+                print(path.name + ': PROVIDER REFUSAL (content policy; not a review round)')
             elif provider_error(path):
                 print(path.name + ': PROVIDER ERROR (verifier unavailable; not a review round)')
             else:

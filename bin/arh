@@ -27,7 +27,7 @@ usage() {
 arh — AutoResearch HPC
 
   arh init [dir] [options]       create and bootstrap a research project
-  arh migrate [DIR] [--apply]    move a 0.1 study to the current layout (dry run first)
+  arh migrate [DIR] [--apply]    bring a study up to this framework: layout, agent contract, skills (dry run first)
   arh claim  -t TITLE            atomically claim the next iteration number
   arh new    -n N                scaffold iteration N from the pre-declaration template
   arh arm    {new|gate|fate|list} parallel sub-analyses within one iteration
@@ -40,6 +40,8 @@ arh — AutoResearch HPC
   arh replicate [run|report]     N agents re-implement from the DAG, blind to the code
   arh run    IMAGE -- CMD...     run a command in a pinned container
   arh submit SCRIPT -n NAME      submit a job through the configured workflow engine
+  arh wait   [-n N]              block until running submissions and reviews finish
+  arh env    {create|path|list}  scientific environments: solve once in the task image, lock, reuse
   arh guard  PATH...             assert paths are writable under the project
   arh ledger [render|check]      maintain the project record
   arh context -n N               compact deterministic handoff; no model call
@@ -60,7 +62,7 @@ case "$cmd" in
       "$(cat "$ARH_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|migrate|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|guard|ledger|status|doctor|next|context)
+  init|migrate|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|wait|env|guard|ledger|status|doctor|next|context)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

@@ -224,7 +224,7 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. The current baseline passes **137 core checks and 37 boundary regressions**. Earlier validation runs added real Slurm success/failure, native cache reuse and an immutable-input container probe.
+AutoResearch HPC is **experimental and pre-1.0**. The current baseline passes **143 core checks and 56 boundary regressions**. Earlier validation runs added real Slurm success/failure, native cache reuse and an immutable-input container probe.
 
 Internal field deployment exposed review, submission and provenance defects that are now represented by regression tests. The source research material and machine-specific audit record are intentionally not part of this software repository; publication-facing evaluation uses synthetic fixtures and separately reportable execution evidence.
 
@@ -258,6 +258,7 @@ Ambitious additions such as a knowledge graph or MCP server are not blockers for
 | **Agent contract** | [AGENTS.md](AGENTS.md) |
 | **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
+| **Unattended agents** | [Running producer and reviewer sessions headless](docs/headless.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
 | **Publication roadmap** | [Release, evaluation, external reproduction and manuscript plan](docs/publication-plan.md) |
 | **Evaluation protocol** | [Failure injection, portability, overhead and review benchmark](docs/evaluation-plan.md) |

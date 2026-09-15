@@ -47,6 +47,9 @@ runtime_image =
 runtime_sha256 =
 runtime_prefix =
 nextflow_version = 26.04.6
+# HTML report and timeline per submission: html, gzip or none. They are ~1.9 MB a run;
+# trace.tsv and the run receipt are always kept.
+nextflow_reports = html
 
 # --- SLURM ---------------------------------------------------------------
 slurm_partition   =

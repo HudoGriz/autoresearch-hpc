@@ -62,6 +62,23 @@ scripts/setup-nextflow.sh /shared/study /absolute/path/to/micromamba
 scripts/setup-runtime.sh /shared/study /shared/images/runtime.sif
 ```
 
+### Sharing environments between projects
+
+Each project otherwise builds its own host and task environments, about 1.5 GB
+together. With `--env-cache`, both are built once in a shared directory, keyed by
+their pins (and the task image digest), and reused by every project that asks for
+the same ones:
+
+```bash
+arh init /shared/study-2 --bootstrap --runtime /shared/images/runtime.sif \
+  --env-cache /shared/arh-envs
+```
+
+Concurrent setups wait for one build; a build interrupted on the same host is
+redone. Each project still records its own explicit lock under `.arh/`. The cache
+must be reachable from compute nodes at the same path. The setup scripts read the
+same directory from `ARH_ENV_CACHE`.
+
 The exact micromamba release and per-platform checksums are pinned in
 `config/dependencies.json`. The selected binary and its digest are recorded in
 `.arh/micromamba.lock`, while the explicit package list for the host Nextflow
@@ -92,7 +109,25 @@ Use `--resume` for native workflows with declared inputs. Legacy `.sh` submissio
 is a migration adapter and deliberately cannot resume.
 
 Submission blocks until Nextflow exits. Progress is visible in
-`logs/nextflow/<name>/attempt-*/console.log` and `trace.tsv`.
+`logs/nextflow/<name>/attempt-*/console.log` and `trace.tsv`. Another process can
+block until an iteration's submissions and reviews have finished with
+`arh wait -n N`; it reads the launch and review locks and calls neither a model
+nor the scheduler.
+
+Nextflow writes an HTML report and timeline for every submission, about 1.9 MB,
+which is nearly all of a run's evidence bytes. Set `nextflow_reports = gzip` in
+`site.md` to compress them after the run, or `none` to skip them; `trace.tsv` and
+the run receipt are always kept.
+
+### Scientific environments
+
+`arh env create NAME pkg=version ...` solves a package set once inside the task
+image, with the task image's own micromamba and the project mounted as tasks see
+it. It writes `.arh/envs/NAME` and a replayable lock `.arh/NAME-explicit.lock`, and
+prints the prefix a process calls (`<prefix>/bin/python`). `arh env create NAME`
+without packages rebuilds the environment from its lock and checks that the package
+list is identical. A built environment does not change: a different package set is
+a new name. Run receipts hash every `.arh/*-explicit.lock`.
 
 ### Run receipts and caching
 
@@ -118,7 +153,8 @@ The pinned Nextflow (26.04) runs workflows in strict syntax. Among other
 things, a Groovy `import` statement is a compile error — write the
 fully-qualified class inline instead (`new groovy.json.JsonSlurper()`). The
 failure appears only after `arh submit` has created its attempt directory, so
-check new workflows with `nextflow lint` from the host environment first.
+check new workflows first with `arh submit WORKFLOW.nf --lint`, which runs
+`nextflow lint` with the pinned controller and submits nothing.
 
 ## Isolation boundary
 

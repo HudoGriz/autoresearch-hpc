@@ -10,6 +10,54 @@ Singularity workflow with a separately configured reviewer. The source research
 material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
+### Added
+- **`arh wait [-n N]`** blocks until an iteration's submissions and reviews have
+  finished. Headless sessions get no completion notice and end when their reply
+  ends: in a replication benchmark, Claude Code producers that backgrounded work and
+  ended their reply to wait lost two rounds in each of two studies.
+- **`arh env create NAME pkg=version ...`** solves a scientific environment once
+  inside the task image, writes a replayable lock (`.arh/NAME-explicit.lock`, hashed
+  by every run receipt) and prints the prefix. Without packages it rebuilds from the
+  lock and verifies the package list. A built environment does not change; a new
+  package set is a new name. Producers had built environments in several different
+  ways, unpinned until someone locked them, one of them in the background.
+- **Content-policy refusals are their own outcome.** `arh ask` exits 77 when the
+  provider refuses the content itself (Codex flagged a public RNA-seq count table as
+  a biological risk). Like a limit, it spends no review round. Each harness in the
+  new `verifier_fallback` setting is then tried in turn; `arh doctor` checks their
+  families.
+- `arh ask` prints the provider's own refusal line. The review record keeps it, its
+  kind (`limit`, `auth` or `refusal`) and any stated reset time (`retry_hint`).
+- **Review token usage.** A command template may pass `{usage}`, a file the reviewer
+  writes token counts or cost to; the record stores it as `usage`.
+  `harness/claude/review.sh` and `harness/codex/review.sh` do this for the two CLIs.
+- **Shared environments.** `arh init --env-cache DIR` (or `ARH_ENV_CACHE` for the
+  setup scripts) builds the pinned host and task environments once per pin set and
+  reuses them across projects; each project used to build its own, about 1.5 GB.
+- `nextflow_reports = html | gzip | none` in `site.md`. The HTML report and timeline
+  were 99% of a submission's evidence bytes (1.9 MB per run).
+- `arh submit WORKFLOW.nf --lint` runs `nextflow lint` with the pinned controller,
+  before any attempt directory exists.
+- `AGENTS.md` shows a minimal workflow for `arh submit` (what a task sees, where the
+  evidence goes, how packages are declared), says how to run unattended, and says
+  that a failed acceptance criterion is a result to report, not a reason to stop.
+  Producers had read ARH internals to work out how to submit, and one stopped a study
+  as blocked on a failed criterion. `arh next` says the same and points to `arh wait`
+  while work is running. The iterate and cross-check skills match.
+- `docs/headless.md`: lessons from driving producers and reviewers unattended on Slurm.
+
+### Changed
+- `arh migrate` also refreshes a study's copies of `AGENTS.md` and `skills/` from the
+  framework, after a backup; skills the study added are kept. Agents read those
+  copies, so a framework update never reached them. `arh doctor` warns when they differ.
+- The review lock records its owner: `arh wait` tells a running review from a dead
+  one, and a lock left by a dead process on the same host is reclaimed instead of
+  refusing every later review.
+- A reviewer's stderr beyond 16 KB keeps its last 8 KB, where CLIs print refusals.
+- CI runs on pushes to every branch, not only `main`.
+- `docs/skills-and-token-budget.md` states that the bounds cover reviews only;
+  producer sessions are not bounded by `arh`.
+
 ### Fixed
 - **Reviews no longer die on stderr volume.** `codex exec` echoes the whole
   prompt to stderr, and the 16 KB stderr cap SIGKILLed every review whose prompt

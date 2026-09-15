@@ -4,9 +4,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -18,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # would fail for reasons unrelated to the protocol (and, on a Slurm host, submit real jobs).
 needs_site = unittest.skipUnless(os.environ.get('ARH_TEST_SITE'),
                                  'set ARH_TEST_SITE to a configured local site.md (see README)')
+needs_network = unittest.skipUnless(os.environ.get('ARH_TEST_NETWORK'), 'set ARH_TEST_NETWORK=1 to solve real packages')
+REFUSE = ("import sys; sys.stderr.write('This content was flagged for possible biological risk. "
+          "If this seems wrong, try rephrasing your request.\\n'); raise SystemExit(1)")
 
 
 class Protocol(unittest.TestCase):
@@ -45,16 +50,16 @@ class Protocol(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def call(self, *args, good=True):
+    def call(self, *args, good=True, timeout=90):
         result = subprocess.run([str(ROOT / 'bin/arh'), *args], env=self.env, cwd=self.root,
-                                capture_output=True, text=True, timeout=90)
+                                capture_output=True, text=True, timeout=timeout)
         if good is True:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         elif good is False:
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
-    def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5, version=None):
+    def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5, version=None, cmd_extra=''):
         self.mock.write_text(body + '\n')
         extra = f'harness_reviewer_version_cmd = {version}\n' if version else ''
         self.config.write_text(f'''```arh-config
@@ -62,7 +67,7 @@ producer = source
 verifier = reviewer
 harness_source_family = openai
 harness_reviewer_family = {family}
-harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
+harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
 {extra}ask_timeout = {timeout}
 ```
 ''')
@@ -398,6 +403,185 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
         record, stderr = claim('explicit agent', CLAUDECODE='1', ARH_AGENT='source')
         self.assertEqual((record['agent'], record['agent_source']), ('source', 'ARH_AGENT'))
         self.assertNotIn('configured producer', stderr)
+
+    def test_content_refusal_is_its_own_outcome(self):
+        # Codex refused a public RNA-seq count table as "flagged for possible biological risk"
+        # (2026-09-15). Waiting does not change that, so it must not look like a quota error.
+        self.configure(REFUSE)
+        result = self.ask(good=False)
+        self.assertEqual(result.returncode, 77, result.stderr)
+        self.assertIn('content-policy', result.stderr)
+        self.assertIn('provider said: This content was flagged', result.stderr)
+        record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
+        self.assertEqual((record['provider_error'], record['provider_error_kind']), (True, 'refusal'))
+        self.assertIn('PROVIDER REFUSAL', self.gate(good=False).stdout)
+        self.configure()
+        self.ask()                                   # no round was spent: no --note required
+        self.gate()
+
+    def test_fallback_verifier_after_content_refusal(self):
+        self.configure(REFUSE)
+        backup = self.root / 'backup.py'
+        backup.write_text("print('VERDICT: QUALIFIED')\n")
+        with self.config.open('a') as cfg:
+            cfg.write(f'```arh-config\nverifier_fallback = kin backup\n'
+                      f'harness_kin_family = openai\nharness_kin_cmd = python3 "{backup}" {{prompt}}\n'
+                      f'harness_backup_family = google\nharness_backup_cmd = python3 "{backup}" {{prompt}}\n```\n')
+        result = self.ask()
+        self.assertIn("fallback verifier 'kin' skipped", result.stderr)   # the producer's own family
+        self.assertIn('VERDICT: QUALIFIED', result.stdout)
+        kinds = sorted(json.loads(p.read_text())['provider_error_kind'] or 'review'
+                       for p in self.it.glob('CROSSCHECK_*.md.json'))
+        self.assertEqual(kinds, ['refusal', 'review'])
+        self.gate()
+
+    def test_limit_names_its_reset_and_skips_fallback(self):
+        self.configure("print(\"ERROR: You've hit your usage limit. Try again at 4:13 PM.\")")
+        with self.config.open('a') as cfg:
+            cfg.write(f'```arh-config\nverifier_fallback = backup\nharness_backup_family = google\n'
+                      f'harness_backup_cmd = python3 "{self.mock}" {{prompt}}\n```\n')
+        result = self.ask(good=False)
+        self.assertEqual(result.returncode, 75, result.stderr)
+        self.assertIn('Try again at 4:13 PM', result.stderr)
+        records = [json.loads(p.read_text()) for p in self.it.glob('CROSSCHECK_*.md.json')]
+        self.assertEqual([(r['provider_error_kind'], r['retry_hint']) for r in records],
+                         [('limit', 'Try again at 4:13 PM')])
+
+    def test_review_records_usage(self):
+        # "Bounded model calls" bounded bytes, but nothing counted tokens (2026-09-14).
+        self.configure("import json,sys; open(sys.argv[2],'w').write(json.dumps({'input_tokens': 7})); "
+                       "print('VERDICT: SOUND')", cmd_extra=' {usage}')
+        self.ask()
+        record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
+        self.assertEqual(record['usage'], {'input_tokens': 7})
+        self.assertFalse(list(self.it.glob('*.usage.json')))
+        self.gate()
+
+    def test_review_lock_owner_and_reclaim(self):
+        lock = self.it / '.review-lock'
+        lock.mkdir()
+        (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': os.getpid()}))
+        self.assertIn('another review is running', self.ask(good=False).stderr)
+        dead = subprocess.Popen(['true']); dead.wait()
+        (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': dead.pid}))
+        self.assertIn('reclaimed a review lock', self.ask().stderr)
+        self.assertFalse(lock.exists())
+
+    def test_wait_blocks_on_live_work_only(self):
+        # Headless sessions that ended their reply to wait for background work lost it (2026-09-14).
+        self.assertIn('idle', self.call('wait', '-n', '1', '--timeout', '5').stdout)
+        lock = self.it / 'metadata/nextflow/busy/.launch-lock'
+        lock.mkdir(parents=True)
+        holder = subprocess.Popen(['sleep', '60'])
+        try:
+            (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': holder.pid}))
+            result = self.call('wait', '-n', '1', '--timeout', '1', '--interval', '0.2', good=False)
+            self.assertEqual(result.returncode, 124)
+            self.assertIn('iteration1: submission busy', result.stdout)
+        finally:
+            holder.kill(); holder.wait()
+        result = self.call('wait', '-n', '1', '--timeout', '5', '--interval', '0.2')
+        self.assertIn('ignored: iteration1: submission busy', result.stdout)
+        self.assertIn('idle', result.stdout)
+
+    def test_migrate_refreshes_agent_contract_and_skills(self):
+        # Agents read the study's copies, so framework fixes to AGENTS.md never reached them (2026-09-15).
+        agents, skill = self.root / 'AGENTS.md', self.root / 'skills/iterate/SKILL.md'
+        agents.write_text('# stale contract\n'); skill.unlink()
+        own = self.root / 'skills/local/SKILL.md'; own.parent.mkdir(); own.write_text('project skill\n')
+        self.assertIn("differ from the framework's", self.call('doctor', good=None).stderr)
+        migrate = lambda *a: self.call('migrate', str(self.root), *a)  # noqa: E731
+        self.assertIn('agent contract refreshed', migrate().stdout)
+        self.assertEqual(agents.read_text(), '# stale contract\n')     # a dry run writes nothing
+        migrate('--apply')
+        self.assertEqual(agents.read_text(), (ROOT / 'AGENTS.md').read_text())
+        self.assertEqual(skill.read_text(), (ROOT / 'skills/iterate/SKILL.md').read_text())
+        self.assertEqual(own.read_text(), 'project skill\n')
+        self.assertTrue((self.root / 'CLAUDE.md').is_symlink())
+        self.assertIn('nothing to do', migrate().stdout)
+
+    def test_env_cache_builds_once_for_many_projects(self):
+        # Every study built its own ~1.5 GB of environments (2026-09-14).
+        fake = Path(self.temp.name) / 'fake'; fake.mkdir()
+        log, mm = fake / 'creates.log', fake / 'micromamba'
+        mm.write_text(f"""#!{sys.executable}
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[:1] == ['--version']:
+    print('2.8.1'); sys.exit()
+prefix = Path(args[args.index('-p') + 1])
+if args[0] == 'create':
+    with open({str(log)!r}, 'a') as fh:
+        fh.write(str(prefix) + '\\n')
+    (prefix / 'bin').mkdir(parents=True)
+    (prefix / 'bin/python3').symlink_to({sys.executable!r})
+    (prefix / 'bin/nextflow').write_text('#!/bin/sh\\n')
+    (prefix / 'bin/nextflow').chmod(0o755)
+elif args[0] == 'list':
+    print('https://conda.example/pkg-1.0-0.conda#' + 'a' * 32)
+""")
+        singularity = fake / 'singularity'        # `exec [options] IMAGE micromamba ARGS` runs the fake
+        singularity.write_text(f'#!/bin/sh\nwhile [ "$1" != micromamba ]; do shift; done\nshift\nexec "{mm}" "$@"\n')
+        for tool in (mm, singularity):
+            tool.chmod(0o755)
+        image, cache = fake / 'runtime.sif', Path(self.temp.name) / 'cache'
+        image.write_bytes(b'image')
+        env = dict(self.env, PATH=str(fake) + os.pathsep + self.env['PATH'])
+        prefixes = []
+        for name in ('a', 'b'):
+            project = Path(self.temp.name) / name
+            result = subprocess.run([str(ROOT / 'bin/arh'), 'init', str(project), '--bootstrap', '--micromamba', str(mm),
+                                     '--runtime', str(image), '--env-cache', str(cache)],
+                                    env=env, capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            site = (project / '.arh/config/site.md').read_text()
+            prefixes.append([re.search(rf'(?m)^{key}\s*=\s*(\S+)', site).group(1) for key in ('nextflow_prefix', 'runtime_prefix')])
+            self.assertTrue((project / '.arh/nextflow-host-explicit.lock').is_file())
+        self.assertEqual(prefixes[0], prefixes[1])
+        for prefix in prefixes[0]:
+            self.assertTrue(prefix.startswith(str(cache)), prefix)
+            self.assertTrue(Path(prefix, '.arh-complete').is_file())
+        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once
+
+    @needs_site
+    def test_nextflow_reports_setting(self):
+        site = self.root / '.arh/config/site.md'
+        script = self.it / 'scripts/it1_01_ok.sh'; script.write_text('exit 0\n')
+        for mode in ('gzip', 'none'):
+            text = re.sub(r'(?m)^nextflow_reports\s*=.*\n', '', site.read_text())
+            site.write_text(text + f'\n```arh-config\nnextflow_reports = {mode}\n```\n')
+            self.call('submit', str(script), '-n', 'reports_' + mode, timeout=300)
+            attempt = next((self.it / 'logs/nextflow' / ('reports_' + mode)).glob('attempt-*'))
+            self.assertEqual(json.loads((attempt / 'run.json').read_text())['reports'], mode)
+            self.assertFalse(list(attempt.glob('*.html')))
+            self.assertEqual(sorted(p.name for p in attempt.glob('*.html.gz')),
+                             ['report.html.gz', 'timeline.html.gz'] if mode == 'gzip' else [])
+
+    @needs_site
+    def test_lint_checks_without_running(self):
+        good = self.it / 'scripts/it1_01_good.nf'
+        good.write_text('workflow {\n    channel.of(1).view()\n}\n')
+        self.call('submit', str(good), '--lint', timeout=300)
+        bad = self.it / 'scripts/it1_02_bad.nf'
+        bad.write_text('import groovy.json.JsonSlurper\n\nworkflow {\n    println(new JsonSlurper())\n}\n')
+        self.call('submit', str(bad), '--lint', good=False, timeout=300)
+        self.assertFalse((self.it / 'logs/nextflow').exists())
+
+    @needs_site
+    @needs_network
+    def test_env_create_locks_and_is_immutable(self):
+        prefix = self.call('env', 'create', 'tiny', 'zlib', timeout=1200).stdout.strip()
+        self.assertTrue(Path(prefix, '.arh-complete').is_file())
+        lock = self.root / '.arh/tiny-explicit.lock'
+        self.assertEqual(lock.read_text().splitlines()[0], '@EXPLICIT')
+        self.assertIn('zlib', lock.read_text())
+        self.assertEqual(self.call('env', 'path', 'tiny').stdout.strip(), prefix)
+        self.assertIn('is ready', self.call('env', 'create', 'tiny', 'zlib').stderr)
+        self.assertIn('different package set', self.call('env', 'create', 'tiny', 'zlib', 'xz', good=False).stderr)
+        shutil.rmtree(prefix)
+        self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt from its lock, package list verified
+        self.assertTrue(Path(prefix, '.arh-complete').is_file())
 
 
 if __name__ == '__main__':

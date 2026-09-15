@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Move a 0.1 study (state in .dl/) to the current layout. Dry run by default.
+# Bring a study up to this framework: a 0.1 layout (state in .dl/) moves to .arh/, and the study's
+# copies of the agent contract (AGENTS.md) and skills/ are refreshed. Dry run by default.
 #
 #   arh migrate [DIR]           list every change; nothing is written
 #   arh migrate [DIR] --apply   write a backup, apply the changes, then run the checks
 #
 # This is the only command that knows the 0.1 names. Iteration and verification files are never
-# touched, and re-running it on a migrated study changes nothing.
+# touched, and re-running it on an up-to-date study changes nothing.
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
@@ -14,7 +15,7 @@ apply=0; target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) apply=1; shift ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) arh_die "unexpected option: $1" ;;
     *) [ -z "$target" ] || arh_die "give one study directory"; target="$1"; shift ;;
   esac
@@ -88,10 +89,19 @@ if ledger.exists():
     n = re.sub(r'<!--[ \t]*dl:status:end[ \t]*-->', '<!-- arh:status:end -->', n)
     plan(ledger, n, 'status markers (the rest of the record is left as written)')
 agents = root / 'AGENTS.md'
-if agents.is_file() and agents.read_text().startswith('# Automated discovery loop — agent contract'):
-    plan(agents, (home / 'AGENTS.md').read_text(), '0.1 agent contract replaced (the old one is in the backup)')
-if not (root / 'skills').exists():
-    changes.append('skills/: copied from the framework, as arh init does for new projects')
+if agents.is_file():
+    legacy = agents.read_text().startswith('# Automated discovery loop — agent contract')
+    plan(agents, (home / 'AGENTS.md').read_text(), '0.1 agent contract replaced (the old one is in the backup)'
+         if legacy else "agent contract refreshed from the framework's (the old one is in the backup)")
+# Agents read the study's own copies, so a framework update reaches them only through these files.
+# Skills the study added itself are left alone.
+stale_skills = [(src, root / 'skills' / src.relative_to(home / 'skills'))
+                for src in sorted((home / 'skills').rglob('*')) if src.is_file()]
+stale_skills = [(src, dst) for src, dst in stale_skills if not dst.is_file() or dst.read_bytes() != src.read_bytes()]
+if stale_skills:
+    names = [str(dst.relative_to(root / 'skills')) for _, dst in stale_skills]
+    changes.append(f'skills/: {len(names)} file(s) copied from the framework: '
+                   + ', '.join(names[:6]) + (' …' if len(names) > 6 else ''))
 version = state_dir / 'VERSION'
 text = version.read_text() if version.exists() else ''
 found = re.search(r'(?m)^protocol[ \t]*=[ \t]*(\S+)', text)
@@ -114,7 +124,7 @@ if not apply:
 stamp = now.replace('-', '').replace(':', '')
 tmp = root / f'.migration-backup-{stamp}.tgz'
 with tarfile.open(tmp, 'w:gz') as tar:
-    for p in (cfg, state_dir / 'VERSION', state_dir / 'registry.tsv', root / 'rules', ledger, agents):
+    for p in (cfg, state_dir / 'VERSION', state_dir / 'registry.tsv', root / 'rules', ledger, agents, root / 'skills'):
         if p.exists():
             tar.add(p, arcname=str(p.relative_to(root)))
 if state == 'legacy':
@@ -124,10 +134,12 @@ backup = root / '.arh' / tmp.name.lstrip('.')
 os.replace(tmp, backup)
 for path, content in rewrites.items():
     path.write_text(content)  # paths under .dl/ now resolve through the symlink
-if not (root / 'skills').exists():
-    shutil.copytree(home / 'skills', root / 'skills')
+for src, dst in stale_skills:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
 print(f'\nbackup: {backup.relative_to(root)}')
-print('next: arh ledger render && arh ledger check; replace dl and DL_* in your own scripts by hand')
+print('next: arh ledger render && arh ledger check'
+      + ('; replace dl and DL_* in your own scripts by hand' if state == 'legacy' else ''))
 PY
 [ "$apply" = 1 ] || exit 0
 printf '\nchecks:\n'

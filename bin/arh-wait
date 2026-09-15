@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Block until an iteration's submissions and reviews have finished.
+#
+# For sessions that must not end while work runs: headless agents get no completion notice, so
+# ending a reply to "wait" ends the session. This watches the launch locks of `arh submit` and the
+# review lock of `arh ask`; it calls neither a model nor the scheduler.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+n=""; timeout=21600; interval=30
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="$2"; shift 2 ;;
+    --timeout)      timeout="$2"; shift 2 ;;
+    --interval)     interval="$2"; shift 2 ;;
+    -h|--help) echo 'usage: arh wait [-n N] [--timeout SECONDS] [--interval SECONDS]
+Blocks while a submission or review of iteration N (default: every iteration) is running.
+Exit 0 when none is; 124 after --timeout (default 21600, 0 = no limit). Polls every --interval (30).'; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+case "$n" in *[!0-9]*) arh_die "iteration must be numeric" ;; esac
+case "$timeout:$interval" in *[!0-9.:]*|:*|*:) arh_die "--timeout and --interval take a number of seconds" ;; esac
+arh_load_project
+[ -z "$n" ] || [ -d "$ARH_ITERS/iteration$n" ] || arh_die "no iteration $n"
+exec python3 "$ARH_HOME/lib/locks.py" wait "$ARH_ITERS" "$n" "$timeout" "$interval"

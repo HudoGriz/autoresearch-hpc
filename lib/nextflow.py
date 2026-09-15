@@ -1,18 +1,19 @@
 """Delegate execution to Nextflow; keep only protocol checks and run receipts."""
 import argparse
 from datetime import datetime, timezone
+import gzip
 import hashlib
 import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import shutil
 import shlex
 import sys
 import tempfile
 
+from locks import Held, acquire, release
 from project import config, guard
 
 
@@ -20,47 +21,20 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def alive(pid):
-    try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return False
-    except (PermissionError, ValueError, TypeError, OverflowError):
-        return True
-    return True
-
-
-def acquire(lock, parser):
-    """Take the named launch lock. A lock whose recorded owner is a dead process on this host is
-    reclaimed; a lock with no owner record, or a live or remote owner, is left alone."""
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        try:
-            owner = json.loads((lock / 'owner.json').read_text())
-        except (OSError, ValueError):
-            owner = None
-        if not owner or owner.get('host') != socket.gethostname() or alive(owner.get('pid')):
-            where = f" (owner pid {owner.get('pid')} on {owner.get('host')}; stop it with kill -TERM)" if owner else ''
-            parser.error('this named workflow is already running; inspect .launch-lock before recovery' + where)
-        stale = lock.with_name(f'{lock.name}.stale-{os.getpid()}')
-        try:
-            lock.rename(stale)      # atomic: of two reclaimers only one succeeds
-        except OSError:
-            parser.error('this named workflow is already running; inspect .launch-lock before recovery')
-        shutil.rmtree(stale, ignore_errors=True)
-        print(f"arh: reclaimed a launch lock left by dead process {owner['pid']} on {owner['host']}", file=sys.stderr)
-        try:
-            lock.mkdir()
-        except FileExistsError:
-            parser.error('this named workflow is already running; inspect .launch-lock before recovery')
-    (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': os.getpid(),
-                                                 'started': datetime.now(timezone.utc).isoformat()}) + '\n')
-
-
-def release(lock):
-    (lock / 'owner.json').unlink(missing_ok=True)
-    lock.rmdir()
+def lint(workflow, root, site, parser):
+    """`nextflow lint` with the pinned controller, so strict-syntax errors surface before a run exists."""
+    prefix = site.get('nextflow_prefix')
+    binary = Path(prefix or '') / 'bin/nextflow'
+    if not prefix or not binary.is_file():
+        parser.error('configure nextflow_prefix to lint with the pinned Nextflow (see arh doctor)')
+    if workflow.suffix != '.nf':
+        parser.error('only a .nf workflow can be linted')
+    env = dict(os.environ, NXF_HOME=str(root / '.arh/nextflow'), NXF_ANSI_LOG='false',
+               NXF_DISABLE_CHECK_LATEST='true', NXF_OFFLINE='true')
+    env.pop('NXF_VER', None)
+    with tempfile.TemporaryDirectory(prefix='arh-lint-') as scratch:   # lint writes .nextflow.log to its cwd
+        return subprocess.run([str(binary), '-log', scratch + '/nextflow.log', 'lint', str(workflow)],
+                              cwd=scratch, env=env).returncode
 
 
 def run():
@@ -71,6 +45,7 @@ def run():
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--params', type=Path, help='Nextflow JSON/YAML params file')
     parser.add_argument('-l', '--logdir', type=Path)
+    parser.add_argument('--lint', action='store_true', help='check the workflow with the pinned Nextflow; nothing runs')
     args = parser.parse_args()
     root, home = Path(os.environ['ARH_ROOT']), Path(os.environ['ARH_HOME'])
     site = config(root / '.arh/config/site.md')
@@ -82,6 +57,8 @@ def run():
     iteration = next((p for p in workflow.parents if (p / 'CLAIM.json').is_file()), None)
     if iteration is None or root not in iteration.parents:
         parser.error('workflow must belong to a claimed iteration')
+    if args.lint:
+        return lint(workflow, root, site, parser)
     freeze = iteration / 'PREDECLARATION.sha256'
     if not freeze.is_file() or freeze.read_text().splitlines()[0] != sha(iteration / 'README.md'):
         parser.error('iteration must have an unchanged frozen pre-declaration')
@@ -115,7 +92,11 @@ def run():
     engine.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
     lock = engine / '.launch-lock'
-    acquire(lock, parser)
+    try:
+        acquire(lock, what='launch lock')
+    except Held as held:
+        parser.error('this named workflow is already running; inspect .launch-lock before recovery'
+                     + (f'{held}; stop it with kill -TERM' if str(held) else ''))
     try:
         attempt = Path(tempfile.mkdtemp(prefix='attempt-', dir=logs))
         env = dict(os.environ, NXF_HOME=str(root / '.arh/nextflow'), NXF_VER=version,
@@ -126,6 +107,11 @@ def run():
         executor = site.get('scheduler', 'local')
         if executor not in ('local', 'slurm', 'pbs'):
             parser.error('scheduler must be local, slurm or pbs')
+        # report.html and timeline.html are ~99% of a submission's evidence bytes (1.9 MB per run);
+        # the ARH receipt and trace.tsv are always kept.
+        reports = site.get('nextflow_reports') or 'html'
+        if reports not in ('html', 'gzip', 'none'):
+            parser.error('nextflow_reports must be html, gzip or none')
         runtime = 'singularity'
         def literal(value):
             return json.dumps(str(value)).replace('$', '\\$')
@@ -170,8 +156,9 @@ def run():
         cmd = [str(Path(binary).resolve()), '-log', str(attempt / 'nextflow.log'), '-C', ','.join(configs),
                'run', str(workflow if workflow.suffix == '.nf' else home / 'workflows/script.nf'),
                '-work-dir', str(engine / 'work'), '-with-trace', str(attempt / 'trace.tsv'),
-               '-with-report', str(attempt / 'report.html'), '-with-timeline', str(attempt / 'timeline.html'),
                '-ansi-log', 'false']
+        if reports != 'none':
+            cmd += ['-with-report', str(attempt / 'report.html'), '-with-timeline', str(attempt / 'timeline.html')]
         if args.resume:
             cmd.append('-resume')
         if args.params:
@@ -197,7 +184,7 @@ def run():
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
                       environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
-                      resume=args.resume, command=cmd, started=datetime.now(timezone.utc).isoformat())
+                      resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat())
         receipt = attempt / 'run.json'
         receipt.write_text(json.dumps(record, indent=2) + '\n')
         received = []
@@ -216,6 +203,13 @@ def run():
             finally:
                 for s, handler in handlers.items():
                     signal.signal(s, handler)
+        if reports == 'gzip':
+            for page in ('report.html', 'timeline.html'):
+                html = attempt / page
+                if html.is_file():
+                    with html.open('rb') as source, gzip.open(str(html) + '.gz', 'wb') as target:
+                        shutil.copyfileobj(source, target)
+                    html.unlink()
         record.update(exit_code=returncode, finished=datetime.now(timezone.utc).isoformat())
         if received:
             record['signal'] = received[0].name

@@ -17,6 +17,11 @@ Install into a project with:
 | OpenCode | `AGENTS.md`, `opencode.json` | agent definitions per cross-check role |
 | Cursor / Copilot | `AGENTS.md` | nothing extra needed |
 
+For reviews, `claude/review.sh` and `codex/review.sh` wrap the CLIs so `arh ask`
+records token usage (`{usage}` in the command template; see `config/harnesses.md`).
+Running producer sessions unattended is covered in
+[`docs/headless.md`](../docs/headless.md).
+
 Adding a harness means keys in `.arh/config/harnesses.md`
 (`harness_<n>_cmd`, `harness_<n>_family`, and the name in `harnesses`) plus any
 native config here. Use `arh doctor` to check the configured producer/verifier

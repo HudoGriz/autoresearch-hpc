@@ -481,6 +481,10 @@ assert i['dag']=='frozen', i['dag']
 assert i['arms']==1, i['arms']
 " && ok "status --json is valid and complete" || no "status --json is valid and complete"
 
+check "arh wait returns at once when nothing runs" 0 arh wait -n 1 --timeout 5
+check "arh env list runs"                  0 arh env list
+check "arh env rejects a reserved name"    1 arh env create nextflow-host zlib
+
 # --- 16. verification track ---------------------------------------------
 printf '\n# verification track\n'
 check "arh verify list runs"                   0 arh verify list

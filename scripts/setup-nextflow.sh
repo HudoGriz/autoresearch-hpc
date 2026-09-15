@@ -48,6 +48,11 @@ sha256_file() {
   fi
 }
 
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+  else shasum -a 256 | awk '{print $1}'; fi
+}
+
 download_file() {
   if command -v curl >/dev/null 2>&1; then
     curl -fL --retry 3 --connect-timeout 15 -o "$2" "$1"
@@ -120,12 +125,26 @@ if [ "$source_kind" != provided ] && [ "$actual_version" != "$mm_version" ]; the
   exit 1
 fi
 
-prefix="$state/envs/nextflow-host/$nextflow_version"
-export MAMBA_ROOT_PREFIX="$state/mamba-host"
-mkdir -p "$MAMBA_ROOT_PREFIX"
-if [ ! -x "$prefix/bin/nextflow" ]; then
+create_env() {
   "$micromamba" create -y -p "$prefix" -c conda-forge -c bioconda \
     "nextflow=$nextflow_version" "python=$python_version"
+}
+if [ -n "${ARH_ENV_CACHE:-}" ]; then
+  # Shared and content-addressed: every project asking for the same pinned environment reuses one
+  # build (~0.7 GB) instead of making its own. Each project still records its own explicit lock.
+  mkdir -p "$ARH_ENV_CACHE"; cache=$(cd "$ARH_ENV_CACHE" && pwd)
+  key=$(printf '%s\n' "$platform" "nextflow=$nextflow_version" "python=$python_version" conda-forge bioconda | sha256_stdin | cut -c1-16)
+  prefix="$cache/nextflow-host/$nextflow_version-$key"
+  export MAMBA_ROOT_PREFIX="$cache/mamba-host"
+  mkdir -p "$MAMBA_ROOT_PREFIX"
+  # shellcheck source=lib/common.sh
+  . "$home/lib/common.sh"
+  arh_build_once "$prefix" create_env || { echo "failed to build $prefix" >&2; exit 1; }
+else
+  prefix="$state/envs/nextflow-host/$nextflow_version"
+  export MAMBA_ROOT_PREFIX="$state/mamba-host"
+  mkdir -p "$MAMBA_ROOT_PREFIX"
+  [ -x "$prefix/bin/nextflow" ] || create_env
 fi
 # A lock `micromamba create --file` accepts: @EXPLICIT plus URL#md5 lines. Plain
 # `list --explicit` output starts with a header and cannot be replayed.

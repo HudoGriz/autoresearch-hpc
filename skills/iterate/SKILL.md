@@ -39,7 +39,13 @@ arh run samtools -- samtools view -c input.bam
 arh submit iterations/iterationN/scripts/experiment.nf -n itN_01
 ```
 
-Check acceptance criteria before interpretation.
+Scientific packages come from `arh env create NAME pkg=version ...`, solved once in
+the task image and locked. `arh submit WORKFLOW.nf --lint` checks a workflow before
+it runs; `AGENTS.md` shows a minimal one.
+
+Check acceptance criteria before interpretation. A failed criterion is this
+iteration's result: report and conclude it, then pre-declare the handling in a new
+iteration. It is not a reason to stop.
 
 ## 4. Report
 
@@ -54,6 +60,11 @@ arh ask --role estimand-auditor -n N
 ```
 
 Evaluate findings on their merits. A verdict is evidence, not a ruling.
+
+`arh ask` blocks until the review is written; stay in the session until it returns.
+Exit 75 (usage or rate limit, authentication) and exit 77 (the provider refused the
+content) spend no review round. After 75, wait for the stated reset and run it again;
+after 77, the configured fallback verifiers have already been tried.
 
 **Where to record it.** A review is bound to the report's sha256 and to every
 file under `results/`. Editing the report, or adding a file under `results/`,

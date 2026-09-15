@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Scientific environments for workflow tasks: solve once inside the task image, lock, reuse.
+#
+#   arh env create NAME SPEC... [-c CHANNEL]...  solve NAME in the task image; lock it as .arh/NAME-explicit.lock
+#   arh env create NAME                          rebuild NAME exactly from its lock (fresh clone, lost prefix)
+#   arh env path NAME                            print the prefix; call <prefix>/bin/python or Rscript from a process
+#   arh env list                                 environments, their package counts and state
+#
+# Channels default to conda-forge and bioconda. An environment does not change once built: a
+# different package set is a new NAME. Every run receipt hashes .arh/*-explicit.lock.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+sub=${1-}; [ $# -eq 0 ] || shift
+case "$sub" in
+  ""|-h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  create|path|list) ;;
+  *) arh_die "unknown env command: $sub (create, path or list)" ;;
+esac
+arh_load_project
+envs="$ARH_STATE/envs"
+
+if [ "$sub" = list ]; then
+  found=0
+  for d in "$envs"/*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d")
+    case "$name" in nextflow|nextflow-host|*.building|*.stale.*) continue ;; esac
+    found=1
+    if [ -f "$d/.arh-complete" ]; then st=ready
+    elif [ -d "$envs/$name.building" ]; then st=building
+    else st='not built by arh env'; fi
+    lockf="$ARH_STATE/$name-explicit.lock"
+    printf '%-20s %-21s %s\n' "$name" "$st" \
+      "$([ -f "$lockf" ] && printf '%s packages' "$(grep -cE '^https?://' "$lockf")" || echo 'no lock')"
+  done
+  [ "$found" = 1 ] || printf '(no environments — arh env create NAME pkg=version ...)\n'
+  exit 0
+fi
+
+name=${1-}; [ $# -eq 0 ] || shift
+case "$name" in
+  ""|.*|nextflow|nextflow-host|*[!A-Za-z0-9_.-]*)
+    arh_die "give an environment name of letters, digits, '.', '_' or '-' (nextflow and nextflow-host are reserved)" ;;
+esac
+prefix="$envs/$name"; lockf="$ARH_STATE/$name-explicit.lock"; specf="$envs/$name.spec"
+
+if [ "$sub" = path ]; then
+  [ -d "$prefix/conda-meta" ] || arh_die "no environment '$name' (arh env list; arh env create $name pkg=version ...)"
+  [ -f "$prefix/.arh-complete" ] || arh_warn "'$name' was not built by arh env, or its build did not finish"
+  printf '%s\n' "$prefix"; exit 0
+fi
+
+specs=(); channels=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -c|--channel) channels+=("$2"); shift 2 ;;
+    -*) arh_die "unexpected option: $1" ;;
+    *) specs+=("$1"); shift ;;
+  esac
+done
+[ ${#channels[@]} -gt 0 ] || channels=(conda-forge bioconda)
+declared=""
+[ ${#specs[@]} -eq 0 ] || declared=$(printf 'channel %s\n' "${channels[@]}"; printf 'package %s\n' "${specs[@]}")
+
+if [ -n "$declared" ] && [ -f "$specf" ] && [ "$(cat "$specf")" != "$declared" ]; then
+  arh_die "environment '$name' was declared with a different package set:
+$(sed 's/^/         /' "$specf")
+       An environment does not change once built; create the new set under a new name."
+fi
+if [ -f "$prefix/.arh-complete" ]; then
+  printf 'environment %s is ready (lock %s)\n' "$name" "${lockf#"$ARH_ROOT"/}" >&2
+  printf '%s\n' "$prefix"; exit 0
+fi
+if [ -d "$prefix/conda-meta" ] && [ ! -d "$prefix.building" ]; then
+  arh_die "$prefix exists but was not built by arh env; remove it or choose another name"
+fi
+if [ -z "$declared" ]; then
+  [ -f "$lockf" ] || arh_die "no packages given and no lock at ${lockf#"$ARH_ROOT"/}: arh env create $name pkg=version ..."
+  mode=lock
+elif [ -f "$lockf" ] && [ -f "$specf" ]; then
+  mode=lock                             # same declaration: rebuild exactly what was locked
+else
+  mode=solve
+fi
+
+image=$(arh_config_get "$ARH_SITE" runtime_image "")
+{ [ -n "$image" ] && [ -f "$image" ]; } \
+  || arh_die "no task runtime image (runtime_image in .arh/config/site.md); arh doctor shows how to add one"
+[ "$(arh_sha256 "$image")" = "$(arh_config_get "$ARH_SITE" runtime_sha256 "")" ] \
+  || arh_die "the runtime image does not match runtime_sha256 in .arh/config/site.md"
+if command -v singularity >/dev/null 2>&1; then runtime=singularity
+elif command -v apptainer >/dev/null 2>&1; then runtime=apptainer
+else arh_die "singularity or apptainer is required to build in the task image"; fi
+arh_guard_path "$prefix" "$lockf" "$specf"
+mkdir -p "$envs" "$ARH_STATE/mamba" "$ARH_STATE/home" "$ARH_STATE/tmp"
+export APPTAINER_CACHEDIR="$ARH_STATE/container-cache" APPTAINER_TMPDIR="$ARH_STATE/tmp"
+
+# The task image's own micromamba, with the project mounted as tasks see it: what solves here runs there.
+in_image() {
+  "$runtime" exec --cleanenv --containall --home "$ARH_STATE/home" --bind "$ARH_ROOT:$ARH_ROOT:rw" \
+    --env "MAMBA_ROOT_PREFIX=$ARH_STATE/mamba,CONDA_PKGS_DIRS=$ARH_STATE/mamba/pkgs,XDG_CACHE_HOME=$ARH_STATE/mamba/cache" \
+    "$image" micromamba "$@"
+}
+urls() { in_image list -p "$prefix" --explicit --md5 | grep -E '^https?://'; }
+
+# Runs as the command of arh_build_once, where `set -e` does not apply: every step checks itself.
+# Solver output goes to stderr: stdout carries only the prefix, for prefix=$(arh env create ...).
+build() {
+  if [ "$mode" = solve ]; then
+    local args=() c
+    for c in "${channels[@]}"; do args+=(-c "$c"); done
+    in_image create -y -p "$prefix" --override-channels "${args[@]}" "${specs[@]}" >&2 || return 1
+    # A lock `micromamba create --file` accepts: @EXPLICIT plus URL#md5 lines.
+    { echo '@EXPLICIT'; urls; } > "$lockf.tmp" || return 1
+    mv "$lockf.tmp" "$lockf" && printf '%s\n' "$declared" > "$specf"
+  else
+    in_image create -y -p "$prefix" --file "$lockf" >&2 || return 1
+    if ! diff <(urls | LC_ALL=C sort) <(grep -E '^https?://' "$lockf" | LC_ALL=C sort) >/dev/null; then
+      arh_warn "$prefix does not list exactly the packages in ${lockf#"$ARH_ROOT"/}"
+      return 1
+    fi
+  fi
+}
+
+printf 'arh env: %s %s in %s; this blocks until it is done\n' \
+  "$([ "$mode" = solve ] && echo solving || echo 'rebuilding from its lock')" "$name" "$(basename "$image")" >&2
+arh_build_once "$prefix" build || arh_die "could not build environment '$name' (output above)"
+printf 'environment %s ready: %s packages, lock %s\n' "$name" "$(grep -cE '^https?://' "$lockf")" "${lockf#"$ARH_ROOT"/}" >&2
+printf '%s\n' "$prefix"
