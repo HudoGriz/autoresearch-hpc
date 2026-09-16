@@ -36,6 +36,11 @@ harness_codex_cmd       = codex exec --skip-git-repo-check {prompt}
 harness_codex_family    = openai
 harness_codex_version_cmd = codex --version
 
+# OpenCode routes to several providers, so it has no model family until one is pinned.
+# Left as `mixed` it cannot produce or verify an eligible review; pin the model and
+# name its family, for example:
+#   harness_opencode_cmd    = opencode run -m opencode-go/kimi-k3 {prompt}
+#   harness_opencode_family = moonshot
 harness_opencode_cmd    = opencode run {prompt}
 harness_opencode_family = mixed
 harness_opencode_version_cmd = opencode --version
@@ -75,7 +80,10 @@ prompt stays the first argument, `{usage}` the second, CLI options follow:
 
 Command templates are parsed as quoted arguments without shell evaluation; use
 a wrapper script for pipelines or environment setup. Reviews from `mixed` or
-`unknown` families cannot satisfy the required foreign-family gate. An unchanged
+`unknown` families cannot satisfy the required foreign-family gate, and that
+applies to the **producer's** family as much as the verifier's — so a router CLI
+used as the producer must pin its model too. `arh doctor` and `arh ask` both
+refuse such a configuration rather than letting it fail at the results gate. An unchanged
 eligible review is reused without a model call. Deterministic execution, status
 and context assembly do not call a model.
 

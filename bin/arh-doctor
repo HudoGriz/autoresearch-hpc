@@ -97,6 +97,18 @@ pf=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" a)
 vf=$(arh_config_get "$ARH_HARN" "harness_${verifier}_family" b)
 if [ "$pf" = "$vf" ]; then arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1))
 else arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"; fi
+# A review is ineligible unless BOTH families are concrete, and that is only discovered at
+# the results gate, after the work is done. Say so here instead.
+for pair in "producer:$producer:$pf" "verifier:$verifier:$vf"; do
+  role=${pair%%:*}; rest=${pair#*:}; h=${rest%%:*}; ff=${rest#*:}
+  case "$ff" in
+    unknown|mixed|""|a|b)
+      arh_fail "$role $h has no concrete model family ($ff): every review it takes part in is INELIGIBLE at the results gate.
+       A router harness (one CLI in front of several providers) must pin its model in
+       harness_${h}_cmd and declare that model's family in harness_${h}_family."
+      warn=$((warn+1)) ;;
+  esac
+done
 for h in $(arh_config_get "$ARH_HARN" verifier_fallback ""); do
   ff=$(arh_config_get "$ARH_HARN" "harness_${h}_family" unknown)
   case "$ff" in

@@ -14,7 +14,7 @@ Install into a project with:
 |---|---|---|
 | Claude Code | `CLAUDE.md`, `.claude/skills/` | symlink to `AGENTS.md`; skills copied in |
 | Codex CLI | `AGENTS.md`, `.codex/config.toml` | profile with the protocol approval posture |
-| OpenCode | `AGENTS.md`, `opencode.json` | agent definitions per cross-check role |
+| OpenCode | `AGENTS.md`, `opencode.json` | agent definitions per cross-check role; pin a model, or its family stays `mixed` |
 | Cursor / Copilot | `AGENTS.md` | nothing extra needed |
 
 For reviews, `claude/review.sh` and `codex/review.sh` wrap the CLIs so `arh ask`
