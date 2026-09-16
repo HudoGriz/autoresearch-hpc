@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# Site discovery — probe this machine and propose a site.md configuration.
+#
+# Nothing here writes configuration. Choosing a queue is a policy decision (cost,
+# fair-share, who else is waiting), so this command proposes and the operator edits.
+#
+# Adding a scheduler is three small edits and no new branching in this file:
+#   1. a row in site_table()  — name, detect predicate, config prefix, queue key
+#   2. a probe_<name>()       — prints normalised queue records
+#   3. executor support in lib/nextflow.py and a case in bin/arh-doctor
+#
+# A probe prints one record per queue, pipe-separated and scheduler-independent:
+#   name|walltime|max_cpus|max_mem_mb|gres|default   ("-" where the site says nothing)
+set -euo pipefail
+. "${ARH_HOME:?}/lib/common.sh"
+
+sub="${1:-detect}"; shift || true
+case "$sub" in
+  -h|--help)
+    printf 'usage: arh site detect [--scheduler NAME]\n\n'
+    printf 'Probe the scheduler and container runtime and propose a site.md block.\n'
+    printf 'Nothing is written. --scheduler overrides detection on a host that has\n'
+    printf 'more than one client installed, or names one to report on directly.\n'
+    exit 0 ;;
+  detect) ;;
+  *) arh_die "unknown subcommand: $sub (expected: detect)" ;;
+esac
+want=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scheduler) [ $# -ge 2 ] || arh_die "--scheduler needs a name"; want="$2"; shift 2 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+
+has() { command -v "$1" >/dev/null 2>&1; }
+
+# name | detect predicate | config prefix | queue key | supported by this framework
+site_table() {
+  cat <<'TABLE'
+slurm|has sbatch && has squeue|slurm|slurm_partition|yes
+pbs|has qsub && has qstat && ! has qconf|pbs|pbs_queue|yes
+sge|has qsub && has qconf|sge|sge_queue|no
+lsf|has bsub && has bqueues|lsf|lsf_queue|no
+flux|has flux|flux|flux_queue|no
+TABLE
+}
+
+# ---------------------------------------------------------------- probes
+
+# Slurm lists one row per node group, so several rows can share a partition; keep
+# the largest node of each and union the generic resources. "*" marks the default.
+probe_slurm() {
+  sinfo -h -o '%P|%l|%c|%m|%G' 2>/dev/null | awk -F'|' '
+    {
+      part = $1; def = "no"
+      if (part ~ /\*$/) { sub(/\*$/, "", part); def = "yes" }
+      if (!(part in seen)) { seen[part] = 1; order[++n] = part; lim[part] = $2; dflt[part] = def }
+      if ($3 + 0 > cpus[part]) cpus[part] = $3 + 0
+      if ($4 + 0 > mem[part])  mem[part]  = $4 + 0
+      if ($5 != "" && $5 != "(null)" && index(gres[part], $5) == 0)
+        gres[part] = (gres[part] == "" ? $5 : gres[part] "," $5)
+      if (def == "yes") dflt[part] = "yes"
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        p = order[i]
+        printf "%s|%s|%s|%s|%s|%s\n", p, lim[p], cpus[p], mem[p],
+          (gres[p] == "" ? "-" : gres[p]), dflt[p]
+      }
+    }'
+}
+
+# PBS reports queue limits as `resources_max.*`; absent keys mean "no queue limit".
+probe_pbs() {
+  qstat -Qf 2>/dev/null | awk '
+    /^Queue:/ { if (q != "") emit(); q = $2; wall = cpus = mem = "-"; def = "no"; next }
+    /resources_max\.walltime/ { wall = $NF; next }
+    /resources_max\.ncpus/    { cpus = $NF; next }
+    /resources_max\.mem/      { mem  = $NF; next }
+    END { if (q != "") emit() }
+    function emit() { printf "%s|%s|%s|%s|-|%s\n", q, wall, cpus, mem, def }'
+}
+
+probe_local() { :; }
+
+# ---------------------------------------------------------------- detection
+
+scheduler=local; prefix=""; queue_key=""; supported=yes
+detected=""; found_want=""
+while IFS='|' read -r name predicate pfx qkey sup; do
+  [ -n "$name" ] || continue
+  if [ -n "$want" ]; then
+    # Named explicitly: report on it whether or not its client is installed here.
+    if [ "$name" = "$want" ]; then
+      found_want=yes; scheduler=$name; prefix=$pfx; queue_key=$qkey; supported=$sup
+    fi
+    continue
+  fi
+  if eval "$predicate" 2>/dev/null; then
+    detected="$detected $name"
+    if [ "$scheduler" = local ]; then
+      scheduler=$name; prefix=$pfx; queue_key=$qkey; supported=$sup
+    fi
+  fi
+done <<EOF
+$(site_table)
+EOF
+
+if [ -n "$want" ] && [ -z "$found_want" ]; then
+  case "$want" in
+    local) scheduler=local; supported=yes ;;
+    *) arh_die "unknown scheduler: $want (known here: local $(site_table | cut -d'|' -f1 | tr '\n' ' '))" ;;
+  esac
+fi
+
+if has singularity; then runtime_cmd=singularity
+elif has apptainer; then runtime_cmd=apptainer
+elif has docker; then runtime_cmd=docker
+else runtime_cmd=none
+fi
+
+printf 'Site discovery\n\n'
+arh_info "scheduler:         $scheduler"
+arh_info "container command: $runtime_cmd"
+case "$detected" in
+  *\ *\ *) arh_warn "more than one scheduler client is present ($(echo "$detected" | sed 's/^ //')); using $scheduler" ;;
+esac
+if has qsub && has qconf; then
+  arh_warn "qsub and qconf are both present: this looks like Grid Engine, not PBS. arh init reports both as 'pbs' because it only tests qsub/qstat."
+fi
+
+if [ "$supported" != yes ]; then
+  arh_warn "$scheduler is not a value site.md accepts (scheduler = slurm | pbs | local)."
+  arh_info "To add it: a probe_$scheduler() here, an executor in lib/nextflow.py (Nextflow"
+  arh_info "already has an executor of this name), and a case in bin/arh-doctor."
+  arh_info "Until then the project must run with scheduler = local."
+fi
+
+# ---------------------------------------------------------------- queues
+
+queues=""
+if [ "$supported" = yes ] && [ "$scheduler" != local ]; then
+  queues=$(probe_"$scheduler" || true)
+  printf '\n'
+  if [ -z "$queues" ]; then
+    arh_warn "the $scheduler client is installed but reported no queues; is the controller reachable?"
+  else
+    printf 'Queues visible to you\n\n'
+    printf '  %-18s %-12s %6s %12s %-10s %s\n' QUEUE WALLTIME CPUS MEM/NODE GRES DEFAULT
+    printf '%s\n' "$queues" | while IFS='|' read -r q wall c m g d; do
+      printf '  %-18s %-12s %6s %12s %-10s %s\n' "$q" "$wall" "$c" "${m} MB" "$g" "$d"
+    done
+  fi
+fi
+
+# Accounting is a separate daemon and is often not reachable; say so rather than
+# quietly proposing no account.
+if [ "$scheduler" = slurm ]; then
+  printf '\n'
+  if assoc=$(sacctmgr -n -P show assoc user="$USER" format=Account,Partition,QOS 2>/dev/null) && [ -n "$assoc" ]; then
+    printf 'Accounts and QOS available to you\n\n'
+    printf '%s\n' "$assoc" | sed 's/^/  /'
+  else
+    arh_warn "sacctmgr returned nothing (slurmdbd unreachable or accounting disabled) — leave ${prefix}_account empty unless your site requires one"
+  fi
+fi
+
+# ---------------------------------------------------------------- proposal
+
+default_queue=$(printf '%s\n' "$queues" | awk -F'|' '$6 == "yes" { print $1; exit }')
+printf '\nProposed for .arh/config/site.md — review before copying\n\n'
+printf '```arh-config\n'
+if [ "$supported" = yes ]; then proposed_scheduler=$scheduler; else proposed_scheduler=local; fi
+printf '%-17s = %s\n' scheduler "$proposed_scheduler"
+printf '%-17s = %s\n' container_runtime "$runtime_cmd"
+if [ -n "$queues" ]; then
+  printf '\n'
+  printf '%-17s = %s\n' "$queue_key" "${default_queue:-<pick one from the table above>}"
+  printf '%-17s = %s\n' "${prefix}_account" ""
+  printf '%-17s = %s\n' "${prefix}_time" 01:00:00
+  printf '%-17s = %s\n' "${prefix}_cpus" 1
+  printf '%-17s = %s\n' "${prefix}_mem" 4G
+  printf '\n# Resources are per task, not per job. Raise them deliberately: the table above\n'
+  printf '# is what a queue permits at most, not what it will grant quickly.\n'
+fi
+printf '```\n'
+
+# ---------------------------------------------------------------- validation
+
+if (arh_find_project) >/dev/null 2>&1 && [ -n "$queues" ]; then
+  arh_load_project
+  cur_queue=$(arh_config_get "$ARH_SITE" "$queue_key" "")
+  cur_cpus=$(arh_config_get "$ARH_SITE" "${prefix}_cpus" "")
+  cur_mem=$(arh_config_get "$ARH_SITE" "${prefix}_mem" "")
+  printf '\nThis project against this machine\n\n'
+  if [ -z "$cur_queue" ]; then
+    arh_warn "$queue_key is empty in $ARH_SITE"
+  else
+    row=$(printf '%s\n' "$queues" | awk -F'|' -v q="$cur_queue" '$1 == q { print; exit }')
+    if [ -z "$row" ]; then
+      arh_fail "$queue_key = $cur_queue does not exist here; jobs will be rejected"
+    else
+      arh_ok "$queue_key = $cur_queue exists"
+      max_cpus=$(printf '%s' "$row" | cut -d'|' -f3)
+      max_mem=$(printf '%s' "$row" | cut -d'|' -f4)
+      case "$cur_cpus$max_cpus" in
+        ''|*[!0-9]*) ;;
+        *)
+          if [ "$cur_cpus" -le "$max_cpus" ]; then
+            arh_ok "${prefix}_cpus = $cur_cpus fits the largest node ($max_cpus)"
+          else
+            arh_fail "${prefix}_cpus = $cur_cpus exceeds the largest node in $cur_queue ($max_cpus)"
+          fi ;;
+      esac
+      # site.md writes memory as 32G or 4096M; the table is in MB.
+      mem_mb=$(printf '%s' "$cur_mem" | awk '
+        /^[0-9]+[Gg][Bb]?$/ { printf "%d", $0 * 1024; exit }
+        /^[0-9]+[Mm][Bb]?$/ { printf "%d", $0 + 0;    exit }
+        /^[0-9]+$/          { printf "%d", $0 + 0;    exit }')
+      case "$mem_mb$max_mem" in
+        ''|*[!0-9]*) ;;
+        *)
+          if [ "$mem_mb" -le "$max_mem" ]; then
+            arh_ok "${prefix}_mem = $cur_mem fits the largest node (${max_mem} MB)"
+          else
+            arh_fail "${prefix}_mem = $cur_mem exceeds the largest node in $cur_queue (${max_mem} MB)"
+          fi ;;
+      esac
+    fi
+  fi
+fi

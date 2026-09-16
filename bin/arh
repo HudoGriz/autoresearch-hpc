@@ -47,6 +47,7 @@ arh — AutoResearch HPC
   arh context -n N               compact deterministic handoff; no model call
   arh status                     show iterations, claims and gate state
   arh doctor                     check environment, configuration and setup hints
+  arh site   detect              probe this machine and propose a site.md block
   arh next                       what to do next, and why
 
 `arh init --help` shows bootstrap options.
@@ -62,7 +63,7 @@ case "$cmd" in
       "$(cat "$ARH_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|migrate|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|wait|env|guard|ledger|status|doctor|next|context)
+  init|migrate|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|wait|env|guard|ledger|status|doctor|site|next|context)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

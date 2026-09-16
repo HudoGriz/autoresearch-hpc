@@ -21,6 +21,15 @@ outside the block is documentation and is ignored.
 with `--scheduler` or edit this file. Slurm resource keys become Nextflow process
 settings or cluster options.
 
+`arh init` only tests whether a scheduler's client commands exist — it cannot know
+which queue you should use or what that queue permits. Run `arh site detect` for
+that: it lists the queues visible to you with their walltime, core, memory and
+generic-resource limits, reports the accounts and QOS you can charge to, and prints
+a proposed block to paste below. It never writes this file, because choosing a queue
+is a policy decision. Run inside a project it also checks the settings already here
+against the machine, which catches a queue name that does not exist or a request
+larger than any node in it before a job is rejected.
+
 ## Containers
 
 `container_runtime` records the site command available for container execution.

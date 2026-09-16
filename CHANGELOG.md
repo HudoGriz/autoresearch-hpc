@@ -11,6 +11,20 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **`arh site detect`** probes the machine and proposes a `site.md` block instead of
+  leaving every resource key to be typed by hand. `arh init` only tested whether a
+  scheduler's client commands existed, so `slurm_partition`, `slurm_account` and the
+  time/cpu/memory defaults were hand-filled for each project — the same edit twelve
+  times across a replication benchmark, with a wrong queue name only surfacing when
+  the first job was rejected. It lists the queues visible to you with their walltime,
+  core, memory and generic-resource limits, reports the accounts and QOS you can
+  charge to (saying so plainly when `sacctmgr` is unreachable rather than quietly
+  proposing none), and inside a project checks the current settings against the
+  machine, failing on a queue that does not exist or a request larger than any node
+  in it. It never writes the file: choosing a queue is a policy decision. Schedulers
+  are a table of probes rather than hardcoded branches, and one the framework cannot
+  yet drive is reported with what adding it needs instead of being silently treated
+  as `local`.
 - **`arh wait [-n N]`** blocks until an iteration's submissions and reviews have
   finished. Headless sessions get no completion notice and end when their reply
   ends: in a replication benchmark, Claude Code producers that backgrounded work and

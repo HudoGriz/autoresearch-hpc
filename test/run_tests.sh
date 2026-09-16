@@ -320,6 +320,23 @@ p.write_text(p.read_text().replace("scheduler         = nonesuch", "scheduler   
 EOF
 check "doctor passes when the config matches the machine" 0 arh doctor
 
+# --- 11b. site discovery --------------------------------------------------
+printf '\n# site discovery\n'
+check "arh site prints usage"                    0 arh site --help
+check "arh site rejects an unknown subcommand"   1 arh site bogus
+check "arh site rejects an unknown scheduler"    1 arh site detect --scheduler bogus
+check "arh site rejects --scheduler with no name" 1 arh site detect --scheduler
+check "arh site detect runs on any host"         0 arh site detect
+# A scheduler the framework does not support must still be reported, and must never
+# be proposed as a site.md value — site.md accepts only slurm, pbs or local.
+arh site detect --scheduler lsf > "$WORK/site-lsf.txt" 2>&1
+check "arh site detect reports an unsupported scheduler" 0 test -s "$WORK/site-lsf.txt"
+grep_ok "unsupported scheduler is named"  'scheduler:  *lsf'         "$WORK/site-lsf.txt"
+grep_ok "unsupported scheduler is flagged" 'not a value site.md accepts' "$WORK/site-lsf.txt"
+grep_ok "unsupported scheduler falls back to local" '^scheduler +=  *local' "$WORK/site-lsf.txt"
+arh site detect --scheduler local > "$WORK/site-local.txt" 2>&1
+grep_ok "local proposal has no queue keys" '^container_runtime' "$WORK/site-local.txt"
+
 # --- 12. arms -------------------------------------------------------------
 printf '\n# arms\n'
 check "arh arm list on an iteration with none" 0 arh arm list -n 1
