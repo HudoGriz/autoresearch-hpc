@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="#start-here">Start here</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#the-research-loop">Research loop</a> ·
   <a href="#skills-and-cli">Skills + CLI</a> ·
@@ -38,6 +39,24 @@ It is deliberately **not** another scheduler, workflow engine or autonomous rese
 
 > [!NOTE]
 > **Two layers, one workflow.** **Skills** tell an agent *how to conduct the research task*; the **`arh` CLI** enforces the parts that should not depend on an agent remembering the rules.
+
+## Start here
+
+You need a login node with a scheduler (Slurm, PBS, or neither for local runs) and Apptainer or Singularity. Nothing else — no pre-installed Conda or micromamba, and nothing is written to your shell configuration.
+
+```bash
+git clone https://github.com/HudoGriz/autoresearch-hpc.git
+export PATH="$PWD/autoresearch-hpc/bin:$PATH"
+
+arh init /shared/my-study --bootstrap   # detect the scheduler, build the pinned Nextflow environment
+cd /shared/my-study
+arh site detect                         # list your queues and their limits, propose site.md values
+arh doctor                              # what is still missing, if anything
+```
+
+`arh site detect` prints a configuration block for you to paste and never writes the file itself, because choosing a queue depends on cost and who else is waiting. Run inside a project it also checks what is already configured against the machine, so a queue that does not exist, or more cores or memory than any node in it has, is caught before a job is rejected.
+
+When `arh doctor` prints `Ready`, run your first iteration — see [Run one declared experiment](#2-run-one-declared-experiment). If anything is unclear, [hand the setup to your coding agent](#1-set-up) instead; the repository ships the instructions it needs.
 
 ## The research loop
 
@@ -112,10 +131,14 @@ export PATH="$PWD/bin:$PATH"
 
 arh init /shared/my-study --bootstrap
 cd /shared/my-study
+arh site detect
 arh doctor
 ```
 
-`arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. With `--bootstrap`, it also prepares the pinned host-side Nextflow/Python environment. `arh doctor` reports what still needs configuration.
+`arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. With `--bootstrap`, it also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot: which queue to use and what it permits. `arh doctor` reports what still needs configuration.
+
+<details>
+<summary><strong>Air-gapped cluster, or supplying micromamba and the task image yourself</strong></summary>
 
 **You do not need to install micromamba yourself.** Micromamba is a standalone executable. AutoResearch HPC first reuses its own pinned project-local copy, then a matching version already on `PATH`; if neither exists it downloads the pinned binary, verifies its SHA-256 checksum, and caches it under `.arh/tools/micromamba/`. It does not run `micromamba shell init` or modify your shell configuration.
 
@@ -134,6 +157,8 @@ singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
 arh init /shared/my-study --bootstrap \
   --runtime /shared/images/runtime.sif
 ```
+
+</details>
 
 Project state lives under `.arh/`:
 
