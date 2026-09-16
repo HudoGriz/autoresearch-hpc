@@ -15,6 +15,19 @@ candidate and evaluation artifacts exist.
 keywords, code metadata C1–C9, body sections). It mirrors `draft.md`; update both
 together until submission.
 
+## The replication benchmark and this repository
+
+`replication-benchmark.md` describes an evaluation that is **run outside this repository**, and
+the boundary is deliberate. The benchmark's operational record — study trees, briefs, the private
+target values, the grader, operator notes and host paths — is held separately so that a published
+target can never reach an agent through the repository, and so that a public release carries no
+part of it. Three of the studies are the authors' own clinical work on human data; those are
+referred to here by field and design only.
+
+What may cross into this repository is the write-up itself: prose, aggregate outcomes and counts
+that carry no path, no study identifier and no target value. Framework defects the benchmark finds
+cross the other way, as ordinary fixes with tests. Keep it that way when updating this section.
+
 ## JOSS path
 
 The same draft already follows the major JOSS content headings: summary,

@@ -23,6 +23,10 @@ release tag.
 | automatic host bootstrap does not require preinstalled micromamba | bootstrap implementation + CI path | clean independent installation from public docs | partial |
 | protocol overhead is small enough for research workflows | overhead pilot: +0.52 s (1.5%) over Nextflow on a ~30 s task, +1.1 s on a trivial task; protocol commands 0.1–0.5 s (`paper/overhead-pilot.md`) | rerun on release tag; add a Slurm-queued variant | strong pilot |
 | cross-check roles help identify known defects | anecdotal engineering experience only | frozen defect corpus, repeats, TPR/FPR/qualified rate | missing |
+| real-study replication paths remain auditable across matches and failures | frozen benchmark design + central ledger for 12 isolated studies; interim outcomes in `paper/replication-benchmark.md` | completed ledger, final per-study claims, review outcomes and public-safe archived artifacts | in progress |
+| agents can converge on published primary claims under the benchmark rules | current ledger: 3/12 studies converged; benchmark still running | reconcile the newer reported 4/12 count with the ledger; every study reaches a stop rule; final claim-level table and blinding audit | interim only |
+| blind grading withholds numerical targets from producing agents | frozen benchmark design; targets outside study trees; grader returns only `MATCH`, `MISS` or `MISSING` | completed transcript blinding audit and preserved design/target hashes | partial |
+| real agent/HPC operation exposed actionable framework defects | central ledger Problems #1–#6, each linked to fix commits `3c6ae9a`, `1733388`, `271d48e` or `8bf4b8d` | release notes/tests tying each fix to the evaluated release; discuss mid-benchmark version changes | strong interim |
 | software is usable outside the developer's environment | architecture + CI only | one independent reproduction; preferably second scheduler/site | missing |
 | software is useful beyond one scientific domain | domain-agnostic design only | second public use case or external adoption | missing |
 

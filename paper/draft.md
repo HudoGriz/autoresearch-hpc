@@ -127,6 +127,46 @@ analysis defects and clean controls, reporting defect-class sensitivity,
 false-positive rate, qualified/abstaining verdicts and repeatability. Cross-model
 agreement will not be interpreted as independent scientific validation.
 
+### Replication benchmark
+
+A separate replication benchmark asks whether agent-operated `arh` loops can
+approach published results from real studies while preserving an auditable path,
+including unsuccessful paths. Twelve studies are isolated in separate ARH
+projects. Producing agents receive checksummed, read-only inputs, claim
+definitions and methods summaries, but not the published numerical targets or
+tolerance bounds. Those remain outside the study trees. After each producer
+round, the grader returns only `MATCH`, `MISS` or `MISSING` per claim; a challenge
+must be handled in a new append-only iteration. All concluded iterations still
+require an eligible foreign-family review. Producer and reviewer models are
+pinned, rounds are driven and logged automatically, and stopping occurs at full
+primary-claim matching, six rounds, two consecutive rounds without a newly
+concluded iteration, or 48 hours. Blinding is cooperative rather than enforced
+by filesystem permissions.
+
+The study set spans public studies in cancer genomics, social psychology,
+cosmology, stroke, labour economics, ecology, population genomics and bulk and
+single-cell transcriptomics, plus three in-house clinical studies described only
+by field and design. The current ledger snapshot records three of twelve studies
+as converged. Two had stalled because headless sessions exited with unfinished
+background work, one had stopped at an undefined primary-outcome code—a
+scientific acceptance failure accepted as correct behavior—and one had met a
+provider content filter. The remaining studies were running, queued or awaiting
+inputs. These outcomes are evidence about whether the protocol retains matches,
+misses, refusals and infrastructure failures, not evidence that agents reliably
+replicate published science.
+
+The run also exposed six framework defects, including an overridden review
+timeout, misleading site-dependent tests, producer misattribution, unsafe
+headless waiting, provider-refusal handling and stale copied agent instructions.
+Each is linked in the benchmark ledger to a fix commit, and each round records
+the framework revision it used. Full methods, the per-study interim table and
+the defect-to-fix record are in
+[`replication-benchmark.md`](replication-benchmark.md).
+
+`TODO-EVIDENCE:` replace the interim benchmark snapshot with final per-claim
+outcomes, resource and token measurements, review outcomes and the blinding
+audit after every study reaches a stop rule.
+
 `TODO-EVIDENCE:` replace the pilot with the final release-tag failure-injection
 result table; add runtime overhead, public example hashes, release-candidate
 Slurm evidence and the independent-user reproduction outcome.

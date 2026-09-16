@@ -94,10 +94,20 @@ plan, concurrent claims, writes to immutable inputs, failed tasks, same-family r
 stale reviewed evidence, interrupted submission and cold resumption); all ten produced the
 specified behaviour in clean CI pilots. `TODO-EVIDENCE:` final release-tag table.
 
-`TODO-EVIDENCE:` replication benchmark — agent loops on six highly cited studies from
-cancer genomics, social psychology, cosmology, a stroke trial, labour economics and ecology,
-with blind grading against published results; report rounds to convergence, wall time and
-tokens per study, and every framework defect found and fixed.
+A replication benchmark tests whether agent-operated `arh` loops can approach published
+results while keeping successful and unsuccessful paths auditable. Twelve studies run in
+isolated projects; agents receive read-only inputs and methods briefs, but not numerical
+targets. A separate grader returns only `MATCH`, `MISS` or `MISSING`; challenges require new
+iterations. Models, stop rules and round drivers are logged. The current ledger records three
+convergences, two headless-session stalls, one correct stop at a scientific acceptance
+failure and one provider-filter failure; the remainder are running, queued or awaiting
+inputs. This tests inspectability, not whether agents reliably replicate science. The run
+also surfaced six framework defects linked to fix commits, including producer
+misattribution, unsafe headless waiting and stale copied agent instructions. Full methods
+and interim results are in [`replication-benchmark.md`](replication-benchmark.md).
+
+`TODO-EVIDENCE:` replace the snapshot with final claim outcomes, rounds, timing, token and
+review measures, and the blinding audit.
 
 `TODO-EVIDENCE:` independent installation by a user outside the development team.
 
