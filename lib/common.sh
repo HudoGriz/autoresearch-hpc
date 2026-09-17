@@ -58,11 +58,12 @@ arh_load_project() {
   ARH_SITE="$ARH_CONF/site.md"
   ARH_PROJ="$ARH_CONF/project.md"
   ARH_HARN="$ARH_CONF/harnesses.md"
+  ARH_GENS="$ARH_CONF/generators.md"
   ARH_ITERS="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" iterations_dir iterations)"
   ARH_VERIFY="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" verification_dir verification)"
   ARH_LEDGER="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" ledger PROGRESS.md)"
   ARH_REGISTRY="$ARH_STATE/registry.tsv"
-  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY
+  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_GENS ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY
 }
 
 arh_now()   { date -u +%Y-%m-%dT%H:%M:%SZ; }

@@ -176,6 +176,19 @@ notices, and it ends as soon as its reply ends.
 - Set `ARH_AGENT` to your harness name (`claude`, `codex`, …). Otherwise it is
   inferred from environment variables that an outer session may have left behind.
 
+## Optional external generators
+
+External research systems are proposal engines, not protocol authorities. Read
+`skills/evoke/SKILL.md` and run `arh evoke list` when a specialist generator
+materially fits the iteration. Preview the bounded request with `--dry-run`;
+never clone, install, enable or invoke a generator implicitly.
+
+An evocation is stored under `metadata/evocations/` and cannot satisfy a
+results gate. Adopt useful proposals through the ordinary pre-declaration,
+pinned execution, cross-check and ledger path. Never send credentials, patient
+identifiers or undeclared data, and never use an evoked generator in place of
+the required `arh ask` review.
+
 ## Style
 
 - Shell: `set -euo pipefail`, quote expansions, explicit paths.

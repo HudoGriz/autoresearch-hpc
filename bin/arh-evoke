@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Invoke a configured external research generator without bundling it.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  arh evoke list
+  arh evoke show TOOL
+  arh evoke TOOL -n N --phase PHASE [--prompt FILE] [--note TEXT] [--dry-run]
+                   [--allow-external]
+
+PHASE is one of: ideate, plan, implement, interpret, write.
+A real invocation requires both generator_TOOL_enabled=true in generators.md
+and --allow-external. Output is advisory and is recorded under the iteration's
+metadata/evocations/, never under results/.
+USAGE
+}
+
+arh_load_project
+gens=${ARH_GENS:-$ARH_CONF/generators.md}
+names=$(arh_config_get "$gens" generators "")
+
+known() {
+  local wanted="$1" item
+  for item in $names; do [ "$item" = "$wanted" ] && return 0; done
+  return 1
+}
+
+list_generators() {
+  local g enabled caps source state
+  printf '%-22s %-10s %-58s %s\n' GENERATOR STATE CAPABILITIES SOURCE
+  printf '%-22s %-10s %-58s %s\n' ---------------------- ---------- ---------------------------------------------------------- ------
+  for g in $names; do
+    enabled=$(arh_config_get "$gens" "generator_${g}_enabled" false)
+    caps=$(arh_config_get "$gens" "generator_${g}_capabilities" "")
+    source=$(arh_config_get "$gens" "generator_${g}_source" "")
+    if [ "$enabled" = true ]; then state=enabled; else state=disabled; fi
+    printf '%-22s %-10s %-58s %s\n' "$g" "$state" "$caps" "$source"
+  done
+}
+
+case "${1-}" in
+  -h|--help|help|"") usage; exit 0 ;;
+  list) list_generators; exit 0 ;;
+  show)
+    tool=${2-}; [ -n "$tool" ] || arh_die "usage: arh evoke show TOOL"
+    known "$tool" || arh_die "unknown generator: $tool"
+    printf 'generator:    %s\n' "$tool"
+    printf 'enabled:      %s\n' "$(arh_config_get "$gens" "generator_${tool}_enabled" false)"
+    printf 'capabilities: %s\n' "$(arh_config_get "$gens" "generator_${tool}_capabilities" "")"
+    printf 'source:       %s\n' "$(arh_config_get "$gens" "generator_${tool}_source" "")"
+    printf 'command:      %s\n' "$(arh_config_get "$gens" "generator_${tool}_cmd" "(not configured)")"
+    exit 0 ;;
+esac
+
+tool=$1; shift
+case "$tool" in *[!a-z0-9-]*|""|-*) arh_die "invalid generator name: $tool" ;; esac
+known "$tool" || arh_die "unknown generator: $tool (run: arh evoke list)"
+n=""; phase=""; prompt_file=""; note=""; dry=0; allow=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="${2-}"; shift 2 ;;
+    --phase) phase="${2-}"; shift 2 ;;
+    --prompt) prompt_file="${2-}"; shift 2 ;;
+    --note) note="${2-}"; shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    --allow-external) allow=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+case "$n" in ""|*[!0-9]*) arh_die "iteration must be numeric" ;; esac
+case "$phase" in ideate|plan|implement|interpret|write) ;; *) arh_die "--phase must be ideate, plan, implement, interpret or write" ;; esac
+dir="$ARH_ITERS/iteration$n"
+[ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+[ -z "$prompt_file" ] || [ -f "$prompt_file" ] || arh_die "prompt file not found: $prompt_file"
+
+enabled=$(arh_config_get "$gens" "generator_${tool}_enabled" false)
+cmd=$(arh_config_get "$gens" "generator_${tool}_cmd" "")
+[ -n "$cmd" ] || arh_die "generator '$tool' has no command; configure generator_${tool}_cmd in ${gens#"$ARH_ROOT"/}"
+if [ "$dry" = 0 ]; then
+  [ "$enabled" = true ] || arh_die "generator '$tool' is disabled; review its policy, then set generator_${tool}_enabled = true"
+  [ "$allow" = 1 ] || arh_die "external generators may send context and execute generated code; rerun with --allow-external after reviewing the request"
+fi
+
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+if [ "$dry" = 1 ]; then
+  run=$(mktemp -d "${TMPDIR:-/tmp}/arh-evoke.${tool}.XXXXXX")
+  cleanup=1
+else
+  base="$dir/metadata/evocations"; mkdir -p "$base"; arh_guard_path "$base"
+  run=$(mktemp -d "$base/${stamp}-${tool}.XXXXXX")
+  cleanup=0
+fi
+request="$run/request.md"; output="$run/artifacts"
+cleanup_run() { if [ "$cleanup" = 1 ]; then rm -rf "$run"; fi; }
+trap cleanup_run EXIT
+{
+  printf '# External generator request\n\n'
+  printf '| field | value |\n|---|---|\n'
+  printf '| generator | `%s` |\n| phase | `%s` |\n| iteration | `%s` |\n\n' "$tool" "$phase" "$n"
+  printf '> Advisory boundary: propose work; do not treat generated claims, code or results as\n'
+  printf '> accepted evidence. Adopt them through the normal pre-declaration, pinned execution,\n'
+  printf '> cross-check and ledger gates. Do not access undeclared files or credentials.\n\n'
+  if [ -f "$dir/README.md" ]; then
+    printf '## Iteration declaration (current state)\n\n'; cat "$dir/README.md"; printf '\n'
+  fi
+  if [ -n "$prompt_file" ]; then
+    printf '\n## Operator-supplied prompt\n\n'; cat "$prompt_file"; printf '\n'
+  fi
+  if [ -n "$note" ]; then printf '\n## Operator note\n\n%s\n' "$note"; fi
+} > "$request"
+
+version_cmd=$(arh_config_get "$gens" "generator_${tool}_version_cmd" "")
+workdir=$(arh_config_get "$gens" "generator_${tool}_cwd" "$ARH_ROOT")
+workdir=${workdir//\{project\}/$ARH_ROOT}
+case "$workdir" in /*) ;; *) workdir="$ARH_ROOT/$workdir" ;; esac
+[ -d "$workdir" ] || arh_die "generator cwd does not exist: $workdir"
+timeout=$(arh_config_get "$gens" "generator_${tool}_timeout" "$(arh_config_get "$gens" evoke_timeout 7200)")
+limit=$(arh_config_get "$gens" "generator_${tool}_max_output_bytes" "$(arh_config_get "$gens" evoke_max_output_bytes 1048576)")
+source=$(arh_config_get "$gens" "generator_${tool}_source" "")
+config_sha=$(arh_sha256 "$gens")
+
+if [ "$dry" = 1 ]; then
+  printf '# request\n'; cat "$request"
+  printf '\n# command (not run)\n'
+  python3 "$ARH_HOME/lib/evoke.py" plan "$cmd" "$version_cmd" "$request" "$output" "$workdir" \
+    "$timeout" "$limit" "$tool" "$phase" "$n" "$source" "$config_sha"
+  exit 0
+fi
+
+set +e
+python3 "$ARH_HOME/lib/evoke.py" run "$cmd" "$version_cmd" "$request" "$output" "$workdir" \
+  "$timeout" "$limit" "$tool" "$phase" "$n" "$source" "$config_sha"
+rc=$?
+set -e
+printf 'evocation record: %s\n' "${run#"$ARH_ROOT"/}"
+[ "$rc" -eq 0 ] || arh_die "generator '$tool' exited $rc; record retained at ${run#"$ARH_ROOT"/}"
+[ -s "$run/stderr.log" ] || rm -f "$run/stderr.log"
+printf 'response: %s\n' "${run#"$ARH_ROOT"/}/response.md"

@@ -63,6 +63,7 @@ Project state lives under `.arh/`:
 .arh/config/site.md        scheduler, resources, runtime and shared paths
 .arh/config/project.md     immutable inputs and standing project rules
 .arh/config/harnesses.md   producer / verifier harnesses and model families
+.arh/config/generators.md  optional external research generators; disabled by default
 ```
 
 > [!TIP]
@@ -157,9 +158,10 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 | **[Arms](skills/arms/SKILL.md)** | Track parallel sub-analyses with explicit fates | `arh arm ...` |
 | **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
+| **[Evoke](skills/evoke/SKILL.md)** | Select and invoke a configured specialist generator as an advisory proposal engine | `arh evoke ...` |
 | **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
 
-`harness/install.sh` copies all seven into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
+`harness/install.sh` copies all eight into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger`, `/evoke` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
 
 The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
@@ -173,9 +175,16 @@ arh verify new OBJECT       # re-examine an existing result
 arh dag init -n N           # reconstruct the discovery path, inputs to claim
 arh dag freeze -n N         # freeze that specification
 arh replicate run ...       # blind reimplementation from the frozen DAG
+arh evoke list              # optional specialist generators available at this site
 ```
 
 Disagreement between replicators is treated as useful evidence; agreement is not promoted to scientific confirmation by majority vote.
+
+External generators are invoked, not bundled. Biomni, AI Scientist v2 and
+Agent Laboratory have first-class registry entries, all disabled by default.
+Their responses stay advisory until selected work passes the ordinary
+pre-declaration, pinned execution and review path. See
+[External generators](docs/external-generators.md).
 
 ## Why this layer exists
 
@@ -185,12 +194,13 @@ Disagreement between replicators is treated as useful evidence; agreement is not
 | **Slurm / PBS / local** | compute allocation | a portable execution target rather than a new scheduler |
 | **Singularity / Apptainer** | scientific environments | pinned task execution tied to the record |
 | **Claude / Codex / OpenCode** | implementation and critique | harness-portable rules, bounded review and explicit model-family provenance |
+| **Biomni / AI Scientist v2 / Agent Laboratory** | optional specialist generation | a bounded request, retained invocation receipt and an advisory-only output boundary |
 
 The framework does **not** treat model agreement as scientific truth. Cross-family critique is evidence to assess, not orthogonal validation. Claims still need whatever independent scientific validation their domain requires.
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-17 the suite passed **154 / 154 core protocol checks** and **56 boundary regressions** (55 run, 1 skipped without network) against a configured local site. Earlier runs additionally covered real Slurm success and failure, native cache reuse and an immutable-input container probe. Internal field deployment exposed review, submission and provenance defects, now represented by regression tests.
+AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-17 the suite passed **155 / 155 core protocol checks** and **61 boundary regressions** against a configured local site. Earlier runs additionally covered real Slurm success and failure, native cache reuse and an immutable-input container probe. Internal field deployment exposed review, submission and provenance defects, now represented by regression tests.
 
 ```bash
 # ARH_TEST_SITE must point at a site.md with runtime_image, runtime_sha256 and
@@ -213,6 +223,7 @@ This is a cooperative research-integrity system, not a hostile-code sandbox or a
 | **Agent contract** | [AGENTS.md](AGENTS.md) |
 | **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
+| **External generators** | [Select, configure and safely evoke specialist research systems](docs/external-generators.md) |
 | **Unattended agents** | [Running producer and reviewer sessions headless](docs/headless.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
 | **Related work** | [What this composes with, and what it is not](docs/related-work.md) |
@@ -228,5 +239,12 @@ AutoResearch HPC is an independent project. Two upstream sources are vendored, p
 - **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). The upstream multi-round orchestration is not installed.
 
 Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [micromamba](https://github.com/mamba-org/mamba) for the pinned host controller and task environments, and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
+
+Optional generators follow the same composition rule: their source and
+environments are not vendored. `arh evoke` can call independently installed
+[Biomni](https://github.com/snap-stanford/Biomni),
+[AI Scientist v2](https://github.com/SakanaAI/AI-Scientist-v2) or
+[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) through
+a site-owned wrapper and retain what was sent, returned and executed.
 
 The design borrows pre-registration from clinical trials and psychology's replication reform, and append-only records from lab notebooks and version control. [`docs/related-work.md`](docs/related-work.md) sets out what that means here, and which systems this composes with rather than competes against.

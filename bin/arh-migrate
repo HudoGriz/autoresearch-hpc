@@ -81,6 +81,10 @@ for p in sorted(cfg.glob('*.md')):
         n = n.replace(f'{root}/.dl/', f'{root}/.arh/')
         n = re.sub(r'(?m)^(image_dir[ \t]*=[ \t]*)\.dl/', r'\1.arh/', n)
     plan(p, n, 'config fence, command names and state paths')
+generators = cfg / 'generators.md'
+if not generators.exists():
+    rewrites[generators] = (home / 'config/generators.md').read_text()
+    changes.append(f'{generators.relative_to(root)}: optional external-generator registry added')
 for p in sorted((root / 'rules').glob('*.md')):
     plan(p, FENCE.sub(r'\1arh-config', p.read_text()), 'rule fence')
 ledger = root / config_value(cfg / 'project.md', 'ledger', 'PROGRESS.md')

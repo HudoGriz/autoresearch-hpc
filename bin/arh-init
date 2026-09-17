@@ -45,6 +45,7 @@ mkdir -p "$target/.arh/config" "$target/rules"
 cp "$ARH_HOME/config/site.md" "$target/.arh/config/site.md"
 cp "$ARH_HOME/config/project.md" "$target/.arh/config/project.md"
 cp "$ARH_HOME/config/harnesses.md" "$target/.arh/config/harnesses.md"
+cp "$ARH_HOME/config/generators.md" "$target/.arh/config/generators.md"
 cp "$ARH_HOME"/config/rules/*.md "$target/rules/"
 
 ARH_PROJ="$target/.arh/config/project.md"

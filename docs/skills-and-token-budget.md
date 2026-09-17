@@ -22,9 +22,13 @@ hook. Claude reads it through `CLAUDE.md`; other supported harnesses use
 |---|---|
 | Ponytail | Pinned core coding guidance and default activation policy |
 | ARIS | Adapted adversarial-review guidance; full autonomous workflow is not bundled |
-| This repository | iterate, arms, verify, cross-check, replicate and ledger skills |
+| This repository | iterate, arms, verify, cross-check, replicate, ledger and evoke skills |
 | Karpathy autoresearch | Inspiration and attribution; no imported runtime |
 | Nextflow / Singularity/Apptainer | Execution infrastructure, not skill repositories |
+
+The Evoke skill selects among optional, independently installed specialist
+generators. It does not install them or promote their output to evidence. See
+[External generators](external-generators.md).
 
 ## Deterministic budget controls
 

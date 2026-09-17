@@ -8,12 +8,14 @@ Apptainer on Linux) passed:
 
 | Suite | Command | Result |
 |---|---|---|
-| Core protocol checks | `test/run_tests.sh` | 154 / 154 |
-| Boundary regressions | `python3 test/test_hardening.py` | 55 passed, 1 skipped, 0 failed |
+| Core protocol checks | `test/run_tests.sh` | 155 / 155 |
+| Boundary regressions | `python3 test/test_hardening.py` | 61 / 61 |
 | Deterministic synthetic example | `bash examples/mean-shift/check.sh` | OK |
 
-The skipped regression (`test_env_create_locks_and_is_immutable`) solves real
-packages and needs `ARH_TEST_NETWORK=1`; CI runs it with network enabled.
+The network-dependent regression (`test_env_create_locks_and_is_immutable`)
+solves real packages and needs `ARH_TEST_NETWORK=1`; CI runs it with network
+enabled. Without a configured site and network, the boundary suite skips eight
+integration cases while retaining all generator-evocation checks.
 
 Six core checks — `arh doctor` on a fresh project, the three `arh submit`
 execution checks and the Singularity-runtime check — require a site whose

@@ -119,6 +119,32 @@ for h in $(arh_config_get "$ARH_HARN" verifier_fallback ""); do
 done
 arh_warn_agent_mismatch
 
+printf '\nexternal generators (optional):\n'
+if [ ! -f "$ARH_GENS" ]; then
+  arh_warn "no generators.md; run: arh migrate $ARH_ROOT"
+else
+  for g in $(arh_config_get "$ARH_GENS" generators ""); do
+    enabled=$(arh_config_get "$ARH_GENS" "generator_${g}_enabled" false)
+    cmd=$(arh_config_get "$ARH_GENS" "generator_${g}_cmd" "")
+    if [ "$enabled" != true ]; then
+      arh_info "$g — disabled"
+      continue
+    fi
+    if [ -z "$cmd" ]; then
+      arh_fail "$g — enabled but generator_${g}_cmd is empty"
+      warn=$((warn+1))
+      continue
+    fi
+    exe=$(python3 -c 'import shlex,sys; p=shlex.split(sys.argv[1]); print(p[0] if p else "")' "$cmd" 2>/dev/null || true)
+    if { case "$exe" in /*) [ -x "$exe" ] ;; *) command -v "$exe" >/dev/null 2>&1 ;; esac; }; then
+      arh_ok "$g — enabled; $exe present"
+    else
+      arh_fail "$g — enabled; command not found: $exe"
+      warn=$((warn+1))
+    fi
+  done
+fi
+
 printf '\nrules:\n'
 for r in $(arh_config_get "$ARH_PROJ" rules ""); do
   [ -f "$ARH_ROOT/rules/$r.md" ] && arh_ok "$r" || { arh_fail "$r — configured but missing"; warn=$((warn+1)); }

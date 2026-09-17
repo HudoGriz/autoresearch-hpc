@@ -52,7 +52,7 @@ printf '\n# init\n'
 check "arh init creates a project"          0 arh init "$PROJ"
 if [ -n "${ARH_TEST_SITE:-}" ]; then cp "$ARH_TEST_SITE" "$PROJ/.arh/config/site.md"; fi
 check "arh init refuses to re-init"         1 arh init "$PROJ"
-for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md \
+for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md .arh/config/generators.md \
          PROGRESS.md AGENTS.md GOTCHAS.md rules/null-is-upper-bound.md .arh/registry.tsv; do
   [ -e "$PROJ/$p" ] && ok "created $p" || no "created $p"
 done

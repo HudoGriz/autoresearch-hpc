@@ -14,6 +14,23 @@ makes whatever a generator produces auditable and correctable. It composes with
 those systems rather than competing with them — any of them could be the thing
 that fills in a pre-declaration.
 
+## Composition implemented
+
+`arh evoke` now gives that composition claim a concrete, bounded interface. The
+first registry entries are [Biomni](https://github.com/snap-stanford/Biomni),
+[AI Scientist v2](https://github.com/SakanaAI/AI-Scientist-v2) and
+[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory). They
+were selected because each has an official open repository and can be invoked
+locally through a pinned, site-owned wrapper. None is bundled or enabled by
+default.
+
+The request, response, artifacts, command, version and hashes are retained, but
+the response is advisory: it still has to enter the ordinary pre-declaration,
+pinned execution and review path. [AgentRxiv](https://github.com/AgentRxiv/AgentRxiv.github.io),
+Robin and Kosmos remain documented composition targets rather than built-in
+adapters because publication/exchange or hosted-service data egress needs a
+separate operator policy. See [external generators](external-generators.md).
+
 ## The failure modes it targets
 
 The critique literature converges on a consistent set, and none of them is fixed

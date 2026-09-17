@@ -11,6 +11,14 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **Optional external generators via `arh evoke`.** Biomni, AI Scientist v2 and
+  Agent Laboratory now have disabled-by-default registry entries. ARH sends a
+  bounded request through a site-owned, shell-free command adapter and retains
+  request/config hashes, version, response, artifacts and exit status under the
+  iteration. No upstream source is vendored, and generated output is advisory:
+  it cannot satisfy a results gate. The Evoke skill selects a tool only when its
+  specialist workflow materially fits and requires a request preview plus an
+  explicit per-run external-code/data acknowledgement.
 - **`arh site detect`** probes the machine and proposes a `site.md` block instead of
   leaving every resource key to be typed by hand. `arh init` only tested whether a
   scheduler's client commands existed, so `slurm_partition`, `slurm_account` and the

@@ -35,6 +35,7 @@ arh — AutoResearch HPC
   arh gate   results    -n N     check results against the frozen pre-declaration
   arh gate   rules      <file>   check a document against the standing rules
   arh ask    --role R -n N       cross-check with a foreign harness
+  arh evoke  TOOL -n N --phase P invoke a configured external research generator
   arh verify {new|gate|list}     re-examine an object an iteration produced
   arh dag    {init|check|freeze} reconstruct the path a result took
   arh replicate [run|report]     N agents re-implement from the DAG, blind to the code
@@ -63,7 +64,7 @@ case "$cmd" in
       "$(cat "$ARH_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|migrate|claim|new|arm|gate|ask|dag|replicate|verify|run|submit|wait|env|guard|ledger|status|doctor|site|next|context)
+  init|migrate|claim|new|arm|gate|ask|evoke|dag|replicate|verify|run|submit|wait|env|guard|ledger|status|doctor|site|next|context)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac
