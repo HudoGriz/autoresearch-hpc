@@ -26,7 +26,7 @@
 
 AutoResearch HPC (`arh`) is a research-protocol layer for **AI-assisted experimentation on infrastructure you already own**. A coding agent can propose and implement an experiment; `arh` makes the boundaries mechanical — claim an iteration, pre-declare it before results exist, execute it through the configured HPC stack, preserve failures, have a model from another family review it, and write the outcome into an append-only record.
 
-It is **not** a scheduler, a workflow engine or an autonomous research daemon. Nextflow executes and caches workflows; Slurm/PBS/local provide compute; Singularity/Apptainer provides pinned task environments. `arh` sits above those and makes the *research process* inspectable.
+It is **not** a scheduler, a workflow engine or an autonomous research daemon. It sits on top of the stack you already run and makes the *research process* inspectable.
 
 > [!NOTE]
 > **Two layers, one workflow.** **Skills** tell an agent *how to conduct the research task*; the **`arh` CLI** enforces the parts that should not depend on an agent remembering the rules.
@@ -45,7 +45,7 @@ arh site detect                         # list your queues and their limits, pro
 arh doctor                              # what is still missing, if anything
 ```
 
-`arh init` detects Slurm/PBS and the available Singularity/Apptainer command; `--bootstrap` also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot: which queue to use and what it permits. It prints a block for you to paste and never writes `site.md` itself, because choosing a queue depends on cost and who else is waiting. Run inside a project it also checks the existing configuration against the machine, so a queue that does not exist, or more cores or memory than any node in it has, is caught before a job is rejected.
+`arh init` detects Slurm/PBS and the available Singularity/Apptainer command; `--bootstrap` also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot — which queue to use and what it permits. It prints a block for you to paste and never writes `site.md` itself, because choosing a queue is a policy decision. Run inside a project it also checks existing settings against the machine, catching a missing queue or an oversized request before a job is rejected.
 
 When `arh doctor` prints `Ready`, [run your first iteration](#run-one-declared-experiment).
 
@@ -53,30 +53,9 @@ When `arh doctor` prints `Ready`, [run your first iteration](#run-one-declared-e
 
 > Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, run the automatic bootstrap, configure the harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
 
-The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path.
+The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can follow its own setup path.
 
-<details>
-<summary><strong>Air-gapped cluster, or supplying micromamba and the task image yourself</strong></summary>
-
-**You do not need to install micromamba yourself.** Micromamba is a standalone executable. AutoResearch HPC first reuses its own pinned project-local copy, then a matching version already on `PATH`; if neither exists it downloads the pinned binary, verifies its SHA-256 checksum, and caches it under `.arh/tools/micromamba/`. It does not run `micromamba shell init` or modify your shell configuration.
-
-If your HPC cannot reach GitHub, stage a micromamba binary once and provide it explicitly:
-
-```bash
-arh init /shared/my-study --bootstrap \
-  --micromamba /shared/tools/micromamba
-```
-
-To configure the task runtime at the same time, pull its image once and pass it in:
-
-```bash
-singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
-
-arh init /shared/my-study --bootstrap \
-  --runtime /shared/images/runtime.sif
-```
-
-</details>
+Air-gapped clusters, staging micromamba or the task image yourself, and sharing environments between projects are covered in [HPC execution](docs/hpc-execution.md#fast-setup).
 
 Project state lives under `.arh/`:
 
@@ -142,7 +121,7 @@ Phase 2 runs on infrastructure you already know:
 Nextflow controller  →  Slurm / PBS / local  →  Singularity / Apptainer tasks
 ```
 
-The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration rather than inside the workflow.
+The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration, not inside the workflow.
 
 ## What gets recorded
 
@@ -168,7 +147,7 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 
 ## Skills and CLI
 
-**Skills are high-level agent playbooks** — how to approach a research action and which checks matter. **`arh` commands are deterministic operations** — they create state, freeze declarations, launch execution, validate gates and maintain the record.
+**Skills are agent playbooks** — how to approach a research action and which checks matter. **`arh` commands are deterministic operations** — they create state, freeze declarations, launch execution, validate gates and maintain the record.
 
 | Skill / workflow | What the agent is being asked to do | Main `arh` machinery underneath |
 |---|---|---|
@@ -180,23 +159,23 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
 | **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
 
-`harness/install.sh` copies all seven skills into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger` and `/ponytail`. Codex and OpenCode read the same project contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
+`harness/install.sh` copies all seven into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
 
 The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
 ## Beyond the basic loop
 
-The diagram above is a **research loop**, not the discovery DAG. `arh dag` is an advanced feature, used when a load-bearing result needs its actual dependency path reconstructed from inputs to claim.
+The diagram above is a research loop, not the discovery DAG.
 
 ```bash
 arh arm new ...             # parallel sub-analysis inside one iteration
 arh verify new OBJECT       # re-examine an existing result
-arh dag init -n N           # reconstruct the discovery path
-arh dag freeze -n N         # freeze the specification
-arh replicate run ...       # blind reimplementation from that frozen DAG
+arh dag init -n N           # reconstruct the discovery path, inputs to claim
+arh dag freeze -n N         # freeze that specification
+arh replicate run ...       # blind reimplementation from the frozen DAG
 ```
 
-The protocol treats disagreement between replicators as useful evidence; agreement is not promoted to scientific confirmation by majority vote.
+Disagreement between replicators is treated as useful evidence; agreement is not promoted to scientific confirmation by majority vote.
 
 ## Why this layer exists
 
@@ -211,9 +190,7 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-17 the suite passed **154 / 154 core protocol checks** and **56 boundary regressions** (55 run, 1 skipped without network) against a configured local site. Earlier runs additionally covered real Slurm success and failure, native cache reuse and an immutable-input container probe.
-
-Internal field deployment exposed review, submission and provenance defects that are now represented by regression tests. The source research material and machine-specific audit record are intentionally not part of this software repository.
+AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-17 the suite passed **154 / 154 core protocol checks** and **56 boundary regressions** (55 run, 1 skipped without network) against a configured local site. Earlier runs additionally covered real Slurm success and failure, native cache reuse and an immutable-input container probe. Internal field deployment exposed review, submission and provenance defects, now represented by regression tests.
 
 ```bash
 # ARH_TEST_SITE must point at a site.md with runtime_image, runtime_sha256 and
@@ -224,9 +201,9 @@ python3 test/test_hardening.py
 bash examples/mean-shift/check.sh
 ```
 
-The protocol is a cooperative research-integrity system, not a hostile-code sandbox or trusted timestamp authority. Local hashes detect later changes; they do not prove temporal priority against an actor controlling the filesystem. External model services receive the context supplied to them, so local/HPC execution does not imply air-gapped inference.
+This is a cooperative research-integrity system, not a hostile-code sandbox or a trusted timestamp authority. Local hashes detect later changes; they do not prove temporal priority against an actor who controls the filesystem. External model services receive the context supplied to them, so local execution does not imply air-gapped inference.
 
-[Read the tested behavior and retained limitations →](docs/validation.md)
+[Tested behavior and retained limitations →](docs/validation.md)
 
 ## Documentation
 
@@ -250,12 +227,6 @@ AutoResearch HPC is an independent project. Two upstream sources are vendored, p
 - **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance in [`skills/ponytail/`](skills/ponytail/SKILL.md), used unmodified. No upstream hooks, MCP server or auxiliary skills are installed.
 - **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). The upstream multi-round orchestration is not installed.
 
-It also depends on, rather than reimplements:
+Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [micromamba](https://github.com/mamba-org/mamba) for the pinned host controller and task environments, and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
 
-- **[Nextflow](https://www.nextflow.io/)** — workflow execution, scheduling and caching.
-- **[Apptainer / Singularity](https://apptainer.org/)** — pinned task environments.
-- **[Slurm](https://slurm.schedmd.com/) / PBS** — compute allocation.
-- **[micromamba](https://github.com/mamba-org/mamba)** — the pinned host controller and task environments.
-- **[`AGENTS.md`](https://agents.md/)** — the cross-harness agent-instruction convention.
-
-The design borrows pre-registration from clinical trials and psychology's replication reform, and append-only records from lab notebooks and version control; [`docs/related-work.md`](docs/related-work.md) sets out what that means here and which systems this composes with rather than competes against.
+The design borrows pre-registration from clinical trials and psychology's replication reform, and append-only records from lab notebooks and version control. [`docs/related-work.md`](docs/related-work.md) sets out what that means here, and which systems this composes with rather than competes against.
