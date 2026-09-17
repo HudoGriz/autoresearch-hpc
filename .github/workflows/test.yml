@@ -35,19 +35,6 @@ jobs:
           export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md" ARH_TEST_NETWORK=1
           test/run_tests.sh
           python3 test/test_hardening.py
-      - name: Publication execution-controller evaluation
-        run: |
-          export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md"
-          python3 test/publication_execution_evaluation.py \
-            --json publication-execution-evaluation.json
-      - name: Upload execution-controller evaluation
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: publication-execution-evaluation-${{ github.sha }}
-          path: publication-execution-evaluation.json
-          if-no-files-found: warn
-          retention-days: 90
       - name: Protocol conformance is actually enforced
         run: |
           for c in "concurrent claims" "unfilled" "results exist" \

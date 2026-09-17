@@ -158,8 +158,8 @@ that mattered are preserved as tests and generic documentation instead.
   `test_sigterm_to_wrapper_releases_lock`,
   `test_dead_owner_lock_reclaimed_and_scripts_hashed` and
   `test_live_owner_lock_is_kept`.
-- **Publication-readiness track:** `docs/publication-plan.md`,
-  `docs/evaluation-plan.md`, a venue-neutral short-paper draft, and a synthetic
+- **Publication-readiness track:** a publication roadmap, a pre-specified
+  evaluation plan, a venue-neutral short-paper draft, and a synthetic
   deterministic mean-shift example that is checked in CI.
 
 ### Changed

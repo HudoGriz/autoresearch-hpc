@@ -69,6 +69,5 @@ Those classes included:
 
 These observations motivated the implementation; they are not external
 validation. The publication evaluation is therefore designed around synthetic
-failure injection and independent reproduction. See
-[`publication-plan.md`](publication-plan.md) and
-[`evaluation-plan.md`](evaluation-plan.md).
+failure injection and independent reproduction. That evaluation is planned and
+recorded outside this software repository.
