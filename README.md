@@ -14,33 +14,24 @@
 </p>
 
 <p align="center">
-  <a href="#start-here">Start here</a> ·
-  <a href="#quick-start">Quick start</a> ·
+  <a href="#setup">Setup</a> ·
+  <a href="#run-one-declared-experiment">Run an experiment</a> ·
   <a href="#the-research-loop">Research loop</a> ·
   <a href="#skills-and-cli">Skills + CLI</a> ·
-  <a href="docs/hpc-execution.md">HPC setup</a> ·
   <a href="PROTOCOL.md">Protocol</a> ·
-  <a href="docs/validation.md">Validation</a> ·
-  <a href="docs/publication-plan.md">Publication plan</a>
+  <a href="docs/validation.md">Validation</a>
 </p>
 
 ---
 
-AutoResearch HPC (`arh`) is a small research-protocol layer for **AI-assisted experimentation on infrastructure you already own**. A coding agent can propose and implement an experiment. `arh` makes the important boundaries mechanical:
+AutoResearch HPC (`arh`) is a research-protocol layer for **AI-assisted experimentation on infrastructure you already own**. A coding agent can propose and implement an experiment; `arh` makes the boundaries mechanical — claim an iteration, pre-declare it before results exist, execute it through the configured HPC stack, preserve failures, have a model from another family review it, and write the outcome into an append-only record.
 
-- claim an iteration;
-- pre-declare it before results exist;
-- execute it through the configured HPC stack;
-- preserve failures;
-- have a model from another family review it;
-- write the outcome into an append-only research record.
-
-It is deliberately **not** another scheduler, workflow engine or autonomous research daemon. Nextflow handles workflow execution and caching; Slurm/PBS/local provide compute; Singularity/Apptainer provides pinned task environments. AutoResearch HPC sits above those pieces and makes the *research process* inspectable.
+It is **not** a scheduler, a workflow engine or an autonomous research daemon. Nextflow executes and caches workflows; Slurm/PBS/local provide compute; Singularity/Apptainer provides pinned task environments. `arh` sits above those and makes the *research process* inspectable.
 
 > [!NOTE]
 > **Two layers, one workflow.** **Skills** tell an agent *how to conduct the research task*; the **`arh` CLI** enforces the parts that should not depend on an agent remembering the rules.
 
-## Start here
+## Setup
 
 You need a login node with a scheduler (Slurm, PBS, or neither for local runs) and Apptainer or Singularity. Nothing else — no pre-installed Conda or micromamba, and nothing is written to your shell configuration.
 
@@ -54,95 +45,22 @@ arh site detect                         # list your queues and their limits, pro
 arh doctor                              # what is still missing, if anything
 ```
 
-`arh site detect` prints a configuration block for you to paste and never writes the file itself, because choosing a queue depends on cost and who else is waiting. Run inside a project it also checks what is already configured against the machine, so a queue that does not exist, or more cores or memory than any node in it has, is caught before a job is rejected.
+`arh init` detects Slurm/PBS and the available Singularity/Apptainer command; `--bootstrap` also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot: which queue to use and what it permits. It prints a block for you to paste and never writes `site.md` itself, because choosing a queue depends on cost and who else is waiting. Run inside a project it also checks the existing configuration against the machine, so a queue that does not exist, or more cores or memory than any node in it has, is caught before a job is rejected.
 
-When `arh doctor` prints `Ready`, run your first iteration — see [Run one declared experiment](#2-run-one-declared-experiment). If anything is unclear, [hand the setup to your coding agent](#1-set-up) instead; the repository ships the instructions it needs.
+When `arh doctor` prints `Ready`, [run your first iteration](#run-one-declared-experiment).
 
-## The research loop
-
-The generic path is intentionally small:
-
-```mermaid
-flowchart LR
-    Q["Research question"] --> D["1 · Pre-declare"]
-    D --> E["2 · Execute"]
-    E --> R["3 · Review & record"]
-    R -. "next question" .-> Q
-```
-
-Each phase has a concrete protocol meaning:
-
-| Phase | What happens | Core interface | Durable evidence |
-|---|---|---|---|
-| **1 · Pre-declare** | Claim one question, define the estimand, controls, detection limit and acceptance criteria, then freeze the plan | `arh claim` · `arh new` · `arh gate predeclare` | `CLAIM.json` · `README.md` · `PREDECLARATION.sha256` |
-| **2 · Execute** | Run the declared workflow with pinned scientific tooling on the configured compute backend | `arh submit` · `arh run` | scripts · workflow metadata · run receipts · logs · results |
-| **3 · Review & record** | Report the declared quantity, cross-check it, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · review response · `PROGRESS.md` |
-
-Phase 2 runs on infrastructure you already know:
-
-```text
-Nextflow controller  →  Slurm / PBS / local  →  Singularity / Apptainer tasks
-```
-
-The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration rather than inside the workflow.
-
-## Skills and CLI
-
-You can drive the workflow as a **skill**, but skills and commands are not the same thing.
-
-**Skills are high-level agent playbooks.** They describe how to approach a research action and which checks matter. **`arh` commands are deterministic operations.** They create state, freeze declarations, launch execution, validate gates and maintain the record.
-
-| Skill / workflow | What the agent is being asked to do | Main `arh` machinery underneath |
-|---|---|---|
-| **[Iterate](skills/iterate/SKILL.md)** | Run one complete research iteration | `claim` → `new` → `gate predeclare` → `submit/run` → `ask` → `gate results` → `ledger` |
-| **[Cross-check](skills/cross-check/SKILL.md)** | Critique an iteration from a defined role | `arh ask --role ...` |
-| **[Verify](skills/verify/SKILL.md)** | Re-examine an existing result without rewriting history | `arh verify ...` |
-| **[Arms](skills/arms/SKILL.md)** | Track parallel sub-analyses with explicit fates | `arh arm ...` |
-| **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
-| **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
-| **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
-
-For **Claude Code**, `harness/install.sh` copies the skills into `.claude/skills/`, where they appear as `/iterate`, `/verify`, `/cross-check` and `/ledger`. Other harnesses read the same project contract and skill material through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
-
-The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
-
-## Quick start
-
-### 1. Set up
-
-**Easiest: ask your coding agent.** If you use Claude Code, Codex, OpenCode, Cursor, Copilot or another coding agent, give it this repository:
-
-```text
-https://github.com/HudoGriz/autoresearch-hpc
-```
-
-and ask:
+**Or hand the setup to your coding agent.** Give Claude Code, Codex, OpenCode, Cursor or Copilot this repository and ask:
 
 > Set up AutoResearch HPC for this project. Inspect the repository instructions first, detect my scheduler and container runtime, run the automatic bootstrap, configure the harness integration, then run `arh doctor` and resolve the required setup checks. Do not modify the scientific project or data beyond what AutoResearch HPC setup requires.
 
-The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path. The host bootstrap does **not** require a pre-installed Conda or micromamba environment.
-
-**By hand:**
-
-```bash
-git clone https://github.com/HudoGriz/autoresearch-hpc.git   # or: git@github.com:HudoGriz/autoresearch-hpc.git
-cd autoresearch-hpc
-export PATH="$PWD/bin:$PATH"
-
-arh init /shared/my-study --bootstrap
-cd /shared/my-study
-arh site detect
-arh doctor
-```
-
-`arh init` detects Slurm/PBS/local and the available Singularity/Apptainer command. With `--bootstrap`, it also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot: which queue to use and what it permits. `arh doctor` reports what still needs configuration.
+The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can inspect the machine and follow the repository's own setup path.
 
 <details>
 <summary><strong>Air-gapped cluster, or supplying micromamba and the task image yourself</strong></summary>
 
 **You do not need to install micromamba yourself.** Micromamba is a standalone executable. AutoResearch HPC first reuses its own pinned project-local copy, then a matching version already on `PATH`; if neither exists it downloads the pinned binary, verifies its SHA-256 checksum, and caches it under `.arh/tools/micromamba/`. It does not run `micromamba shell init` or modify your shell configuration.
 
-If your HPC cannot access GitHub, stage a micromamba binary once and provide it explicitly:
+If your HPC cannot reach GitHub, stage a micromamba binary once and provide it explicitly:
 
 ```bash
 arh init /shared/my-study --bootstrap \
@@ -171,7 +89,7 @@ Project state lives under `.arh/`:
 > [!TIP]
 > `arh` finds the study by walking up from the working directory. Agent harnesses often reset the shell's directory between commands, so `export ARH_PROJECT=/shared/my-study` to make every command resolve the study from anywhere.
 
-### 2. Run one declared experiment
+## Run one declared experiment
 
 ```bash
 N=$(arh claim -t "Does the proposed method improve the declared metric?")
@@ -180,7 +98,9 @@ arh new -n "$N"
 # Complete iterations/iterationN/README.md before any result exists.
 arh gate predeclare -n "$N"
 
+arh env create analysis python=3.12 numpy=2.1   # pinned, locked, replayable
 arh submit "iterations/iteration${N}/scripts/experiment.nf" -n experiment
+arh wait -n "$N"                                # block until submissions and reviews finish
 
 # Write results/report/iterationN_report.md.
 arh ask --role adversary -n "$N"
@@ -190,7 +110,7 @@ arh ledger render && arh ledger check
 
 Or hand the workflow to a configured agent and ask it to **use the Iterate skill** for one research question. The skill describes the procedure; the CLI still supplies the enforcement.
 
-### 3. Resume without conversation history
+To resume without conversation history:
 
 ```bash
 arh status
@@ -198,7 +118,31 @@ arh next
 arh context -n N
 ```
 
-`PROGRESS.md` is the authoritative project state. A project should be resumable cold from what is on disk rather than from an old chat transcript.
+`PROGRESS.md` inside the study is the authoritative project state. A project should be resumable cold from what is on disk rather than from an old chat transcript.
+
+## The research loop
+
+```mermaid
+flowchart LR
+    Q["Research question"] --> D["1 · Pre-declare"]
+    D --> E["2 · Execute"]
+    E --> R["3 · Review & record"]
+    R -. "next question" .-> Q
+```
+
+| Phase | What happens | Core interface | Durable evidence |
+|---|---|---|---|
+| **1 · Pre-declare** | Claim one question, define the estimand, controls, detection limit and acceptance criteria, then freeze the plan | `arh claim` · `arh new` · `arh gate predeclare` | `CLAIM.json` · `README.md` · `PREDECLARATION.sha256` |
+| **2 · Execute** | Run the declared workflow with pinned scientific tooling on the configured compute backend | `arh env` · `arh submit` · `arh run` · `arh wait` | scripts · workflow metadata · run receipts · logs · results |
+| **3 · Review & record** | Report the declared quantity, cross-check it, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · review response · `PROGRESS.md` |
+
+Phase 2 runs on infrastructure you already know:
+
+```text
+Nextflow controller  →  Slurm / PBS / local  →  Singularity / Apptainer tasks
+```
+
+The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration rather than inside the workflow.
 
 ## What gets recorded
 
@@ -221,6 +165,24 @@ my-study/
 ```
 
 Failed attempts, nulls, killed controls and superseded conclusions stay visible. A correction becomes a **new iteration**; the old evidence is not rewritten to make the history cleaner.
+
+## Skills and CLI
+
+**Skills are high-level agent playbooks** — how to approach a research action and which checks matter. **`arh` commands are deterministic operations** — they create state, freeze declarations, launch execution, validate gates and maintain the record.
+
+| Skill / workflow | What the agent is being asked to do | Main `arh` machinery underneath |
+|---|---|---|
+| **[Iterate](skills/iterate/SKILL.md)** | Run one complete research iteration | `claim` → `new` → `gate predeclare` → `submit/run` → `ask` → `gate results` → `ledger` |
+| **[Cross-check](skills/cross-check/SKILL.md)** | Critique an iteration from a defined role | `arh ask --role ...` |
+| **[Verify](skills/verify/SKILL.md)** | Re-examine an existing result without rewriting history | `arh verify ...` |
+| **[Arms](skills/arms/SKILL.md)** | Track parallel sub-analyses with explicit fates | `arh arm ...` |
+| **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
+| **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
+| **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
+
+`harness/install.sh` copies all seven skills into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger` and `/ponytail`. Codex and OpenCode read the same project contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
+
+The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
 ## Beyond the basic loop
 
@@ -249,11 +211,13 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. The current baseline passes **143 core checks and 56 boundary regressions**. Earlier validation runs added real Slurm success/failure, native cache reuse and an immutable-input container probe.
+AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-17 the suite passed **154 / 154 core protocol checks** and **56 boundary regressions** (55 run, 1 skipped without network) against a configured local site. Earlier runs additionally covered real Slurm success and failure, native cache reuse and an immutable-input container probe.
 
-Internal field deployment exposed review, submission and provenance defects that are now represented by regression tests. The source research material and machine-specific audit record are intentionally not part of this software repository; publication-facing evaluation uses synthetic fixtures and separately reportable execution evidence.
+Internal field deployment exposed review, submission and provenance defects that are now represented by regression tests. The source research material and machine-specific audit record are intentionally not part of this software repository.
 
 ```bash
+# ARH_TEST_SITE must point at a site.md with runtime_image, runtime_sha256 and
+# nextflow_prefix populated — the template in config/ leaves them empty.
 export ARH_TEST_SITE=/absolute/path/to/configured/local/site.md
 test/run_tests.sh
 python3 test/test_hardening.py
@@ -263,17 +227,6 @@ bash examples/mean-shift/check.sh
 The protocol is a cooperative research-integrity system, not a hostile-code sandbox or trusted timestamp authority. Local hashes detect later changes; they do not prove temporal priority against an actor controlling the filesystem. External model services receive the context supplied to them, so local/HPC execution does not imply air-gapped inference.
 
 [Read the tested behavior and retained limitations →](docs/validation.md)
-
-## Publication and evaluation
-
-The project is now intentionally shifting from **adding features** to **building evidence**. The first publication target is a short research-software paper supported by a citable release, a completely public synthetic example, controlled failure injection and an independent installation/reproduction.
-
-- [Publication readiness roadmap](docs/publication-plan.md)
-- [Pre-specified evaluation plan](docs/evaluation-plan.md)
-- [Deterministic synthetic example](examples/mean-shift/README.md)
-- [Working short-paper draft](paper/draft.md)
-
-Ambitious additions such as a knowledge graph or MCP server are not blockers for the first paper.
 
 ## Documentation
 
@@ -285,16 +238,24 @@ Ambitious additions such as a knowledge graph or MCP server are not blockers for
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
 | **Unattended agents** | [Running producer and reviewer sessions headless](docs/headless.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
-| **Publication roadmap** | [Release, evaluation, external reproduction and manuscript plan](docs/publication-plan.md) |
-| **Evaluation protocol** | [Failure injection, portability, overhead and review benchmark](docs/evaluation-plan.md) |
+| **Related work** | [What this composes with, and what it is not](docs/related-work.md) |
 | **Migration / hardening** | [`arh migrate` for 0.1 studies, and implementation notes](docs/migration-hardening.md) |
-| **Positioning** | [What this project is — and is not](docs/positioning.md) |
 | **Changes** | [CHANGELOG.md](CHANGELOG.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Built on existing work
 
-AutoResearch HPC is an independent project. It builds on ideas and infrastructure from:
+AutoResearch HPC is an independent project. Two upstream sources are vendored, pinned to an upstream commit and recorded with their licences under [`third_party/`](third_party/):
+
+- **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance in [`skills/ponytail/`](skills/ponytail/SKILL.md), used unmodified. No upstream hooks, MCP server or auxiliary skills are installed.
+- **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). The upstream multi-round orchestration is not installed.
+
+It also depends on, rather than reimplements:
 
 - **[Nextflow](https://www.nextflow.io/)** — workflow execution, scheduling and caching.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** — default coding guidance.
+- **[Apptainer / Singularity](https://apptainer.org/)** — pinned task environments.
+- **[Slurm](https://slurm.schedmd.com/) / PBS** — compute allocation.
+- **[micromamba](https://github.com/mamba-org/mamba)** — the pinned host controller and task environments.
+- **[`AGENTS.md`](https://agents.md/)** — the cross-harness agent-instruction convention.
+
+The design borrows pre-registration from clinical trials and psychology's replication reform, and append-only records from lab notebooks and version control; [`docs/related-work.md`](docs/related-work.md) sets out what that means here and which systems this composes with rather than competes against.
