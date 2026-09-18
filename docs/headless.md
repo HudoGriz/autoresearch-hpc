@@ -28,9 +28,13 @@ every child. `CLAUDECODE` made `arh claim` record a Codex producer as `claude`, 
 the inherited `CLAUDE_CODE_*` variables exposed a session token to the producer.
 
 - Clear harness variables (`CLAUDE*`, `CODEX*`) before starting a producer.
-- Set `ARH_AGENT` to the producer's harness name. `CLAIM.json` records where the
-  name came from (`agent_source`), and `arh claim` and `arh doctor` warn when an
-  inferred name disagrees with the configured producer.
+- Name the producer in `.arh/config/harnesses.md` rather than relying on `ARH_AGENT`.
+  A driver's exported `ARH_AGENT` does not survive a producer that exports its own, and
+  the agent contract used to invite exactly that, so a lane whose producer name pinned a
+  model and account recorded itself under the bare harness name. `arh claim` now takes the
+  configured producer over both `ARH_AGENT` and the harness markers, keeps what the session
+  reported in `inferred_agent`/`inferred_from`, and warns; `arh doctor` warns too. `-a NAME`
+  overrides deliberately.
 
 ## Close stdin for Codex
 

@@ -16,8 +16,21 @@ done
 [ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
 
 arh_load_project
-[ -n "$agent" ] || agent=$(arh_agent_name)
-arh_warn_agent_mismatch
+# Who claimed this iteration. The configured producer is operator-owned and carries the
+# model and account a lane pinned into its name; ARH_AGENT and the harness markers are set
+# by the session itself and lose that. So the configured producer wins over both, `-a`
+# wins over everything, and what the session reported is recorded alongside either way.
+inferred=$(arh_agent_name); inferred_from=$(arh_agent_source)
+producer=$(arh_config_get "$ARH_HARN" producer "")
+if [ -n "$agent" ]; then
+  agent_source='claim --agent'
+elif [ -n "$producer" ] && [ "$producer" != "$inferred" ] && [ "$inferred_from" != USER ]; then
+  arh_warn_agent_mismatch
+  arh_warn "recording '$producer' as this iteration's agent; '$inferred' is kept as inferred_agent"
+  agent=$producer; agent_source='config:producer'
+else
+  agent=$inferred; agent_source=$inferred_from
+fi
 mkdir -p "$ARH_ITERS"
 
 n=$(
@@ -38,9 +51,11 @@ done
 cat > "$dir/CLAIM.json" <<EOF
 {
   "iteration": $n,
-  "agent": "$(arh_agent_name)",
-  "agent_source": "$(arh_agent_source)",
+  "agent": "$agent",
+  "agent_source": "$agent_source",
   "declared_agent": "$agent",
+  "inferred_agent": "$inferred",
+  "inferred_from": "$inferred_from",
   "claimed": "$(arh_now)",
   "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),
   "status": "CLAIMED",
