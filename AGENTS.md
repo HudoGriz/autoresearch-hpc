@@ -173,8 +173,11 @@ notices, and it ends as soon as its reply ends.
 - `arh ask` exit 77: the provider refused the content. No round was spent, and
   waiting will not help. Any `verifier_fallback` was already tried; if none gave a
   review, record the refusal as what blocks the iteration.
-- Set `ARH_AGENT` to your harness name (`claude`, `codex`, …). Otherwise it is
-  inferred from environment variables that an outer session may have left behind.
+- **Do not set `ARH_AGENT` yourself.** Whoever started this session already named the
+  producer in `.arh/config/harnesses.md`, and that name may pin a model and an account
+  (`claude_sonnet_main`) that your harness name (`claude`) would throw away. `arh claim`
+  takes the configured producer, records what the session reported as `inferred_agent`,
+  and warns when the two disagree. Only set `ARH_AGENT` if no producer is configured.
 
 ## Optional external generators
 

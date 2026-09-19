@@ -107,15 +107,19 @@ arh_agent_source() {
   else printf 'USER'; fi
 }
 
-# Warn when a harness marker names a different agent than the configured producer.
+# Warn when the session's idea of the agent differs from the configured producer.
+# ARH_AGENT is deliberately NOT exempt: the agent contract tells a session to set it to
+# its own harness name ("claude", "codex", ...), which silently discards the model and
+# account a lane pinned into the producer name. That override is exactly what needs
+# reporting, so only a plain USER fallback (a human at a shell) is exempt.
 arh_warn_agent_mismatch() {
   local name source producer
   name=$(arh_agent_name); source=$(arh_agent_source)
   producer=$(arh_config_get "$ARH_HARN" producer "")
-  case "$source" in ARH_AGENT|USER) return 0 ;; esac
+  case "$source" in USER) return 0 ;; esac
   [ -n "$producer" ] && [ "$name" != "$producer" ] || return 0
-  arh_warn "agent '$name' was inferred from $source, but the configured producer is '$producer'."
-  arh_warn "if this session is $producer, set ARH_AGENT=$producer (the marker may be inherited from an outer session)"
+  arh_warn "agent '$name' came from $source, but the configured producer is '$producer'."
+  arh_warn "the configured producer is authoritative; pass 'arh claim -a NAME' to record a different agent"
 }
 
 arh_guard_path() {

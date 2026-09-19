@@ -475,9 +475,23 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
             self.assertEqual(result.returncode, 0, result.stderr)
             record = json.loads((self.root / f'iterations/iteration{result.stdout.strip()}/CLAIM.json').read_text())
             return record, result.stderr
+        # An inherited harness marker does not get to name the agent: the configured
+        # producer wins, and what the session reported is kept beside it.
         record, stderr = claim('inherited marker', CLAUDECODE='1')
-        self.assertEqual((record['agent'], record['agent_source']), ('claude', 'CLAUDECODE'))
+        self.assertEqual((record['agent'], record['agent_source']), ('source', 'config:producer'))
+        self.assertEqual((record['inferred_agent'], record['inferred_from']), ('claude', 'CLAUDECODE'))
         self.assertIn("configured producer is 'source'", stderr)
+
+        # The agent contract tells a session to export ARH_AGENT=<its harness name>. That
+        # used to overwrite a producer name pinning a model and account (benchmark study 10,
+        # 2026-09-18: a claude_sonnet_main lane recorded itself as plain "claude"). The
+        # configured producer outranks it, and the override is reported rather than silent.
+        record, stderr = claim('agent overrides itself', CLAUDECODE='1', ARH_AGENT='claude')
+        self.assertEqual((record['agent'], record['agent_source']), ('source', 'config:producer'))
+        self.assertEqual((record['inferred_agent'], record['inferred_from']), ('claude', 'ARH_AGENT'))
+        self.assertIn("configured producer is 'source'", stderr)
+
+        # Agreement between the session and the configured producer stays quiet.
         record, stderr = claim('explicit agent', CLAUDECODE='1', ARH_AGENT='source')
         self.assertEqual((record['agent'], record['agent_source']), ('source', 'ARH_AGENT'))
         self.assertNotIn('configured producer', stderr)
