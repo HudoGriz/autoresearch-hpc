@@ -28,6 +28,13 @@ case "$role:$harness" in *..*|*/*) arh_die "invalid role or harness" ;; esac
 [ -n "$n" ] || arh_die "which iteration? arh ask --role $role -n N"
 
 arh_load_project
+
+# Whether a review must come from a different model family than the producer. True by default;
+# a project that sets it false accepts a same-family adversarial review as a full cross-check, and
+# every review records which rule it ran under so the gate does not change meaning retroactively.
+strict_family=$(arh_config_get "$ARH_HARN" require_foreign_family true)
+case "$strict_family" in true|false) ;; *) arh_die "require_foreign_family must be true or false, not '$strict_family'" ;; esac
+[ "$strict_family" = true ] && strict_arg=1 || strict_arg=0
 dir="$ARH_ITERS/iteration$n"
 [ -d "$dir" ] || arh_die "no iteration $n"
 [ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"
@@ -58,10 +65,12 @@ ineligible() {
   case "$1" in ""|*..*|*/*) echo "invalid configured harness name"; return ;; esac
   fam=$(arh_config_get "$ARH_HARN" "harness_${1}_family" unknown)
   case "$pfam:$fam" in unknown:*|mixed:*|:*|*:unknown|*:mixed|*:) echo "configure concrete producer and verifier model families"; return ;; esac
-  if [ "$pfam" = "$fam" ] && [ "$same_family" = 0 ]; then
+  if [ "$pfam" = "$fam" ] && [ "$same_family" = 0 ] && [ "$strict_family" = true ]; then
     echo "producer ($producer/$pfam) and verifier ($1/$fam) are the same model family.
-       A model does not reliably catch its own reasoning errors. Choose another
-       harness, or pass --same-family to record a weaker check that cannot satisfy the results gate."
+       A model does not reliably catch its own reasoning errors. Choose another harness,
+       pass --same-family to record a weaker check that cannot satisfy the results gate, or
+       set require_foreign_family = false in .arh/config/harnesses.md to accept same-family
+       review as a full cross-check for this project, and record why beside it."
     return
   fi
   [ -n "$(arh_config_get "$ARH_HARN" "harness_${1}_cmd" "")" ] \
@@ -171,14 +180,18 @@ for h in $candidates; do
     printf '| field | value |\n|---|---|\n'
     printf '| role | `%s` |\n| verifying harness | `%s` (%s) |\n' "$role" "$h" "$vfam"
     printf '| producing harness | `%s` (%s) |\n| same family | %s |\n' "$producer" "$pfam" \
-           "$([ "$same_family" = 1 ] && echo 'yes — WEAKER CHECK' || echo no)"
+           "$(if [ "$pfam" != "$vfam" ]; then echo no
+              elif [ "$strict_family" = false ]; then echo 'yes — accepted, require_foreign_family = false'
+              else echo 'yes — WEAKER CHECK'; fi)"
+    printf '| foreign family required | %s |\n' "$strict_family"
     printf '| run | %s |\n\n---\n\n' "$(arh_now)"
   } > "$out"
 
   # Parse quoted arguments without shell expansion; timeout is portable.
   set +e
   python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" \
-    "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${h}_version_cmd" "")"
+    "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${h}_version_cmd" "")" \
+    "$strict_arg"
   rc=$?
   set -e
   cp "$prompt" "$out.prompt"

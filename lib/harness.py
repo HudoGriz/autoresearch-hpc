@@ -31,9 +31,15 @@ def valid_records(directory):
             output = Path(str(record)[:-5])
             report = directory / 'results/report' / (directory.name + '_report.md')
             pf, vf = data['producer_family'], data['verifier_family']
+            # Which rule this review ran under is read from the review, not from today's config:
+            # relaxing require_foreign_family later must not retroactively validate an old review,
+            # and tightening it must not invalidate one. Records written before the key existed
+            # default to True, the behaviour they were produced under.
+            strict = data.get('require_foreign_family', True)
+            families_ok = (pf != vf and not data['same_family_override']) if strict else True
             if (data['exit_code'] == 0 and data['verdict'] in ('SOUND', 'QUALIFIED', 'UNSOUND')
                     and pf not in ('', 'unknown', 'mixed') and vf not in ('', 'unknown', 'mixed')
-                    and pf != vf and not data['same_family_override']
+                    and families_ok
                     and data['review_sha256'] == digest(output)
                     and data['report_sha256'] == digest(report)
                     and data['predeclaration_sha256'] == digest(directory / 'README.md')
@@ -132,6 +138,8 @@ def cli_version(template, cwd):
 def run():
     command, prompt_file, cwd, output, seconds, pf, vf, override, output_limit = sys.argv[2:11]
     version_cmd = sys.argv[11] if len(sys.argv) > 11 else ''
+    # '0' when the project accepts a same-family review; appended last so older callers keep working.
+    strict = (sys.argv[12] if len(sys.argv) > 12 else '1') != '0'
     version = cli_version(version_cmd, cwd)
     prompt = Path(prompt_file).read_text()
     # {usage}: a path the command may write a JSON object of token counts or cost to.
@@ -237,7 +245,8 @@ def run():
     directory = Path(output).parent
     report = directory / 'results/report' / (directory.name + '_report.md')
     data = dict(exit_code=rc, verdict=verdict, producer_family=pf, verifier_family=vf,
-                same_family_override=override == '1', started=started, finished=time.time(),
+                same_family_override=override == '1', require_foreign_family=strict,
+                started=started, finished=time.time(),
                 command_template=command, cwd=cwd, prompt_sha256=digest(prompt_file),
                 review_sha256=digest(output), report_sha256=reviewed_report,
                 predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts,

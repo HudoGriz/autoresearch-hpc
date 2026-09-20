@@ -124,9 +124,15 @@ workflow {
 5. **Pin every scientific tool.** Use the declared task image / `arh run` path.
    A tool that can silently change underneath a run is not reproducibly pinned.
 
-6. **Required review comes from a different configured model family.** `arh ask`
-   enforces this. Cross-family review reduces one source of correlated error; it
-   is evidence, not proof or independent scientific validation.
+6. **Required review comes from a different configured model family, unless the
+   project says otherwise.** `arh ask` enforces this while
+   `require_foreign_family = true` in `.arh/config/harnesses.md`, which is the
+   default. Cross-family review reduces one source of correlated error; it is
+   evidence, not proof or independent scientific validation. A project may set
+   the key to `false` to accept an adversarial review from the producer's own
+   family — a weaker check, because a model does not reliably catch its own
+   reasoning errors. Each review records the value in force when it ran, so the
+   setting never revalidates or invalidates a review already taken.
 
 7. **Standing rules bind every conclusion.** They live in `rules/` and are
    enforced by `arh gate`.
@@ -178,6 +184,26 @@ notices, and it ends as soon as its reply ends.
   (`claude_sonnet_main`) that your harness name (`claude`) would throw away. `arh claim`
   takes the configured producer, records what the session reported as `inferred_agent`,
   and warns when the two disagree. Only set `ARH_AGENT` if no producer is configured.
+
+## Delegating implementation to another model
+
+A project may name two agents instead of one: `orchestrator` plans, claims and
+pre-declares; `executor` writes and runs the analysis. Both are harnesses in
+`.arh/config/harnesses.md`. Run `arh delegate list` to see what is configured;
+nothing is delegated unless a role is set.
+
+```bash
+arh delegate --role executor -n 4 --prompt task.md --dry-run   # inspect the request first
+arh delegate --role executor -n 4 --prompt task.md
+```
+
+The request carries the frozen pre-declaration and your task. The response lands
+in `iterations/iterationN/metadata/delegations/NNN-<role>/` with `request.md`,
+`response.md` and a `run.json` recording the harness, model version, command and
+hashes. A delegated response is a **draft**: it is not evidence until it has gone
+through pinned execution, the gates and a cross-check, exactly like work you
+wrote yourself. Delegation carries no family requirement — it is a division of
+labour, not a second opinion. Review is still governed by `arh ask`.
 
 ## Optional external generators
 

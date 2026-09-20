@@ -95,8 +95,13 @@ for h in $(arh_config_get "$ARH_HARN" harnesses ""); do
 done
 pf=$(arh_config_get "$ARH_HARN" "harness_${producer}_family" a)
 vf=$(arh_config_get "$ARH_HARN" "harness_${verifier}_family" b)
-if [ "$pf" = "$vf" ]; then arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1))
-else arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"; fi
+strict_family=$(arh_config_get "$ARH_HARN" require_foreign_family true)
+if [ "$pf" != "$vf" ]; then arh_ok "producer $producer ($pf) != verifier $verifier ($vf)"
+elif [ "$strict_family" = false ]; then
+  arh_warn "producer ($producer) and verifier ($verifier) share family '$pf'; accepted because
+       require_foreign_family = false. A model does not reliably catch its own reasoning errors,
+       so every review taken this way is a weaker check and the record says so."
+else arh_fail "producer ($producer) and verifier ($verifier) share family '$pf'"; warn=$((warn+1)); fi
 # A review is ineligible unless BOTH families are concrete, and that is only discovered at
 # the results gate, after the work is done. Say so here instead.
 for pair in "producer:$producer:$pf" "verifier:$verifier:$vf"; do
@@ -118,6 +123,19 @@ for h in $(arh_config_get "$ARH_HARN" verifier_fallback ""); do
   esac
 done
 arh_warn_agent_mismatch
+
+printf '\ndelegation roles (optional):\n'
+if [ -z "$(arh_config_get "$ARH_HARN" orchestrator "")$(arh_config_get "$ARH_HARN" executor "")" ]; then
+  printf '  none configured; one agent does both planning and implementation\n'
+else
+  for r in orchestrator executor; do
+    rh=$(arh_config_get "$ARH_HARN" "$r" "")
+    if [ -z "$rh" ]; then arh_warn "$r unset while the other role is configured"
+    elif [ -z "$(arh_config_get "$ARH_HARN" "harness_${rh}_cmd" "")" ]; then
+      arh_fail "$r = $rh has no harness_${rh}_cmd"; warn=$((warn+1))
+    else arh_ok "$r $rh ($(arh_config_get "$ARH_HARN" "harness_${rh}_family" unknown))"; fi
+  done
+fi
 
 printf '\nexternal generators (optional):\n'
 if [ ! -f "$ARH_GENS" ]; then

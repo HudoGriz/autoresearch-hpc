@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Hand one bounded task to a configured harness, and record who did it.
+#
+# The orchestrating agent plans, claims and pre-declares; an executor model can write and run the
+# analysis. Both are harnesses this project already configures, so a delegation stays inside the
+# protocol: the request is composed here, the response lands under the iteration's metadata, and
+# run.json records the model, the command and the hashes. A delegated response is a draft like any
+# other -- it is not evidence until it has passed the pre-declaration, pinned execution and
+# cross-check gates.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+usage:
+  arh delegate list
+  arh delegate --role ROLE -n N [--prompt FILE] [--note TEXT] [--harness H] [--dry-run]
+
+ROLE names a key in .arh/config/harnesses.md: orchestrator or executor. --harness
+overrides the configured harness for one call. The response is advisory and is
+recorded under the iteration's metadata/delegations/, never under results/.
+USAGE
+}
+
+arh_load_project
+
+role_harness() { arh_config_get "$ARH_HARN" "$1" ""; }
+
+list_roles() {
+  local r h fam cmd
+  printf '%-14s %-22s %-12s %s\n' ROLE HARNESS FAMILY STATE
+  printf '%-14s %-22s %-12s %s\n' -------------- ---------------------- ------------ -----
+  for r in orchestrator executor; do
+    h=$(role_harness "$r")
+    if [ -z "$h" ]; then
+      printf '%-14s %-22s %-12s %s\n' "$r" "(unset)" "-" "not configured"
+      continue
+    fi
+    fam=$(arh_config_get "$ARH_HARN" "harness_${h}_family" unknown)
+    cmd=$(arh_config_get "$ARH_HARN" "harness_${h}_cmd" "")
+    printf '%-14s %-22s %-12s %s\n' "$r" "$h" "$fam" \
+      "$([ -n "$cmd" ] && echo ready || echo 'no command configured')"
+  done
+}
+
+case "${1-}" in
+  -h|--help|help|"") usage; exit 0 ;;
+  list) list_roles; exit 0 ;;
+esac
+
+role=""; n=""; prompt_file=""; note=""; harness=""; dry=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --role)         role="${2-}"; shift 2 ;;
+    -n|--iteration) n="${2-}"; shift 2 ;;
+    --prompt)       prompt_file="${2-}"; shift 2 ;;
+    --note)         note="${2-}"; shift 2 ;;
+    --harness)      harness="${2-}"; shift 2 ;;
+    --dry-run)      dry=1; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+
+case "$role" in orchestrator|executor) ;; *) arh_die "--role must be orchestrator or executor" ;; esac
+case "$n" in ""|*[!0-9]*) arh_die "iteration must be numeric: arh delegate --role $role -n N" ;; esac
+case "$harness" in *..*|*/*) arh_die "invalid harness name" ;; esac
+[ -z "$prompt_file" ] || [ -f "$prompt_file" ] || arh_die "prompt file not found: $prompt_file"
+
+dir="$ARH_ITERS/iteration$n"
+[ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+
+[ -n "$harness" ] || harness=$(role_harness "$role")
+[ -n "$harness" ] || arh_die "no harness configured for role '$role'; set '$role = <harness>' in ${ARH_HARN#"$ARH_ROOT"/}"
+cmd=$(arh_config_get "$ARH_HARN" "harness_${harness}_cmd" "")
+[ -n "$cmd" ] || arh_die "no command configured for harness '$harness' (see ${ARH_HARN#"$ARH_ROOT"/})"
+fam=$(arh_config_get "$ARH_HARN" "harness_${harness}_family" unknown)
+version_cmd=$(arh_config_get "$ARH_HARN" "harness_${harness}_version_cmd" "")
+
+# A delegation is an implementation aid, so unlike a cross-check it carries no family requirement:
+# the point is a division of labour, not an independent opinion. arh ask still governs review.
+# The template ships these keys present but empty, and arh_config_get returns a set-but-empty
+# value as empty rather than falling back, so the defaults are applied here.
+timeout_s=$(arh_config_get "$ARH_HARN" delegate_timeout "")
+[ -n "$timeout_s" ] || timeout_s=$(arh_config_get "$ARH_HARN" ask_timeout 900)
+limit=$(arh_config_get "$ARH_HARN" delegate_max_output_bytes "")
+[ -n "$limit" ] || limit=262144
+case "$timeout_s$limit" in *[!0-9]*) arh_die "delegate_timeout and delegate_max_output_bytes must be numeric" ;; esac
+config_sha=$(arh_sha256 "$ARH_HARN")
+
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+if [ "$dry" = 1 ]; then
+  run=$(mktemp -d "${TMPDIR:-/tmp}/arh-delegate.${role}.XXXXXX")
+  trap 'rm -rf "$run"' EXIT
+else
+  base="$dir/metadata/delegations"; mkdir -p "$base"; arh_guard_path "$base"
+  # Numbered in claim order so the sequence of delegations reads in order on disk.
+  seq=$(printf '%03d' "$(( $(find "$base" -maxdepth 1 -type d -name '[0-9][0-9][0-9]-*' 2>/dev/null | wc -l) + 1 ))")
+  run="$base/${seq}-${role}"
+  mkdir "$run" || arh_die "could not create delegation directory: ${run#"$ARH_ROOT"/}"
+fi
+
+request="$run/request.md"; output="$run/artifacts"
+{
+  printf '# Delegated task — iteration %s\n\n' "$n"
+  printf '| field | value |\n|---|---|\n'
+  printf '| role | `%s` |\n| harness | `%s` (%s) |\n| iteration | `%s` |\n| requested | %s |\n\n' \
+         "$role" "$harness" "$fam" "$n" "$(arh_now)"
+  printf '> You are performing one bounded task inside an AutoResearch HPC iteration that another\n'
+  printf '> agent has already claimed and pre-declared. Work only to the declaration below. Do not\n'
+  printf '> revise the pre-declaration, claim iterations, conclude the iteration, or treat your own\n'
+  printf '> output as accepted evidence: it is a draft that must still pass pinned execution and a\n'
+  printf '> cross-check. Report what you did, exactly, including anything you could not do.\n\n'
+  if [ -f "$dir/README.md" ]; then
+    printf '## Iteration pre-declaration (frozen; read, do not edit)\n\n'; cat "$dir/README.md"; printf '\n'
+  fi
+  if [ -n "$prompt_file" ]; then
+    printf '\n## Task\n\n'; cat "$prompt_file"; printf '\n'
+  fi
+  if [ -n "$note" ]; then printf '\n## Note from the orchestrator\n\n%s\n' "$note"; fi
+} > "$request"
+
+if [ "$dry" = 1 ]; then
+  printf '# request\n'; cat "$request"
+  printf '\n# command (not run)\n'
+  python3 "$ARH_HOME/lib/evoke.py" plan "$cmd" "$version_cmd" "$request" "$output" "$ARH_ROOT" \
+    "$timeout_s" "$limit" "$harness" "$role" "$n" "$fam" "$config_sha" delegation
+  exit 0
+fi
+
+printf 'delegate: role=%s harness=%s (%s) iteration=%s\n' "$role" "$harness" "$fam" "$n" >&2
+set +e
+python3 "$ARH_HOME/lib/evoke.py" run "$cmd" "$version_cmd" "$request" "$output" "$ARH_ROOT" \
+  "$timeout_s" "$limit" "$harness" "$role" "$n" "$fam" "$config_sha" delegation
+rc=$?
+set -e
+printf 'delegation record: %s\n' "${run#"$ARH_ROOT"/}"
+[ -s "$run/stderr.log" ] || rm -f "$run/stderr.log"
+[ "$rc" -eq 0 ] || arh_die "harness '$harness' exited $rc; record retained at ${run#"$ARH_ROOT"/}"
+printf 'response: %s\n' "${run#"$ARH_ROOT"/}/response.md"

@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 
 
-PLACEHOLDERS = {"request", "output", "project", "iteration", "phase"}
+PLACEHOLDERS = {"request", "output", "project", "iteration", "phase", "prompt"}
 PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_-]*)\}")
 
 
@@ -116,16 +116,23 @@ def stream(proc, stdout_path, stderr_path, timeout, limit):
 
 
 def main():
-    if len(sys.argv) != 14 or sys.argv[1] not in ("plan", "run"):
+    if len(sys.argv) not in (14, 15) or sys.argv[1] not in ("plan", "run"):
         raise SystemExit(
             "usage: evoke.py {plan|run} TEMPLATE VERSION_CMD REQUEST OUTPUT CWD "
-            "TIMEOUT LIMIT TOOL PHASE ITERATION SOURCE CONFIG_SHA"
+            "TIMEOUT LIMIT TOOL PHASE ITERATION SOURCE CONFIG_SHA [KIND]"
         )
     (mode, template, version_cmd, request, output, cwd, timeout, limit,
-     tool, phase, iteration, source, config_sha) = sys.argv[1:]
+     tool, phase, iteration, source, config_sha) = sys.argv[1:14]
+    # An evocation calls a system outside the protocol; a delegation calls a harness the project
+    # already configures. The runner is identical -- compose a request, run a command under a
+    # timeout and an output cap, record what ran -- so only the record's vocabulary differs.
+    kind = sys.argv[14] if len(sys.argv) > 14 else "evocation"
     request, output, cwd = Path(request), Path(output), Path(cwd)
     values = {
         "request": str(request),
+        # A harness configured for `arh ask` writes {prompt}; a generator writes {request}. They
+        # name the same composed file, so a delegation can reuse a harness command unchanged.
+        "prompt": str(request),
         "output": str(output),
         "project": str(Path(os.environ.get("ARH_ROOT", cwd))),
         "iteration": iteration,
@@ -141,12 +148,12 @@ def main():
     record_path = run_dir / "run.json"
     started = utc_now()
     tool_version = version(version_cmd, cwd)
+    labels = ({"schema": "arh-delegation-v1", "harness": tool, "role": phase, "family": source or None}
+              if kind == "delegation" else
+              {"schema": "arh-evocation-v1", "tool": tool, "phase": phase, "source": source or None})
     record = {
-        "schema": "arh-evocation-v1",
-        "tool": tool,
-        "phase": phase,
+        **labels,
         "iteration": int(iteration),
-        "source": source or None,
         "command_template": template,
         "version_command": version_cmd or None,
         "tool_version": tool_version,

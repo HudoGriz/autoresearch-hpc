@@ -59,7 +59,8 @@ class Protocol(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
-    def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5, version=None, cmd_extra=''):
+    def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5, version=None,
+                  cmd_extra='', extra_config=''):
         self.mock.write_text(body + '\n')
         extra = f'harness_reviewer_version_cmd = {version}\n' if version else ''
         self.config.write_text(f'''```arh-config
@@ -69,7 +70,7 @@ harness_source_family = openai
 harness_reviewer_family = {family}
 harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
 {extra}ask_timeout = {timeout}
-```
+{extra_config}```
 ''')
 
     def ask(self, good=True):
@@ -495,6 +496,70 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         record, stderr = claim('explicit agent', CLAUDECODE='1', ARH_AGENT='source')
         self.assertEqual((record['agent'], record['agent_source']), ('source', 'ARH_AGENT'))
         self.assertNotIn('configured producer', stderr)
+
+    def test_same_family_review_counts_only_when_the_project_allows_it(self):
+        # A model does not reliably catch its own reasoning errors, so a same-family review is a
+        # weaker check and is refused by default. A project may accept one deliberately.
+        self.configure(family='openai')                       # producer and verifier both openai
+        refused = self.ask(good=False)
+        self.assertIn('same model family', refused.stderr)
+
+        # --same-family records the review but must never satisfy the gate.
+        self.call('ask', '-n', '1', '--same-family')
+        self.assertIn('no eligible cross-check', self.gate(good=False).stdout)
+        for record in self.it.glob('CROSSCHECK_*'):     # all of them: the round budget counts files
+            record.unlink()
+
+        # With require_foreign_family = false the same review is a full cross-check.
+        self.configure(family='openai', extra_config='require_foreign_family = false\n')
+        self.ask()
+        record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
+        self.assertIs(record['require_foreign_family'], False)
+        self.assertIn('completed foreign review', self.gate().stdout)
+
+    def test_the_rule_a_review_passed_under_is_read_from_the_review(self):
+        # Tightening the setting afterwards must not invalidate a review already taken, and
+        # relaxing it must not retroactively validate one. The record, not today's config, decides.
+        self.configure(family='openai', extra_config='require_foreign_family = false\n')
+        self.ask()
+        self.assertIn('completed foreign review', self.gate().stdout)
+
+        self.configure(family='openai')                       # back to the strict default
+        self.assertIn('completed foreign review', self.gate().stdout)
+
+        record_path = next(self.it.glob('CROSSCHECK_*.md.json'))
+        record = json.loads(record_path.read_text())
+        record['require_foreign_family'] = True               # as a strict-era review would read
+        record_path.write_text(json.dumps(record))
+        self.assertIn('no eligible cross-check', self.gate(good=False).stdout)
+
+    def test_delegate_records_who_did_the_work(self):
+        self.configure(extra_config='executor = reviewer\n')
+        self.assertIn('executor', self.call('delegate', 'list').stdout)
+
+        task = self.root / 'task.md'
+        task.write_text('Implement the pre-declared analysis.\n')
+        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), '--dry-run')
+        self.assertIn('Implement the pre-declared analysis.', dry.stdout)
+        self.assertFalse(list((self.it / 'metadata').glob('delegations/*')))   # a dry run writes nothing
+
+        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task))
+        run = next((self.it / 'metadata/delegations').iterdir())
+        self.assertEqual(run.name, '001-executor')
+        record = json.loads((run / 'run.json').read_text())
+        self.assertEqual((record['schema'], record['role'], record['harness']),
+                         ('arh-delegation-v1', 'executor', 'reviewer'))
+        self.assertEqual(record['exit_code'], 0)
+        self.assertIn('VERDICT: SOUND', (run / 'response.md').read_text())
+        # The frozen pre-declaration travels with the task; the response is not a result.
+        self.assertIn('pre-declaration', (run / 'request.md').read_text())
+        self.assertFalse((self.it / 'results' / 'response.md').exists())
+
+    def test_delegate_refuses_an_unconfigured_role(self):
+        self.configure()
+        failed = self.call('delegate', '--role', 'executor', '-n', '1', good=False)
+        self.assertIn('no harness configured for role', failed.stderr)
+        self.assertIn('none configured', self.call('doctor', good=None).stdout)
 
     def test_content_refusal_is_its_own_outcome(self):
         # Codex refused a public RNA-seq count table as "flagged for possible biological risk"

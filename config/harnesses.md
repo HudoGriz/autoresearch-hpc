@@ -49,13 +49,30 @@ harness_gemini_cmd      = gemini -p {prompt}
 harness_gemini_family   = google
 harness_gemini_version_cmd = gemini --version
 
-producer   = claude
+# Who does what. `producer` is the agent that claims and pre-declares; `orchestrator` and
+# `executor` split that work when you want one model planning and another implementing, and
+# `arh delegate --role executor -n N` hands a bounded task to the named harness. Leave the two
+# unset to keep a single agent doing both. `arh delegate list` shows what is configured.
+producer     = claude
+orchestrator =
+executor     =
+
 verifier   = codex
+# Whether a cross-check must come from a different model family than the producer. Keep this
+# true unless you have a reason: a model does not reliably catch its own reasoning errors, so a
+# same-family review is a weaker check. Set it false to accept an adversarial review from the
+# producer's own family as a full cross-check -- and record why beside this line. Every review
+# stores the value in force when it ran, so changing it later never revalidates or invalidates a
+# review already taken.
+require_foreign_family = true
 # Tried in order only after the verifier refuses the content (arh ask exit 77). Each needs a
 # concrete model family other than the producer's, e.g.: verifier_fallback = gemini
 verifier_fallback =
 
 ask_timeout = 900
+# Delegations fall back to ask_timeout when delegate_timeout is unset.
+delegate_timeout =
+delegate_max_output_bytes = 262144
 ask_max_input_bytes = 24000
 ask_max_output_bytes = 8000
 ask_output_words = 500
