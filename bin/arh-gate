@@ -146,6 +146,8 @@ case "$sub" in
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"
         [ -f "$dir/REVIEW_RESPONSE.md" ] \
           || printf '  WARN no REVIEW_RESPONSE.md: record what was done about each finding (protocol 6.5)\n'
+        [ "$(arh_harness_config_state "$dir")" != changed ] \
+          || printf '  WARN .arh/config/harnesses.md changed since iteration %s was claimed: check the\n       verifier, fallbacks and review bounds before relying on its review\n' "$n"
       else
         arh_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"

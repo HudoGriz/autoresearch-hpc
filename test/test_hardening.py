@@ -620,6 +620,31 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertEqual(kinds, ['limit', 'review'])
         self.gate()
 
+    def test_harness_config_change_is_reported(self):
+        # Nothing froze harnesses.md, so a producing agent could change the terms of its own
+        # cross-check without a trace (2026-09-16). setUp claims iteration 1, then configures.
+        self.ask()
+        sha = hashlib.sha256(self.config.read_bytes()).hexdigest()
+        record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
+        self.assertEqual(record['harness_config_sha256'], sha)
+        self.assertIn('harnesses.md changed since iteration 1 was claimed', self.gate().stdout)
+        self.call('claim', '-t', 'after configuration')
+        claim = json.loads((self.root / 'iterations/iteration2/CLAIM.json').read_text())
+        self.assertEqual(claim['harness_config_sha256'], sha)
+        states = {i['iteration']: i['harness_config']
+                  for i in json.loads(self.call('status', '--json').stdout)['iterations']}
+        self.assertEqual(states, {1: 'changed', 2: 'unchanged'})
+        self.assertIn('iteration(s) 1 were claimed', self.call('status').stdout)
+
+    def test_claim_matches_its_schema(self):
+        # CI checked only that the schema parses, so fields added to CLAIM.json drifted out of
+        # a schema that forbids unknown properties.
+        schema = json.loads((ROOT / 'schema/claim.schema.json').read_text())
+        claim = json.loads((self.it / 'CLAIM.json').read_text())
+        self.assertLessEqual(set(claim), set(schema['properties']))
+        self.assertLessEqual(set(schema['required']), set(claim))
+        self.assertRegex(claim['harness_config_sha256'], schema['properties']['harness_config_sha256']['pattern'])
+
     def test_review_records_usage(self):
         # "Bounded model calls" bounded bytes, but nothing counted tokens (2026-09-14).
         self.configure("import json,sys; open(sys.argv[2],'w').write(json.dumps({'input_tokens': 7})); "

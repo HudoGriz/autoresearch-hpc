@@ -59,7 +59,8 @@ cat > "$dir/CLAIM.json" <<EOF
   "claimed": "$(arh_now)",
   "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),
   "status": "CLAIMED",
-  "session": "${ARH_SESSION:-}"
+  "session": "${ARH_SESSION:-}",
+  "harness_config_sha256": "$([ -f "$ARH_HARN" ] && arh_sha256 "$ARH_HARN")"
 }
 EOF
 

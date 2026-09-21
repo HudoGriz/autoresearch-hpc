@@ -141,6 +141,17 @@ arh_crosschecks() {
   python3 "$ARH_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
 }
 
+# The frozen pre-declaration fixes the science, but the review terms (verifier, fallbacks,
+# bounds) live in harnesses.md, which nothing froze: a producing agent could edit them without
+# a trace (2026-09-16). Prints changed, unchanged, or unrecorded for claims older than the hash.
+arh_harness_config_state() {
+  local claimed
+  claimed=$(sed -n 's/.*"harness_config_sha256"[ ]*:[ ]*"\([0-9a-f]\{64\}\)".*/\1/p' "$1/CLAIM.json" 2>/dev/null | head -1)
+  if [ -z "$claimed" ]; then echo unrecorded
+  elif [ "$claimed" = "$(arh_sha256 "$ARH_HARN" 2>/dev/null)" ]; then echo unchanged
+  else echo changed; fi
+}
+
 # Build an environment prefix once: arh_build_once PREFIX COMMAND... A prefix is complete when it
 # holds .arh-complete. Concurrent builders wait on PREFIX.building; a build left behind by a dead
 # process on this host is removed and redone. COMMAND runs where `set -e` does not apply, so it must

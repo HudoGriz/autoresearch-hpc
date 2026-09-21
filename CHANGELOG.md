@@ -11,6 +11,12 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **The review configuration is hashed at claim and review.** A frozen pre-declaration fixed
+  the science, but the terms of the cross-check (`verifier`, `verifier_fallback`, the review
+  bounds) lived in `.arh/config/harnesses.md`, which nothing froze, so a producing agent could
+  edit its own review configuration without a trace. `arh claim` now records the file's hash in
+  `CLAIM.json`, every review record carries it, and `arh gate results` and `arh status` warn
+  when it changed since the iteration was claimed.
 - **Optional external generators via `arh evoke`.** Biomni, AI Scientist v2 and
   Agent Laboratory now have disabled-by-default registry entries. ARH sends a
   bounded request through a site-owned, shell-free command adapter and retains
@@ -92,6 +98,9 @@ that mattered are preserved as tests and generic documentation instead.
   producer sessions are not bounded by `arh`.
 
 ### Fixed
+- **`schema/claim.schema.json` matches what `arh claim` writes.** The schema forbids unknown
+  properties but lacked `inferred_agent` and `inferred_from`, and CI only checked that it
+  parses. A test now validates a real `CLAIM.json` against it.
 - **Reviews no longer die on stderr volume.** `codex exec` echoes the whole
   prompt to stderr, and the 16 KB stderr cap SIGKILLed every review whose prompt
   exceeded it (exit 66). The dead attempt still spent a review round. Only

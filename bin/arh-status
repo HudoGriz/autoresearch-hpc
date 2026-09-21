@@ -33,8 +33,8 @@ if [ "$json" = 1 ]; then
     elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
     narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
     [ "$first" = 1 ] && first=0 || printf ','
-    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s}' \
-      "$d" "$pre" "$res" "$xc" "$dag" "$narms"
+    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s"}' \
+      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")"
   done
   printf '\n  ]\n}\n'
   exit 0
@@ -49,7 +49,7 @@ printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
-found=0
+found=0; changed=""
 iters=$(find "$ARH_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
         | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
 for d in $iters; do
@@ -70,6 +70,8 @@ for d in $iters; do
   arh_crosschecks "$dir" | grep -q . && xc=yes || xc=-
 
   printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
+  [ "$(arh_harness_config_state "$dir")" != changed ] || changed="$changed $d"
 done
 [ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
+[ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: check the\n     verifier, fallbacks and review bounds before relying on their reviews.\n' "$changed"
 exit 0

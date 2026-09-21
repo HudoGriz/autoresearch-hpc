@@ -11,9 +11,12 @@
     "agent": { "type": "string", "description": "Harness that executed the claim, detected from the environment." },
     "agent_source": { "type": "string", "description": "What determined `agent`: ARH_AGENT, a harness environment marker, or USER. Markers can be inherited from an outer session." },
     "declared_agent": { "type": "string", "description": "Agent name the operator declared, which may differ from the detected one." },
+    "inferred_agent": { "type": "string", "description": "Agent the session itself reported, kept when the configured producer outranks it." },
+    "inferred_from": { "type": "string", "description": "Where `inferred_agent` came from: ARH_AGENT, a harness environment marker, or USER." },
     "claimed": { "type": "string", "format": "date-time" },
     "title": { "type": "string", "minLength": 1, "description": "The question, stated as a question." },
     "status": { "enum": ["CLAIMED", "PREDECLARED", "RUNNING", "CONCLUDED", "ABANDONED"] },
-    "session": { "type": "string" }
+    "session": { "type": "string" },
+    "harness_config_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$", "description": "SHA-256 of .arh/config/harnesses.md at claim time, so a change to the review terms during the iteration is visible. Empty when the file did not exist." }
   }
 }

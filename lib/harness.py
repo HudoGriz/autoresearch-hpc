@@ -244,6 +244,7 @@ def run():
         Path(usage_file).unlink()
     directory = Path(output).parent
     report = directory / 'results/report' / (directory.name + '_report.md')
+    config = Path(cwd, '.arh/config/harnesses.md')
     data = dict(exit_code=rc, verdict=verdict, producer_family=pf, verifier_family=vf,
                 same_family_override=override == '1', require_foreign_family=strict,
                 started=started, finished=time.time(),
@@ -252,7 +253,8 @@ def run():
                 predeclaration_sha256=reviewed_predeclaration, result_artifacts=reviewed_artifacts,
                 provider_error=provider is not None, provider_error_kind=provider and provider[0],
                 provider_message=provider and provider[2], retry_hint=provider and provider[3],
-                usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None)
+                usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None,
+                harness_config_sha256=digest(config) if config.is_file() else None)
     with open(output + '.json', 'x') as record:
         json.dump(data, record, indent=2)
         record.write('\n')
