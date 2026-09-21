@@ -20,6 +20,12 @@ ROOT = Path(__file__).resolve().parents[1]
 # would fail for reasons unrelated to the protocol (and, on a Slurm host, submit real jobs).
 needs_site = unittest.skipUnless(os.environ.get('ARH_TEST_SITE'),
                                  'set ARH_TEST_SITE to a configured local site.md (see README)')
+# A Slurm or PBS site.md makes submission tests submit real jobs and fail for reasons unrelated
+# to the protocol (142 of 143 with a Slurm site.md, 2026-09-16), so refuse it outright.
+_site = os.environ.get('ARH_TEST_SITE')
+_scheduler = re.findall(r'(?m)^[ \t]*scheduler[ \t]*=[ \t]*(\S*)', Path(_site).read_text()) if _site else []
+if _scheduler and _scheduler[0] != 'local':
+    sys.exit(f'ARH_TEST_SITE must set scheduler = local, not {_scheduler[0]}: {_site}')
 needs_network = unittest.skipUnless(os.environ.get('ARH_TEST_NETWORK'), 'set ARH_TEST_NETWORK=1 to solve real packages')
 REFUSE = ("import sys; sys.stderr.write('This content was flagged for possible biological risk. "
           "If this seems wrong, try rephrasing your request.\\n'); raise SystemExit(1)")

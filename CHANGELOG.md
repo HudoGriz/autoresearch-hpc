@@ -108,6 +108,10 @@ that mattered are preserved as tests and generic documentation instead.
   producer sessions are not bounded by `arh`.
 
 ### Fixed
+- **A non-local `ARH_TEST_SITE` is an error, not a result.** Both test suites copied the file
+  into the toy project verbatim, so a Slurm `site.md` submitted real jobs and reported 142 of
+  143 tests passing, which read as a protocol failure. They now refuse a missing file or a
+  `scheduler` other than `local` before running anything.
 - **`schema/claim.schema.json` matches what `arh claim` writes.** The schema forbids unknown
   properties but lacked `inferred_agent` and `inferred_from`, and CI only checked that it
   parses. A test now validates a real `CLAIM.json` against it.
