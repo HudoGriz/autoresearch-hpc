@@ -11,6 +11,9 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **`harness/README.md` says which harnesses and models have actually run.** `config/harnesses.md`
+  ships entries for four harnesses; only three had produced or reviewed a project. A table now
+  gives the harness builds, models and counts from the replication benchmark's run records.
 - **Harness access is generated from the project and checked.** A harness may enforce its own
   boundary at the project root while the declared `immutable_inputs` sit outside it; headless,
   OpenCode rejected such a read instead of asking, so a producer could not read its own data and

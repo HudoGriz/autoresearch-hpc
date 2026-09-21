@@ -26,3 +26,21 @@ Adding a harness means keys in `.arh/config/harnesses.md`
 (`harness_<n>_cmd`, `harness_<n>_family`, and the name in `harnesses`) plus any
 native config here. Use `arh doctor` to check the configured producer/verifier
 families and installed CLIs.
+
+## What has actually been exercised
+
+A shipped entry is not evidence that a harness works. These combinations ran headless, on a
+Slurm cluster, through a ten-study replication benchmark in September 2026; the counts are
+from its run records. Anything absent from the table ships as configuration only.
+
+| harness | as producer | as verifier |
+|---|---|---|
+| Claude Code 2.1.270–2.1.278 | Claude Opus 5: 93 rounds; Claude Sonnet 5: 12 rounds | 19 reviews |
+| Codex CLI 0.154.0–0.155.0 | GPT-6 Astra, `xhigh` effort: 22 rounds | 15 reviews; 5 content refusals |
+| OpenCode 1.14.50 | Kimi K3 (`opencode-go/kimi-k3`): 3 rounds | 1 review with Kimi K3; attempted with a Qwen model, none completed |
+| Gemini CLI | not exercised | not exercised |
+| Cursor, Copilot | not exercised | not exercised |
+
+A review record stores the verifier's CLI build, not its model, so the verifier column names
+no model. Usage limits, not failures, account for most unsuccessful review attempts: 58 for
+Codex and 7 for Claude.
