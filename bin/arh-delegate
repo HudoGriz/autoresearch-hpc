@@ -89,7 +89,6 @@ limit=$(arh_config_get "$ARH_HARN" delegate_max_output_bytes "")
 case "$timeout_s$limit" in *[!0-9]*) arh_die "delegate_timeout and delegate_max_output_bytes must be numeric" ;; esac
 config_sha=$(arh_sha256 "$ARH_HARN")
 
-stamp=$(date -u +%Y%m%dT%H%M%SZ)
 if [ "$dry" = 1 ]; then
   run=$(mktemp -d "${TMPDIR:-/tmp}/arh-delegate.${role}.XXXXXX")
   trap 'rm -rf "$run"' EXIT
