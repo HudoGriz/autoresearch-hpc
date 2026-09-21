@@ -2,15 +2,45 @@
 
 ## Current baseline
 
-A local run on 2026-09-17 against a configured local site (Nextflow 26.04.6 from a
-host micromamba environment, scientific tasks through Singularity-compatible
-Apptainer on Linux) passed:
+A run on 2026-09-21 against a configured local site (Nextflow 26.04.6 from a host
+micromamba environment, scientific tasks through Singularity-compatible Apptainer on
+Linux) passed:
 
 | Suite | Command | Result |
 |---|---|---|
-| Core protocol checks | `test/run_tests.sh` | 155 / 155 |
-| Boundary regressions | `python3 test/test_hardening.py` | 61 / 61 |
+| Core protocol checks | `test/run_tests.sh` | 158 / 158 |
+| Boundary regressions | `python3 test/test_hardening.py` | 70 / 70 (1 network case skipped) |
+| Protocol conformance matrix | `python3 test/conformance.py --site SITE` | 12 / 12 |
 | Deterministic synthetic example | `bash examples/mean-shift/check.sh` | OK |
+
+## Protocol conformance matrix
+
+`test/conformance.py` injects one violation per protocol boundary into a scratch project
+and checks the specified refusal. A stand-in reviewer answers `arh ask`, so no model is
+called. The cases that run real tasks (E5b, E6, E9) need `--site`; without it they are
+reported as skipped. The result is written as JSON with the commit it ran on, marked
+`-dirty` when the checkout had uncommitted changes.
+
+| ID | Injected violation | Specified behaviour |
+|---|---|---|
+| E1 | required pre-declaration field left empty | predeclare gate refuses |
+| E2 | result written before the plan is frozen | predeclare gate refuses |
+| E3 | frozen plan edited after the result | results gate refuses the changed hash |
+| E4 | concurrent claims | distinct iteration numbers |
+| E5 | write to a declared immutable input through `arh` | refused |
+| E5b | task writes to a declared immutable input | refused by the read-only mount |
+| E6 | task exits with an error | failure reported; receipt and logs kept |
+| E7 | review requested from the producer's own family | refused by default |
+| E8 | evidence changed after a review | review becomes ineligible |
+| E9 | submission interrupted while its task runs | signal recorded; launch lock released; scheduler job gone |
+| E10 | fresh shell with no chat history | status, next and the ledger name each iteration's state |
+| E11 | review configuration changed after the claim | review refused unless the reason is recorded |
+
+On 2026-09-21 all twelve cases passed on a local site, and again on Slurm with the
+scratch project on a shared CephFS directory. With
+`--claim-launcher 'srun -N 4 --ntasks-per-node 8'`, 32 tasks on four compute nodes made
+96 claims against one CephFS project and received 96 distinct iteration numbers. CI runs
+the matrix on every push with a local site and keeps `conformance.json` as an artifact.
 
 The network-dependent regression (`test_env_create_locks_and_is_immutable`)
 solves real packages and needs `ARH_TEST_NETWORK=1`; CI runs it with network

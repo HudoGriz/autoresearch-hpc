@@ -199,7 +199,8 @@ violations of §2.1, §3.1, §3.5, §3.6, §3.7, §4.1, §5.2 and §6c.4 — **e
 mechanically enforced boundaries** — and implements the review-integrity checks
 of §6.6 and §6.7. The remainder MAY be enforced by review or additional tooling.
 
-`test/run_tests.sh` asserts those boundaries and the hardened review contract.
+`test/run_tests.sh` asserts those boundaries and the hardened review contract;
+`test/conformance.py` injects one violation per boundary and records the refusals.
 
 ## 11. Security and evidence boundary
 

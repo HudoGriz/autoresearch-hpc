@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""Protocol conformance matrix: inject each protocol violation and check that arh refuses it.
+
+E1-E11 run this checkout's `arh` in a scratch project against a stand-in reviewer, so no model
+is called. E5b, E6 and E9 run real tasks and need --site, a configured site.md. A Slurm or PBS
+site submits real jobs, so put --workdir on a filesystem the compute nodes can see. Without
+--site those three are reported as skipped. The matrix is printed and written as JSON.
+
+    python3 test/conformance.py [--site SITE.md] [--workdir DIR] [--json FILE] [--claims N]
+                                [--claim-launcher 'srun -N 4 --ntasks-per-node 8'] [--keep]
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+HEADINGS = ('Question', 'Estimand', 'Instrument', 'Acceptance criteria', 'Negative controls',
+            'Detection limit', 'Prediction')
+DECLARATION = ''.join(f'## {i}. {h}\nDeterministic fixture; one failing check.\n' for i, h in enumerate(HEADINGS, 1))
+REPORT = 'Negative controls reject failures. Detection limit: one check. Candidate only.\n'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--site', type=Path, help='site.md for the cases that run tasks (E5b, E6, E9)')
+    parser.add_argument('--workdir', type=Path, help='where the scratch project is created (default: $TMPDIR)')
+    parser.add_argument('--json', type=Path, default=Path('conformance.json'), help='result file')
+    parser.add_argument('--claims', type=int, default=8, help='concurrent claims in E4')
+    parser.add_argument('--claim-launcher', help="run E4's claims through a launcher, e.g. 'srun -N 4 --ntasks-per-node 8', so they race from several nodes on a shared --workdir")
+    parser.add_argument('--keep', action='store_true', help='keep the scratch project')
+    args = parser.parse_args()
+
+    work = Path(tempfile.mkdtemp(prefix='arh-conformance-', dir=args.workdir)).resolve()
+    project, inputs = work / 'project', work / 'inputs'
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'CODEX', 'OPENCODE', 'ARH_'))}
+    env.update(ARH_HOME=str(ROOT), ARH_PROJECT=str(project), PATH=f"{ROOT / 'bin'}{os.pathsep}{env['PATH']}")
+    results = []
+
+    def arh(*argv, cwd=None, timeout=1800):
+        return subprocess.run([str(ROOT / 'bin/arh'), *argv], cwd=cwd or project, env=env,
+                              capture_output=True, text=True, timeout=timeout)
+
+    def must(*argv):
+        result = arh(*argv, cwd=work)
+        if result.returncode:
+            sys.exit(f"setup failed: arh {' '.join(argv)}\n{result.stdout}{result.stderr}")
+        return result.stdout.strip()
+
+    def case(cid, violation, expected, passed, detail=''):
+        # Details go into a shareable record, so the scratch location on this host is elided.
+        lines = [line.strip() for line in str(detail).replace(str(work), '<scratch>').splitlines() if line.strip()]
+        refusal = [line for line in lines if line.startswith(('FAIL', 'arh:'))]
+        results.append(dict(id=cid, violation=violation, expected=expected, passed=passed,
+                            detail=(refusal or lines or [''])[0 if refusal else -1][:240]))
+
+    def iteration(title, frozen=True, report=True):
+        n = must('claim', '-t', title).splitlines()[0]
+        it = project / 'iterations' / f'iteration{n}'
+        must('new', '-n', n)
+        if frozen:
+            (it / 'README.md').write_text(DECLARATION)
+            must('gate', 'predeclare', '-n', n)
+        if report:
+            (it / 'results/report').mkdir(parents=True, exist_ok=True)
+            (it / f'results/report/iteration{n}_report.md').write_text(REPORT)
+        return n, it
+
+    reviewer = work / 'reviewer.py'
+    reviewer.write_text("print('VERDICT: SOUND')\n")
+    harnesses = project / '.arh/config/harnesses.md'
+
+    def terms(verifier_family='anthropic', extra=''):
+        harnesses.write_text('```arh-config\nproducer = source\nverifier = reviewer\n'
+                             'harness_source_family = openai\n'
+                             f'harness_reviewer_family = {verifier_family}\n'
+                             f'harness_reviewer_cmd = python3 "{reviewer}" {{prompt}}\n{extra}```\n')
+
+    must('init', str(project), '--scheduler', 'local')
+    if args.site:
+        (project / '.arh/config/site.md').write_text(args.site.read_text())
+    inputs.mkdir()
+    (inputs / 'data.tsv').write_text('id\tvalue\n1\t2\n')
+    (project / 'raw').mkdir()
+    cfg = project / '.arh/config/project.md'
+    cfg.write_text(cfg.read_text().replace('immutable_inputs  =', f'immutable_inputs  = raw {inputs}', 1))
+    terms()
+
+    # E1, E2: the pre-declaration gate.
+    n, it = iteration('E1 unfilled pre-declaration', frozen=False, report=False)
+    r = arh('gate', 'predeclare', '-n', n)
+    case('E1', 'required pre-declaration field left empty', 'predeclare gate refuses',
+         r.returncode != 0 and not (it / 'PREDECLARATION.sha256').exists(), r.stdout)
+
+    n, it = iteration('E2 result before the plan', frozen=False, report=False)
+    (it / 'results/observed.txt').write_text('the result existed first\n')
+    (it / 'README.md').write_text(DECLARATION)
+    r = arh('gate', 'predeclare', '-n', n)
+    case('E2', 'result written before the plan is frozen', 'predeclare gate refuses',
+         r.returncode != 0 and not (it / 'PREDECLARATION.sha256').exists(), r.stdout)
+
+    # A reviewed iteration that passes its results gate, for E3 and E8.
+    n, it = iteration('reviewed iteration')
+    must('ask', '-n', n)
+    must('gate', 'results', '-n', n)
+
+    (it / 'README.md').write_text(DECLARATION + 'Edited after the result.\n')
+    r = arh('gate', 'results', '-n', n)
+    case('E3', 'frozen plan edited after the result', 'results gate refuses the changed hash',
+         r.returncode != 0 and 'CHANGED' in r.stdout, r.stdout)
+    (it / 'README.md').write_text(DECLARATION)
+
+    # E4: claims that race each other, from this host or, through --claim-launcher, from many nodes.
+    before = len(list((project / 'iterations').glob('iteration*')))
+    if args.claim_launcher:
+        loop = f'for i in 1 2 3; do "{ROOT}/bin/arh" claim -t race 2>/dev/null || exit 1; done'
+        r = subprocess.run(shlex.split(args.claim_launcher) + ['bash', '-c', loop], cwd=project, env=env,
+                           capture_output=True, text=True, timeout=1800)
+        got, launched = r.stdout.split(), r.returncode == 0
+    else:
+        procs = [subprocess.Popen([str(ROOT / 'bin/arh'), 'claim', '-t', f'concurrent {i}'], cwd=project, env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                 for i in range(args.claims)]
+        got = [p.communicate(timeout=300)[0].strip() for p in procs]
+        launched = all(p.returncode == 0 for p in procs)
+    created = len(list((project / 'iterations').glob('iteration*'))) - before
+    case('E4', f'{len(got)} claims race each other' + (' across nodes' if args.claim_launcher else ''),
+         'distinct iteration numbers', launched and len(got) > 1 and all(g.isdigit() for g in got)
+         and len(set(got)) == len(got) == created,
+         f'{len(got)} claims, {len(set(got))} distinct numbers, {created} directories created'
+         + (f' ({args.claim_launcher})' if args.claim_launcher else ''))
+
+    r = arh('guard', str(project / 'raw/injected.txt'))
+    case('E5', 'write to a declared immutable input (arh guard)', 'write refused',
+         r.returncode != 0 and 'immutable' in r.stderr, r.stderr)
+
+    # E5b, E6, E9: real tasks through Nextflow and the site's scheduler.
+    task_cases = [('E5b', 'task writes to a declared immutable input', 'write refused inside the task'),
+                  ('E6', 'task exits with an error', 'failure reported; receipt and logs kept'),
+                  ('E9', 'submission interrupted while its task runs', 'signal recorded; launch lock released')]
+    if not args.site:
+        for cid, violation, expected in task_cases:
+            case(cid, violation, expected, None, 'skipped: needs --site')
+    else:
+        scheduler = next((line.split('=', 1)[1].strip() for line in args.site.read_text().splitlines()
+                          if line.strip().startswith('scheduler') and '=' in line), 'local')
+        n, it = iteration('task cases', report=False)
+
+        def submit(name, body):
+            script = it / 'scripts' / f'it{n}_{name}.sh'
+            script.write_text(body)
+            return script
+
+        def receipt(name, key):
+            found = sorted((it / 'logs/nextflow' / name).glob('attempt-*/run.json'))
+            return json.loads(found[-1].read_text()).get(key) if found else None
+
+        r = arh('submit', str(submit('write_input', f'set -eu\necho injected > {inputs}/injected.txt\n')), '-n', 'write_input')
+        # The task must have tried and been stopped by the read-only mount, not failed for another reason.
+        readonly = any('Read-only file system' in e.read_text(errors='replace')
+                       for e in (it / 'metadata/nextflow/write_input/work').glob('*/*/.command.err'))
+        case(*task_cases[0], r.returncode != 0 and readonly and not (inputs / 'injected.txt').exists(),
+             f"submit exit {r.returncode}; task stopped by a read-only mount {readonly}; "
+             f"input unchanged {not (inputs / 'injected.txt').exists()}")
+
+        r = arh('submit', str(submit('fail', 'exit 23\n')), '-n', 'fail')
+        case(*task_cases[1], r.returncode != 0 and receipt('fail', 'exit_code') not in (None, 0),
+             f"submit exit {r.returncode}; receipt exit {receipt('fail', 'exit_code')}")
+
+        proc = subprocess.Popen([str(ROOT / 'bin/arh'), 'submit', str(submit('slow', 'sleep 300\n')), '-n', 'slow'],
+                                cwd=project, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        begun = lambda: bool(list((it / 'metadata/nextflow/slow/work').glob('*/*/.command.begin')))
+        deadline = time.time() + 1200
+        while proc.poll() is None and time.time() < deadline and not begun():
+            time.sleep(1)
+        started = proc.poll() is None and begun()
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+        proc.communicate(timeout=600)
+        released = not (it / 'metadata/nextflow/slow/.launch-lock').exists()
+        # On a real scheduler the task's job must not outlive the interrupted submission.
+        cancelled = True
+        if scheduler == 'slurm':
+            for _ in range(60):
+                queue = subprocess.run(['squeue', '-h', '-u', os.environ.get('USER', ''), '-o', '%Z'],
+                                       capture_output=True, text=True).stdout
+                cancelled = str(project) not in queue
+                if cancelled:
+                    break
+                time.sleep(2)
+        case(*task_cases[2], started and proc.returncode != 0 and receipt('slow', 'signal') == 'SIGTERM'
+             and released and cancelled,
+             f"task started {started}; signal {receipt('slow', 'signal')}; lock released {released}"
+             + (f'; job gone from queue {cancelled}' if scheduler == 'slurm' else ''))
+
+    # E7: claimed under terms that name a same-family verifier, so only the family rule applies.
+    unreviewed = set()                  # iterations the matrix leaves without a valid review
+    terms(verifier_family='openai')
+    n, it = iteration('E7 same-family review')
+    unreviewed.add(int(n))
+    r = arh('ask', '-n', n)
+    case('E7', "review requested from the producer's own family", 'refused by default',
+         r.returncode != 0 and 'same model family' in r.stderr and not list(it.glob('CROSSCHECK_*')), r.stderr)
+    terms()
+
+    n, it = iteration('E8 evidence changed after review')
+    unreviewed.add(int(n))
+    must('ask', '-n', n)
+    report = it / f'results/report/iteration{n}_report.md'
+    report.write_text(REPORT + 'Changed after the review.\n')
+    r = arh('gate', 'results', '-n', n)
+    case('E8', 'evidence changed after a review', 'review becomes ineligible',
+         r.returncode != 0 and 'INELIGIBLE' in r.stdout, r.stdout)
+
+    # E11: the review terms were bound at claim; changing them needs a recorded reason.
+    n, it = iteration('E11 review terms changed after the claim')
+    unreviewed.add(int(n))              # its reason is removed at the end of the case
+    terms(extra='ask_max_input_bytes = 60000\n')
+    r = arh('ask', '-n', n)
+    refused = r.returncode != 0 and 'changed since iteration' in r.stderr and not list(it.glob('CROSSCHECK_*'))
+    must('ask', '-n', n, '--terms-changed', 'conformance run: raised the input budget')
+    g = arh('gate', 'results', '-n', n)
+    shown = g.returncode == 0 and 'review terms changed since the claim (ask_max_input_bytes)' in g.stdout
+    record = next(it.glob('CROSSCHECK_*.md.json'))
+    data = json.loads(record.read_text())
+    data['terms_changed'] = None
+    record.write_text(json.dumps(data))
+    stripped = arh('gate', 'results', '-n', n).returncode != 0
+    case('E11', 'review configuration changed after the claim',
+         'review refused unless the change and its reason are recorded', refused and shown and stripped,
+         f'refused without reason {refused}; accepted and shown with reason {shown}; '
+         f'refused once the reason is removed {stripped}')
+    terms()
+
+    # E10 last: from a fresh shell, the files alone must say where every iteration stands.
+    fresh = work / 'fresh-shell'
+    fresh.mkdir()
+    status, nxt = arh('status', '--json', cwd=fresh), arh('next', cwd=fresh)
+    render, check = arh('ledger', 'render', cwd=fresh), arh('ledger', 'check', cwd=fresh)
+    try:
+        listed = len(json.loads(status.stdout)['iterations'])
+    except (ValueError, KeyError):
+        listed = 0
+    claimed = len(list((project / 'iterations').glob('iteration*')))
+    flagged = {int(m) for m in re.findall(r'FAIL iteration (\d+) . no valid cross-check', check.stdout)}
+    case('E10', 'fresh shell with no chat history', 'ledger and status name the next action',
+         status.returncode == nxt.returncode == render.returncode == 0 and listed == claimed
+         and 'arh ' in nxt.stdout and flagged == unreviewed,
+         f'status lists {listed}/{claimed} iterations; ledger check flags {sorted(flagged)}, '
+         f'expected {sorted(unreviewed)}; next names an arh command {"arh " in nxt.stdout}')
+
+    results.sort(key=lambda r: (int(re.match(r'E(\d+)', r['id']).group(1)), r['id']))
+    commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    if commit and subprocess.run(['git', 'status', '--porcelain'], cwd=ROOT, capture_output=True, text=True).stdout.strip():
+        commit += '-dirty'                # uncommitted changes: not evidence for the commit alone
+    version = subprocess.run([str(ROOT / 'bin/arh'), '--version'], env=env, capture_output=True, text=True).stdout.strip()
+    fs = subprocess.run(['stat', '-f', '-c', '%T', str(work)], capture_output=True, text=True).stdout.strip()
+    payload = dict(kind='arh protocol conformance matrix', commit=commit or None, version=version,
+                   python=platform.python_version(), filesystem=fs or None,
+                   site=args.site.name if args.site else None,
+                   passed=sum(r['passed'] is True for r in results), failed=sum(r['passed'] is False for r in results),
+                   skipped=sum(r['passed'] is None for r in results), results=results)
+    args.json.write_text(json.dumps(payload, indent=2) + '\n')
+    for r in results:
+        mark = {True: 'PASS', False: 'FAIL', None: 'SKIP'}[r['passed']]
+        print(f"{mark}  {r['id']:<4} {r['violation']:<48} {r['detail']}")
+    print(f"\n{payload['passed']} passed, {payload['failed']} failed, {payload['skipped']} skipped "
+          f"({version}, {(commit[:12] + '-dirty' * commit.endswith('-dirty')) or 'no git checkout'}); "
+          f"written to {args.json}")
+    if args.keep:
+        print(f'kept: {work}')
+    else:
+        shutil.rmtree(work, ignore_errors=True)
+    return 1 if payload['failed'] else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

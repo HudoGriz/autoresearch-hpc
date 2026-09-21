@@ -35,6 +35,14 @@ jobs:
           export ARH_TEST_SITE="$PWD/.ci/study/.arh/config/site.md" ARH_TEST_NETWORK=1
           test/run_tests.sh
           python3 test/test_hardening.py
+          python3 test/conformance.py --site "$ARH_TEST_SITE" --json conformance.json
+      - name: Keep the conformance matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance
+          path: conformance.json
+          if-no-files-found: ignore
       - name: Protocol conformance is actually enforced
         run: |
           for c in "concurrent claims" "unfilled" "results exist" \

@@ -17,8 +17,14 @@ Follow [HPC setup](docs/hpc-execution.md) to configure a local test site first.
 export ARH_TEST_SITE=/absolute/path/to/local/site.md
 test/run_tests.sh
 python3 test/test_hardening.py
+python3 test/conformance.py --site "$ARH_TEST_SITE"
 KEEP=1 test/run_tests.sh
 ```
+
+`test/conformance.py` injects each protocol violation (E1-E11) and writes the matrix as JSON.
+Unlike the two suites it also accepts a Slurm or PBS site: pass `--workdir` on a filesystem the
+compute nodes can see, and `--claim-launcher 'srun -N 4 --ntasks-per-node 8'` to race the claims
+of E4 from several nodes.
 
 CI provisions Nextflow and Singularity/Apptainer on Linux, runs integration
 tests, validates schemas and lints shell scripts.

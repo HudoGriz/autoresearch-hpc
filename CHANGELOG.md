@@ -11,6 +11,12 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **`test/conformance.py`, the protocol conformance matrix.** One injected violation per
+  protocol boundary (E1-E11), each checked for its specified refusal, written as JSON with the
+  commit it ran on. The matrix had moved out of the repository with the publication material,
+  so CI no longer ran it. CI now runs it on every push. It also accepts a Slurm or PBS site, so
+  task failure, interruption and the read-only input mount can be checked on a real scheduler,
+  and `--claim-launcher` races the concurrent claims from several nodes on a shared filesystem.
 - **`harness/README.md` says which harnesses and models have actually run.** `config/harnesses.md`
   ships entries for four harnesses; only three had produced or reviewed a project. A table now
   gives the harness builds, models and counts from the replication benchmark's run records.
