@@ -12,9 +12,9 @@ export ARH_HOME PATH="$ARH_HOME/bin:$PATH"
 # A Slurm or PBS site.md made the suite submit real jobs and report failures that had nothing to do
 # with the protocol: 142 of 143 with a Slurm site.md, all 154 with a local one (2026-09-16).
 [ -f "$ARH_TEST_SITE" ] || { echo "ARH_TEST_SITE is not a file: $ARH_TEST_SITE" >&2; exit 2; }
+# Read the key the way arh does, in a subshell: common.sh sets -e, and this suite must not.
 # shellcheck source=lib/common.sh
-. "$ARH_HOME/lib/common.sh"
-[ "$(arh_config_get "$ARH_TEST_SITE" scheduler local)" = local ] \
+[ "$(. "$ARH_HOME/lib/common.sh"; arh_config_get "$ARH_TEST_SITE" scheduler local)" = local ] \
   || { echo "ARH_TEST_SITE must set scheduler = local, not a real scheduler: $ARH_TEST_SITE" >&2; exit 2; }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/arh-test.XXXXXX")
