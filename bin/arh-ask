@@ -137,7 +137,7 @@ trap cleanup EXIT
   fi
   printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(arh_config_get "$ARH_HARN" ask_output_words 500)"
 } > "$prompt"
-max_input=$(arh_config_get "$ARH_HARN" ask_max_input_bytes 24000)
+max_input=$(arh_config_get "$ARH_HARN" ask_max_input_bytes 48000)
 max_rounds=$(arh_config_get "$ARH_HARN" ask_max_rounds 2)
 if [ "$dry" = 1 ]; then
   python3 "$ARH_HOME/lib/harness.py" budget "$dir" "$prompt" "$(arh_config_get "$ARH_HARN" "harness_${primary}_cmd" "")" \

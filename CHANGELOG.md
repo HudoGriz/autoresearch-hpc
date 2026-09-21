@@ -69,6 +69,10 @@ that mattered are preserved as tests and generic documentation instead.
 - `docs/headless.md`: lessons from driving producers and reviewers unattended on Slurm.
 
 ### Changed
+- **`ask_max_input_bytes` defaults to 48000 (was 24000).** One real iteration, a frozen
+  pre-declaration plus its report plus the role prompt, came to about 30.5 kB, so the old
+  default could not send the artefact under review; three benchmark studies raised it
+  independently. The refusal already names the size of each part.
 - **`verifier_fallback` now also covers provider limits.** `arh ask` tried the fallback
   list only after a content refusal (exit 77) and gave up on a usage limit (exit 75),
   telling the agent to sleep until the reset the provider stated. That time is not

@@ -232,10 +232,10 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         self.ask(); self.gate()
 
     def test_input_budget_prevents_dispatch(self):
-        result = self.call('ask', '-n', '1', '--note', 'x'*25000, good=False)
+        result = self.call('ask', '-n', '1', '--note', 'x'*49000, good=False)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*.md.json')))
         # The refusal names the size, the limit and the parts (field report, 2026-09-11).
-        self.assertIn('ask_max_input_bytes is 24000', result.stderr)
+        self.assertIn('ask_max_input_bytes is 48000', result.stderr)
         self.assertIn('pre-declaration', result.stderr)
 
     def test_output_budget_rejects_incomplete_review(self):

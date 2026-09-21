@@ -74,7 +74,9 @@ ask_timeout = 900
 # Delegations fall back to ask_timeout when delegate_timeout is unset.
 delegate_timeout =
 delegate_max_output_bytes = 262144
-ask_max_input_bytes = 24000
+# One real iteration is a frozen pre-declaration (~16 kB) plus a report (~13 kB) plus the role
+# prompt: ~30 kB. 24000 was too small to send the artefact under review (2026-09-16).
+ask_max_input_bytes = 48000
 ask_max_output_bytes = 8000
 ask_output_words = 500
 ask_max_rounds = 2
