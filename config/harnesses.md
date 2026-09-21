@@ -65,6 +65,9 @@ verifier   = codex
 # stores the value in force when it ran, so changing it later never revalidates or invalidates a
 # review already taken.
 require_foreign_family = true
+# deny for a blinded study, where a producer must not look published results up:
+# harness/install.sh then turns each harness's web tools off, and arh doctor checks them.
+web_access = allow
 # Tried in order when the verifier cannot review: it refuses the content (arh ask exit 77) or is
 # out of quota (exit 75). Each needs a concrete model family other than the producer's, e.g.:
 # verifier_fallback = gemini

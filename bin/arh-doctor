@@ -123,6 +123,17 @@ for h in $(arh_config_get "$ARH_HARN" verifier_fallback ""); do
   esac
 done
 arh_warn_agent_mismatch
+web=$(arh_config_get "$ARH_HARN" web_access allow)
+case "$web" in allow|deny) ;; *) arh_fail "web_access must be allow or deny, not '$web'"; warn=$((warn+1)); web=allow ;; esac
+# shellcheck disable=SC2046  # immutable_inputs is a space-separated list
+access=$(python3 "$ARH_HOME/lib/harness_access.py" check "$ARH_ROOT" "$web" $(arh_config_get "$ARH_PROJ" immutable_inputs ""))
+if [ -z "$access" ]; then arh_ok "harness access: declared inputs reachable, web_access = $web"
+else
+  while IFS='|' read -r level msg; do
+    if [ "$level" = FAIL ]; then arh_fail "$msg"; warn=$((warn+1)); else arh_warn "$msg"; fi
+  done <<< "$access"
+  arh_info "fix: $ARH_HOME/harness/install.sh $ARH_ROOT <harness> writes these entries"
+fi
 
 printf '\ndelegation roles (optional):\n'
 if [ -z "$(arh_config_get "$ARH_HARN" orchestrator "")$(arh_config_get "$ARH_HARN" executor "")" ]; then

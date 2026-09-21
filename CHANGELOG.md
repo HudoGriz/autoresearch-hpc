@@ -11,6 +11,16 @@ material is intentionally not part of this software release; the failure classes
 that mattered are preserved as tests and generic documentation instead.
 
 ### Added
+- **Harness access is generated from the project and checked.** A harness may enforce its own
+  boundary at the project root while the declared `immutable_inputs` sit outside it; headless,
+  OpenCode rejected such a read instead of asking, so a producer could not read its own data and
+  nothing named the cause. `harness/install.sh` now writes the entries each harness needs
+  (OpenCode `permission.external_directory`, Claude Code `permissions.additionalDirectories`),
+  and `arh doctor` checks that every declared input is reachable.
+- **`web_access = allow | deny` in `harnesses.md`.** Whether a producer may look results up was
+  solved differently by each adapter, or not at all. With `deny`, `harness/install.sh` turns the
+  harness's web tools off (OpenCode `webfetch`/`websearch`, Claude Code `WebFetch`/`WebSearch`),
+  `arh doctor` fails if any are on, and `AGENTS.md` states the rule.
 - **The review configuration is hashed at claim and review.** A frozen pre-declaration fixed
   the science, but the terms of the cross-check (`verifier`, `verifier_fallback`, the review
   bounds) lived in `.arh/config/harnesses.md`, which nothing froze, so a producing agent could

@@ -140,6 +140,12 @@ workflow {
 8. **Record predictions, including wrong ones.** Do not revise a missed
    prediction after seeing the result.
 
+9. **Web access follows the project.** When `.arh/config/harnesses.md` sets
+   `web_access = deny` (a blinded replication, for example), do not search for,
+   fetch or otherwise look up the results you are asked to produce.
+   `harness/install.sh` turns the harness's web tools off, and `arh doctor`
+   checks that they stay off.
+
 ## Reporting
 
 - Report the quantity that was pre-declared, even if another number looks nicer.

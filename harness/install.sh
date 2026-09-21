@@ -7,6 +7,10 @@ target="${1:?usage: harness/install.sh <project-dir> [claude codex opencode]}"; 
 [ -d "$target/.arh" ] || { echo "not an AutoResearch HPC project (.arh missing): $target" >&2; exit 1; }
 target=$(cd "$target" && pwd)
 harnesses=("$@"); [ ${#harnesses[@]} -eq 0 ] && harnesses=(claude codex opencode)
+# shellcheck source=lib/common.sh
+ARH_HOME=$root . "$root/lib/common.sh"
+web=$(arh_config_get "$target/.arh/config/harnesses.md" web_access allow)
+read -ra inputs <<< "$(arh_config_get "$target/.arh/config/project.md" immutable_inputs "")"
 
 mkdir -p "$target/skills"
 cp -r "$root/skills/." "$target/skills/"
@@ -33,6 +37,8 @@ for h in "${harnesses[@]}"; do
       ;;
     *) echo "unknown harness: $h" >&2; exit 1 ;;
   esac
+  # Reach the declared inputs across the harness's own root boundary; web tools per web_access.
+  python3 "$root/lib/harness_access.py" write "$target" "$h" "$web" "${inputs[@]}"
 done
 printf '\nPATH: export PATH="%s/bin:$PATH"\n' "$root"
 printf 'Check: arh doctor\n'

@@ -645,6 +645,28 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertLessEqual(set(schema['required']), set(claim))
         self.assertRegex(claim['harness_config_sha256'], schema['properties']['harness_config_sha256']['pattern'])
 
+    def test_harness_access_follows_inputs_and_web_policy(self):
+        # Headless, OpenCode rejected a read of the declared inputs outside the project root
+        # instead of asking, and nothing named the cause (2026-09-16).
+        inputs = Path(self.temp.name) / 'inputs'
+        inputs.mkdir()
+        project = self.root / '.arh/config/project.md'
+        project.write_text(project.read_text().replace('immutable_inputs  =', f'immutable_inputs  = {inputs}'))
+        with self.config.open('a') as cfg:
+            cfg.write('```arh-config\nweb_access = deny\n```\n')
+        subprocess.run([str(ROOT / 'harness/install.sh'), str(self.root), 'opencode', 'claude'],
+                       check=True, capture_output=True, env=self.env)
+        real = os.path.realpath(inputs)
+        oc = json.loads((self.root / 'opencode.json').read_text())['permission']
+        self.assertEqual((oc['external_directory'][real + '/**'], oc['webfetch'], oc['websearch']),
+                         ('allow', 'deny', 'deny'))
+        claude = json.loads((self.root / '.claude/settings.json').read_text())['permissions']
+        self.assertEqual((claude['additionalDirectories'], claude['deny']), ([real], ['WebFetch', 'WebSearch']))
+        self.assertIn('harness access: declared inputs reachable', self.call('doctor', good=None).stdout)
+        del oc['webfetch']
+        (self.root / 'opencode.json').write_text(json.dumps({'permission': oc}))
+        self.assertIn('opencode.json leaves webfetch on', self.call('doctor', good=None).stdout)
+
     def test_review_records_usage(self):
         # "Bounded model calls" bounded bytes, but nothing counted tokens (2026-09-14).
         self.configure("import json,sys; open(sys.argv[2],'w').write(json.dumps({'input_tokens': 7})); "
