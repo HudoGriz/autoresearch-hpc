@@ -280,8 +280,10 @@ import pathlib
 p = pathlib.Path(".arh/config/harnesses.md")
 p.write_text(p.read_text().replace("verifier   = codex", "verifier   = claude"))
 EOF
-check "same-family verification is refused"   1 arh ask --role adversary -n 1 --dry-run
-check "--same-family overrides it"            0 arh ask --role adversary -n 1 --dry-run --same-family
+# Swapping the verifier after the claim changes the review terms: refused without a reason.
+check "changed review terms need a reason"    1 arh ask --role adversary -n 1 --dry-run --same-family
+check "same-family verification is refused"   1 arh ask --role adversary -n 1 --dry-run --terms-changed "verifier swapped"
+check "--same-family overrides it"            0 arh ask --role adversary -n 1 --dry-run --same-family --terms-changed "verifier swapped"
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path(".arh/config/harnesses.md")

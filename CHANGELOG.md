@@ -24,12 +24,20 @@ that mattered are preserved as tests and generic documentation instead.
   solved differently by each adapter, or not at all. With `deny`, `harness/install.sh` turns the
   harness's web tools off (OpenCode `webfetch`/`websearch`, Claude Code `WebFetch`/`WebSearch`),
   `arh doctor` fails if any are on, and `AGENTS.md` states the rule.
-- **The review configuration is hashed at claim and review.** A frozen pre-declaration fixed
-  the science, but the terms of the cross-check (`verifier`, `verifier_fallback`, the review
-  bounds) lived in `.arh/config/harnesses.md`, which nothing froze, so a producing agent could
-  edit its own review configuration without a trace. `arh claim` now records the file's hash in
-  `CLAIM.json`, every review record carries it, and `arh gate results` and `arh status` warn
-  when it changed since the iteration was claimed.
+- **The review terms are bound to the iteration at claim.** A frozen pre-declaration fixed
+  the science, but the terms of the cross-check (`verifier`, `verifier_fallback`,
+  `require_foreign_family`, the review bounds) lived in `.arh/config/harnesses.md`, which nothing
+  froze, so a producing agent could edit the rules of its own review without a trace. `arh claim`
+  now keeps a copy of the file in `metadata/harnesses.claimed.md` and its hash in `CLAIM.json`,
+  and every review record carries the hash in force when it ran. A review under changed terms
+  counts only if it records why: `arh ask` refuses before any model call unless given
+  `--terms-changed REASON`, the record keeps the reason and the changed keys, and
+  `arh gate results` refuses a review whose terms differ from the claim's without one. Records
+  and claims older than the hash are judged as before. `arh status` reports a change per iteration.
+- **An accepted review that deviates from the default says so.** `arh gate results` called every
+  eligible review "foreign", including a same-family review accepted under
+  `require_foreign_family = false`. It now lists each review with its verdict and marks one taken
+  from the producer's own family, or under changed review terms, with the reason.
 - **Optional external generators via `arh evoke`.** Biomni, AI Scientist v2 and
   Agent Laboratory now have disabled-by-default registry entries. ARH sends a
   bounded request through a site-owned, shell-free command adapter and retains

@@ -66,7 +66,7 @@ class Protocol(unittest.TestCase):
         return result
 
     def configure(self, body="print('VERDICT: SOUND')", family='anthropic', timeout=5, version=None,
-                  cmd_extra='', extra_config=''):
+                  cmd_extra='', extra_config='', bind=True):
         self.mock.write_text(body + '\n')
         extra = f'harness_reviewer_version_cmd = {version}\n' if version else ''
         self.config.write_text(f'''```arh-config
@@ -78,6 +78,16 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
 {extra}ask_timeout = {timeout}
 {extra_config}```
 ''')
+        if bind:
+            self.bind_terms()
+
+    def bind_terms(self):
+        """Fixture shortcut: iteration 1 counts as claimed under whatever harnesses.md now says.
+        bind=False, or editing the file directly, is a change made after the claim."""
+        shutil.copy(self.config, self.it / 'metadata/harnesses.claimed.md')
+        claim = json.loads((self.it / 'CLAIM.json').read_text())
+        claim['harness_config_sha256'] = hashlib.sha256(self.config.read_bytes()).hexdigest()
+        (self.it / 'CLAIM.json').write_text(json.dumps(claim, indent=2) + '\n')
 
     def ask(self, good=True):
         return self.call('ask', '-n', '1', good=good)
@@ -516,22 +526,25 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         for record in self.it.glob('CROSSCHECK_*'):     # all of them: the round budget counts files
             record.unlink()
 
-        # With require_foreign_family = false the same review is a full cross-check.
+        # With require_foreign_family = false the same review is a full cross-check, and the gate
+        # says on every reading that it was accepted under that policy.
         self.configure(family='openai', extra_config='require_foreign_family = false\n')
         self.ask()
         record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
         self.assertIs(record['require_foreign_family'], False)
-        self.assertIn('completed foreign review', self.gate().stdout)
+        out = self.gate().stdout
+        self.assertIn('eligible review', out)
+        self.assertIn('SOUND; same model family, accepted because require_foreign_family = false', out)
 
     def test_the_rule_a_review_passed_under_is_read_from_the_review(self):
         # Tightening the setting afterwards must not invalidate a review already taken, and
         # relaxing it must not retroactively validate one. The record, not today's config, decides.
         self.configure(family='openai', extra_config='require_foreign_family = false\n')
         self.ask()
-        self.assertIn('completed foreign review', self.gate().stdout)
+        self.assertIn('eligible review', self.gate().stdout)
 
-        self.configure(family='openai')                       # back to the strict default
-        self.assertIn('completed foreign review', self.gate().stdout)
+        self.configure(family='openai', bind=False)           # back to the strict default, after the review
+        self.assertIn('eligible review', self.gate().stdout)
 
         record_path = next(self.it.glob('CROSSCHECK_*.md.json'))
         record = json.loads(record_path.read_text())
@@ -590,6 +603,7 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
             cfg.write(f'```arh-config\nverifier_fallback = kin backup\n'
                       f'harness_kin_family = openai\nharness_kin_cmd = python3 "{backup}" {{prompt}}\n'
                       f'harness_backup_family = google\nharness_backup_cmd = python3 "{backup}" {{prompt}}\n```\n')
+        self.bind_terms()
         result = self.ask()
         self.assertIn("fallback verifier 'kin' skipped", result.stderr)   # the producer's own family
         self.assertIn('VERDICT: QUALIFIED', result.stdout)
@@ -619,6 +633,7 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         with self.config.open('a') as cfg:
             cfg.write(f'```arh-config\nverifier_fallback = backup\nharness_backup_family = google\n'
                       f'harness_backup_cmd = python3 "{backup}" {{prompt}}\n```\n')
+        self.bind_terms()
         result = self.ask()
         self.assertIn("verifier 'reviewer' is unavailable", result.stderr)
         kinds = sorted(json.loads(p.read_text())['provider_error_kind'] or 'review'
@@ -626,21 +641,56 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertEqual(kinds, ['limit', 'review'])
         self.gate()
 
-    def test_harness_config_change_is_reported(self):
+    def test_review_terms_are_bound_at_claim(self):
         # Nothing froze harnesses.md, so a producing agent could change the terms of its own
-        # cross-check without a trace (2026-09-16). setUp claims iteration 1, then configures.
+        # cross-check without a trace (2026-09-16). In the replication benchmark three agents raised
+        # the input budget; one could as easily have swapped the verifier or relaxed the family rule.
         self.ask()
         sha = hashlib.sha256(self.config.read_bytes()).hexdigest()
         record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
-        self.assertEqual(record['harness_config_sha256'], sha)
-        self.assertIn('harnesses.md changed since iteration 1 was claimed', self.gate().stdout)
+        self.assertEqual((record['harness_config_sha256'], record['terms_changed']), (sha, None))
+        for f in self.it.glob('CROSSCHECK_*'):          # all of them: the round budget counts files
+            f.unlink()
+
+        with self.config.open('a') as cfg:
+            cfg.write('```arh-config\nask_max_input_bytes = 60000\n```\n')
+        self.assertIn('changed since iteration 1 was claimed', self.ask(good=False).stderr)
+        self.assertFalse(list(self.it.glob('CROSSCHECK_*')))          # refused before any model call
+        self.call('ask', '-n', '1', '--terms-changed', 'packet is 49 kB')
+        path = next(self.it.glob('CROSSCHECK_*.md.json'))
+        record = json.loads(path.read_text())
+        self.assertEqual((record['terms_changed'], record['terms_changed_keys']),
+                         ('packet is 49 kB', {'ask_max_input_bytes': [None, '60000']}))
+        self.assertIn('review terms | changed since the claim: packet is 49 kB', Path(str(path)[:-5]).read_text())
+        self.assertIn('SOUND; review terms changed since the claim (ask_max_input_bytes): packet is 49 kB',
+                      self.gate().stdout)
+
+        # The recorded reason is what lets such a review count: without it the gate refuses.
+        record['terms_changed'] = None
+        path.write_text(json.dumps(record))
+        self.assertIn('no eligible cross-check', self.gate(good=False).stdout)
+
         self.call('claim', '-t', 'after configuration')
-        claim = json.loads((self.root / 'iterations/iteration2/CLAIM.json').read_text())
-        self.assertEqual(claim['harness_config_sha256'], sha)
+        it2 = self.root / 'iterations/iteration2'
+        self.assertEqual(json.loads((it2 / 'CLAIM.json').read_text())['harness_config_sha256'],
+                         hashlib.sha256(self.config.read_bytes()).hexdigest())
+        self.assertEqual((it2 / 'metadata/harnesses.claimed.md').read_bytes(), self.config.read_bytes())
         states = {i['iteration']: i['harness_config']
                   for i in json.loads(self.call('status', '--json').stdout)['iterations']}
         self.assertEqual(states, {1: 'changed', 2: 'unchanged'})
         self.assertIn('iteration(s) 1 were claimed', self.call('status').stdout)
+
+    def test_relaxing_the_family_rule_after_the_claim_needs_a_reason(self):
+        # require_foreign_family = false is a legitimate project policy. Set by the producer after
+        # the claim, it relaxes the rules of its own cross-check, so the review must say why.
+        self.configure(family='openai')                       # claimed under the strict default
+        self.assertIn('same model family', self.ask(good=False).stderr)
+        self.configure(family='openai', extra_config='require_foreign_family = false\n', bind=False)
+        self.assertIn('changed since iteration 1 was claimed', self.ask(good=False).stderr)
+        self.call('ask', '-n', '1', '--terms-changed', 'no foreign verifier available')
+        out = self.gate().stdout
+        self.assertIn('same model family, accepted because require_foreign_family = false', out)
+        self.assertIn('review terms changed since the claim (require_foreign_family): no foreign verifier available', out)
 
     def test_claim_matches_its_schema(self):
         # CI checked only that the schema parses, so fields added to CLAIM.json drifted out of

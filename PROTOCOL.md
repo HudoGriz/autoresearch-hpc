@@ -110,9 +110,17 @@ object being reproduced is a set.
 on their merits and rejected objections MUST be recorded with reasons.
 
 6.6 A required cross-check MUST have a successful invocation record, exactly one
-recognized verdict, concrete producer/verifier family declarations that differ,
-and matching hashes for the reviewed declaration, report and review text. A
-same-family override MUST NOT satisfy a required foreign check.
+recognized verdict, concrete producer/verifier family declarations, and matching
+hashes for the reviewed declaration, report and review text. The families MUST
+differ unless the project's recorded policy accepts same-family review
+(`require_foreign_family = false`). A review accepted under that policy MUST
+record the policy it ran under and MUST be reported as a same-family check. A
+per-review same-family override MUST NOT satisfy a required check.
+
+6.7 The review terms in force when an iteration is claimed (verifier, fallbacks,
+family policy and review bounds) MUST be bound to that iteration. A review taken
+under different terms MUST NOT satisfy a required check unless it records the
+reason for the change.
 
 ## 6b. Arms
 
@@ -189,7 +197,7 @@ The operator's objections are part of the scientific record.
 An implementation conforms to protocol 0.2.0 if it mechanically refuses
 violations of §2.1, §3.1, §3.5, §3.6, §3.7, §4.1, §5.2 and §6c.4 — **eight
 mechanically enforced boundaries** — and implements the review-integrity checks
-of §6.6. The remainder MAY be enforced by review or additional tooling.
+of §6.6 and §6.7. The remainder MAY be enforced by review or additional tooling.
 
 `test/run_tests.sh` asserts those boundaries and the hardened review contract.
 

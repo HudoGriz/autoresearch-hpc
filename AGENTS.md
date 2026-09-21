@@ -132,7 +132,12 @@ workflow {
    the key to `false` to accept an adversarial review from the producer's own
    family — a weaker check, because a model does not reliably catch its own
    reasoning errors. Each review records the value in force when it ran, so the
-   setting never revalidates or invalidates a review already taken.
+   setting never revalidates or invalidates a review already taken. The review
+   terms in `.arh/config/harnesses.md` are bound to an iteration when it is
+   claimed, so do not edit that file mid-iteration. If a change cannot wait (the
+   verifier is unavailable, the review budget is too small), pass
+   `arh ask --terms-changed 'what changed and why'`; without the reason the
+   review does not count.
 
 7. **Standing rules bind every conclusion.** They live in `rules/` and are
    enforced by `arh gate`.

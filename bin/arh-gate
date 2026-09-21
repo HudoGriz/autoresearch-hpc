@@ -142,12 +142,11 @@ case "$sub" in
 
     if [ "$(arh_config_get "$ARH_PROJ" require_crosscheck true)" = true ]; then
       if arh_crosschecks "$dir" | grep -q .; then
-        arh_ok "completed foreign review(s); verdicts are evidence, not endorsement"
+        # Not "foreign": a project may accept same-family review, and describe says which ones were.
+        arh_ok "eligible review(s); verdicts are evidence, not endorsement"
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"
         [ -f "$dir/REVIEW_RESPONSE.md" ] \
           || printf '  WARN no REVIEW_RESPONSE.md: record what was done about each finding (protocol 6.5)\n'
-        [ "$(arh_harness_config_state "$dir")" != changed ] \
-          || printf '  WARN .arh/config/harnesses.md changed since iteration %s was claimed: check the\n       verifier, fallbacks and review bounds before relying on its review\n' "$n"
       else
         arh_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"

@@ -73,5 +73,5 @@ for d in $iters; do
   [ "$(arh_harness_config_state "$dir")" != changed ] || changed="$changed $d"
 done
 [ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
-[ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: check the\n     verifier, fallbacks and review bounds before relying on their reviews.\n' "$changed"
+[ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: a new review of\n     them counts only with arh ask --terms-changed REASON.\n' "$changed"
 exit 0

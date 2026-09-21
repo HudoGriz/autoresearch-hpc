@@ -9,7 +9,7 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
-role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""
+role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""; terms_reason=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --role)         role="$2"; shift 2 ;;
@@ -18,7 +18,9 @@ while [ $# -gt 0 ]; do
     --same-family)  same_family=1; shift ;;
     --dry-run)      dry=1; shift ;;
     --note)         extra="$2"; shift 2 ;;
-    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run] [--note TEXT]
+    --terms-changed) terms_reason="$2"; shift 2 ;;
+    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run] [--note TEXT] [--terms-changed REASON]
+--terms-changed: required when .arh/config/harnesses.md changed since iteration N was claimed; the reason is kept in the review record.
 exit 75: provider usage/rate limit or authentication; 77: provider refused the content. Neither spends a review round.'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
@@ -39,6 +41,15 @@ dir="$ARH_ITERS/iteration$n"
 [ -d "$dir" ] || arh_die "no iteration $n"
 [ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"
 [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md")" ] || arh_die "pre-declaration altered"
+# The review terms were bound to the iteration when it was claimed. Refuse before any model call:
+# a review under changed terms counts only with the reason on record.
+if [ "$(arh_harness_config_state "$dir")" = changed ] && [ -z "${terms_reason//[[:space:]]/}" ]; then
+  arh_die ".arh/config/harnesses.md changed since iteration $n was claimed, so the terms of this review
+       (verifier, fallbacks, family rule, bounds) are not the ones the iteration was claimed under.
+       Compare with ${dir#"$ARH_ROOT"/}/metadata/harnesses.claimed.md, then either restore it, or pass
+       --terms-changed 'what changed and why' to record the reason with the review, or claim a new
+       iteration under the new terms."
+fi
 
 roledoc="$ARH_HOME/skills/cross-check/roles/$role.md"
 [ -f "$roledoc" ] || arh_die "unknown role: $role (see skills/cross-check/roles/)"
@@ -70,7 +81,8 @@ ineligible() {
        A model does not reliably catch its own reasoning errors. Choose another harness,
        pass --same-family to record a weaker check that cannot satisfy the results gate, or
        set require_foreign_family = false in .arh/config/harnesses.md to accept same-family
-       review as a full cross-check for this project, and record why beside it."
+       review as a full cross-check for this project, and record why beside it. For an
+       iteration already claimed, that is a change of review terms: add --terms-changed REASON."
     return
   fi
   [ -n "$(arh_config_get "$ARH_HARN" "harness_${1}_cmd" "")" ] \
@@ -185,6 +197,8 @@ for h in $candidates; do
               elif [ "$strict_family" = false ]; then echo 'yes — accepted, require_foreign_family = false'
               else echo 'yes — WEAKER CHECK'; fi)"
     printf '| foreign family required | %s |\n' "$strict_family"
+    [ "$(arh_harness_config_state "$dir")" != changed ] \
+      || printf '| review terms | changed since the claim: %s |\n' "${terms_reason//|/\\|}"
     printf '| run | %s |\n\n---\n\n' "$(arh_now)"
   } > "$out"
 
@@ -192,7 +206,7 @@ for h in $candidates; do
   set +e
   python3 "$ARH_HOME/lib/harness.py" run "$cmd" "$prompt" "$ARH_ROOT" "$out" "$timeout_s" "$pfam" "$vfam" "$same_family" \
     "$(arh_config_get "$ARH_HARN" ask_max_output_bytes 8000)" "$(arh_config_get "$ARH_HARN" "harness_${h}_version_cmd" "")" \
-    "$strict_arg"
+    "$strict_arg" "$terms_reason"
   rc=$?
   set -e
   cp "$prompt" "$out.prompt"

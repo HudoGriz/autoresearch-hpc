@@ -11,6 +11,8 @@ import subprocess
 import sys
 import time
 
+from project import config as project_config
+
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -22,9 +24,30 @@ def result_artifacts(directory):
             for p in sorted((directory / 'results').rglob('*')) if p.is_file()}
 
 
+def claimed_terms(directory):
+    """SHA-256 of harnesses.md when the iteration was claimed; None for claims older than the key."""
+    try:
+        return json.loads((Path(directory) / 'CLAIM.json').read_text()).get('harness_config_sha256') or None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def changed_terms(directory, config):
+    """{key: [at claim, now]} for every arh-config value that differs from the claim-time copy."""
+    snapshot = Path(directory) / 'metadata/harnesses.claimed.md'
+    if not snapshot.is_file():
+        return None
+    old, new = project_config(snapshot), project_config(config)
+    return {k: [old.get(k), new.get(k)] for k in sorted(set(old) | set(new)) if old.get(k) != new.get(k)}
+
+
 def valid_records(directory):
     directory = Path(directory)
     valid = []
+    # The review terms (verifier, fallbacks, family rule, bounds) are bound to the iteration when it
+    # is claimed. A review taken under changed terms counts only if it records why (arh ask
+    # --terms-changed): otherwise a producer could relax the rules of its own cross-check.
+    claimed = claimed_terms(directory)
     for record in sorted(directory.glob('CROSSCHECK_*.md.json')):
         try:
             data = json.loads(record.read_text())
@@ -37,9 +60,12 @@ def valid_records(directory):
             # default to True, the behaviour they were produced under.
             strict = data.get('require_foreign_family', True)
             families_ok = (pf != vf and not data['same_family_override']) if strict else True
+            # Records older than the key carry no terms hash and are judged as before.
+            terms_ok = (not claimed or 'harness_config_sha256' not in data
+                        or data['harness_config_sha256'] == claimed or bool(data.get('terms_changed')))
             if (data['exit_code'] == 0 and data['verdict'] in ('SOUND', 'QUALIFIED', 'UNSOUND')
                     and pf not in ('', 'unknown', 'mixed') and vf not in ('', 'unknown', 'mixed')
-                    and families_ok
+                    and families_ok and terms_ok
                     and data['review_sha256'] == digest(output)
                     and data['report_sha256'] == digest(report)
                     and data['predeclaration_sha256'] == digest(directory / 'README.md')
@@ -101,7 +127,8 @@ def budget():
         parts.append(('role, instructions and note', size - sum(n for _, n in parts)))
         sys.exit(f"review input is {size} bytes ({', '.join(f'{name} {n}' for name, n in parts)}); "
                  f"ask_max_input_bytes is {max_input}. Shorten the pre-declaration or report, or raise "
-                 "ask_max_input_bytes in .arh/config/harnesses.md and record why beside it")
+                 "ask_max_input_bytes in .arh/config/harnesses.md and give the reason to arh ask "
+                 "--terms-changed")
     for record in valid_records(directory):
         data = json.loads(Path(record + '.json').read_text())
         if (Path(record).name.startswith('CROSSCHECK_' + role + '_' + harness + '_')
@@ -140,6 +167,7 @@ def run():
     version_cmd = sys.argv[11] if len(sys.argv) > 11 else ''
     # '0' when the project accepts a same-family review; appended last so older callers keep working.
     strict = (sys.argv[12] if len(sys.argv) > 12 else '1') != '0'
+    terms_reason = (sys.argv[13] if len(sys.argv) > 13 else '').strip()
     version = cli_version(version_cmd, cwd)
     prompt = Path(prompt_file).read_text()
     # {usage}: a path the command may write a JSON object of token counts or cost to.
@@ -157,6 +185,10 @@ def run():
     reviewed_report = digest(report) if report.exists() else None
     reviewed_predeclaration = digest(directory / 'README.md')
     reviewed_artifacts = result_artifacts(directory)
+    config = Path(cwd, '.arh/config/harnesses.md')
+    terms = digest(config) if config.is_file() else None
+    claimed = claimed_terms(directory)
+    changed = bool(claimed) and terms != claimed
     started = time.time()
     limit = int(output_limit)
     if limit <= 0:
@@ -242,9 +274,6 @@ def run():
         except ValueError:
             usage = None
         Path(usage_file).unlink()
-    directory = Path(output).parent
-    report = directory / 'results/report' / (directory.name + '_report.md')
-    config = Path(cwd, '.arh/config/harnesses.md')
     data = dict(exit_code=rc, verdict=verdict, producer_family=pf, verifier_family=vf,
                 same_family_override=override == '1', require_foreign_family=strict,
                 started=started, finished=time.time(),
@@ -254,7 +283,9 @@ def run():
                 provider_error=provider is not None, provider_error_kind=provider and provider[0],
                 provider_message=provider and provider[2], retry_hint=provider and provider[3],
                 usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None,
-                harness_config_sha256=digest(config) if config.is_file() else None)
+                harness_config_sha256=terms,
+                terms_changed=(terms_reason or None) if changed else None,
+                terms_changed_keys=changed_terms(directory, config) if changed else None)
     with open(output + '.json', 'x') as record:
         json.dump(data, record, indent=2)
         record.write('\n')
@@ -272,12 +303,20 @@ if __name__ == '__main__':
         for path in sorted(directory.glob('CROSSCHECK_*.md')):
             if str(path) in valid:
                 data = json.loads(Path(str(path) + '.json').read_text())
-                print(path.name + ': ' + data['verdict'])
+                # An accepted review that deviates from the default rules says so on every reading.
+                notes = []
+                if data['producer_family'] == data['verifier_family']:
+                    notes.append('same model family, accepted because require_foreign_family = false')
+                if data.get('terms_changed'):
+                    keys = ', '.join(data.get('terms_changed_keys') or {}) or 'no claim-time copy to compare'
+                    notes.append(f"review terms changed since the claim ({keys}): {data['terms_changed']}")
+                print(path.name + ': ' + data['verdict'] + ''.join('; ' + n for n in notes))
             elif record_field(path, 'provider_error_kind') == 'refusal':
                 print(path.name + ': PROVIDER REFUSAL (content policy; not a review round)')
             elif provider_error(path):
                 print(path.name + ': PROVIDER ERROR (verifier unavailable; not a review round)')
             else:
-                print(path.name + ': INELIGIBLE (missing/failed metadata, invalid verdict, family or artifact hash)')
+                print(path.name + ': INELIGIBLE (missing/failed metadata, invalid verdict, family or artifact '
+                      'hash, or review terms changed since the claim without a recorded reason)')
     else:
         sys.exit(run())

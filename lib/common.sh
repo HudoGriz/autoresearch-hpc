@@ -141,9 +141,10 @@ arh_crosschecks() {
   python3 "$ARH_HOME/lib/harness.py" valid "$1" | sed '/^$/d'
 }
 
-# The frozen pre-declaration fixes the science, but the review terms (verifier, fallbacks,
-# bounds) live in harnesses.md, which nothing froze: a producing agent could edit them without
-# a trace (2026-09-16). Prints changed, unchanged, or unrecorded for claims older than the hash.
+# The frozen pre-declaration fixes the science; the review terms (verifier, fallbacks, family rule,
+# bounds) live in harnesses.md, which a producing agent could once edit without a trace (2026-09-16).
+# arh claim now binds them to the iteration. Prints changed, unchanged, or unrecorded for claims
+# older than the hash.
 arh_harness_config_state() {
   local claimed
   claimed=$(sed -n 's/.*"harness_config_sha256"[ ]*:[ ]*"\([0-9a-f]\{64\}\)".*/\1/p' "$1/CLAIM.json" 2>/dev/null | head -1)

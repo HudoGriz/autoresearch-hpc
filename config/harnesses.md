@@ -26,6 +26,8 @@ composed prompt; `{cwd}` with the working directory.
 `reimplementer`, `estimand-auditor` and `gotcha-scanner`.
 
 ```arh-config
+# Each iteration is bound to this file as it stood when the iteration was claimed. Changing it
+# afterwards changes that iteration's review terms: arh ask then needs --terms-changed REASON.
 harnesses = claude codex opencode
 
 harness_claude_cmd      = claude -p {prompt}
