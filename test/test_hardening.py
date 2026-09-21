@@ -592,17 +592,33 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertEqual(kinds, ['refusal', 'review'])
         self.gate()
 
-    def test_limit_names_its_reset_and_skips_fallback(self):
-        self.configure("print(\"ERROR: You've hit your usage limit. Try again at 4:13 PM.\")")
-        with self.config.open('a') as cfg:
-            cfg.write(f'```arh-config\nverifier_fallback = backup\nharness_backup_family = google\n'
-                      f'harness_backup_cmd = python3 "{self.mock}" {{prompt}}\n```\n')
+    LIMIT = "print(\"ERROR: You've hit your usage limit. Try again at 4:13 PM.\")"
+
+    def test_limit_names_its_reset(self):
+        self.configure(self.LIMIT)
         result = self.ask(good=False)
         self.assertEqual(result.returncode, 75, result.stderr)
         self.assertIn('Try again at 4:13 PM', result.stderr)
+        self.assertIn('upper bound', result.stderr)
         records = [json.loads(p.read_text()) for p in self.it.glob('CROSSCHECK_*.md.json')]
         self.assertEqual([(r['provider_error_kind'], r['retry_hint']) for r in records],
                          [('limit', 'Try again at 4:13 PM')])
+
+    def test_fallback_verifier_after_limit(self):
+        # A stated reset is not a schedule: one provider named a time five days out, and a probe
+        # 44 minutes later succeeded (2026-09-16). Another family may review in the meantime.
+        self.configure(self.LIMIT)
+        backup = self.root / 'backup.py'
+        backup.write_text("print('VERDICT: SOUND')\n")
+        with self.config.open('a') as cfg:
+            cfg.write(f'```arh-config\nverifier_fallback = backup\nharness_backup_family = google\n'
+                      f'harness_backup_cmd = python3 "{backup}" {{prompt}}\n```\n')
+        result = self.ask()
+        self.assertIn("verifier 'reviewer' is unavailable", result.stderr)
+        kinds = sorted(json.loads(p.read_text())['provider_error_kind'] or 'review'
+                       for p in self.it.glob('CROSSCHECK_*.md.json'))
+        self.assertEqual(kinds, ['limit', 'review'])
+        self.gate()
 
     def test_review_records_usage(self):
         # "Bounded model calls" bounded bytes, but nothing counted tokens (2026-09-14).

@@ -69,6 +69,13 @@ that mattered are preserved as tests and generic documentation instead.
 - `docs/headless.md`: lessons from driving producers and reviewers unattended on Slurm.
 
 ### Changed
+- **`verifier_fallback` now also covers provider limits.** `arh ask` tried the fallback
+  list only after a content refusal (exit 77) and gave up on a usage limit (exit 75),
+  telling the agent to sleep until the reset the provider stated. That time is not
+  reliable: a provider once named a reset five days out, and a probe 44 minutes later
+  succeeded. A limit now moves on to the next fallback verifier, and the advice in
+  `arh ask`, `AGENTS.md` and `docs/headless.md` treats a stated reset as an upper
+  bound to re-probe within, not a schedule.
 - `arh migrate` also refreshes a study's copies of `AGENTS.md` and `skills/` from the
   framework, after a backup; skills the study added are kept. Agents read those
   copies, so a framework update never reached them. `arh doctor` warns when they differ.

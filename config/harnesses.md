@@ -65,8 +65,9 @@ verifier   = codex
 # stores the value in force when it ran, so changing it later never revalidates or invalidates a
 # review already taken.
 require_foreign_family = true
-# Tried in order only after the verifier refuses the content (arh ask exit 77). Each needs a
-# concrete model family other than the producer's, e.g.: verifier_fallback = gemini
+# Tried in order when the verifier cannot review: it refuses the content (arh ask exit 77) or is
+# out of quota (exit 75). Each needs a concrete model family other than the producer's, e.g.:
+# verifier_fallback = gemini
 verifier_fallback =
 
 ask_timeout = 900
@@ -84,8 +85,8 @@ ask_max_rounds = 2
 `arh ask` exits 75 when the provider refuses the call on a usage or rate limit, or on
 authentication, and prints the provider's own line with any reset time it states. It
 exits 77 when the provider refuses the content itself (a safety classifier). Neither
-consumes a review round. After a content refusal, each harness in `verifier_fallback`
-is tried in turn.
+consumes a review round. After either, each harness in `verifier_fallback` is tried in
+turn. A stated reset time is an upper bound, not a schedule: retry after a bounded wait.
 
 A command template may contain `{usage}`, a file path the command can write a JSON
 object of token counts or cost to; `arh ask` stores it in the review record as `usage`.

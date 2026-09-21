@@ -174,8 +174,10 @@ notices, and it ends as soon as its reply ends.
   already running (an earlier session, another agent) is waited for with
   `arh wait -n N`. A pending review is not a reason to end the session.
 - `arh ask` exit 75: the provider refused on a usage or rate limit, or on
-  authentication. No review round was spent. Wait until the reset time it
-  prints, then run the same command again.
+  authentication, and any `verifier_fallback` was already tried. No review round
+  was spent. The reset time it prints is an upper bound, not a schedule: run the
+  same command again after a bounded wait (for example 30 minutes) instead of
+  sleeping until then.
 - `arh ask` exit 77: the provider refused the content. No round was spent, and
   waiting will not help. Any `verifier_fallback` was already tried; if none gave a
   review, record the refusal as what blocks the iteration.

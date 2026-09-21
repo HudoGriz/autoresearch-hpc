@@ -78,8 +78,9 @@ ineligible() {
 }
 
 # An explicit --harness is used alone. Otherwise the configured verifier goes first, and each
-# verifier_fallback is tried in turn only after a content-policy refusal (exit 77): waiting does
-# not change such a refusal, but another model family may still review the work.
+# verifier_fallback is tried in turn when a verifier cannot review: a content-policy refusal (77),
+# which waiting does not change, or a usage limit (75), whose stated reset is not reliable either.
+# A provider once named a reset five days out, and a probe 44 minutes later succeeded (2026-09-16).
 if [ -n "$harness" ]; then candidates=$harness
 else candidates="$(arh_config_get "$ARH_HARN" verifier codex) $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
 primary=${candidates%% *}
@@ -197,14 +198,18 @@ for h in $candidates; do
   cp "$prompt" "$out.prompt"
   [ -s "$out.err" ] || rm -f "$out.err"
   tried="$tried $h"
-  [ "$rc" -eq 77 ] || break
-  arh_warn "verifier '$h' refused to review this content (content policy); record kept at $out"
+  case "$rc" in
+    77) arh_warn "verifier '$h' refused to review this content (content policy); record kept at $out" ;;
+    75) arh_warn "verifier '$h' is unavailable (usage or rate limit, or authentication); record kept at $out" ;;
+    *) break ;;
+  esac
 done
 
 if [ "$rc" -eq 75 ]; then
-  arh_warn "verifier unavailable: the provider refused the call (usage or rate limit, or authentication).
-       This attempt did not consume a review round; record kept at $out
-       Wait for the reset the provider states (\"provider said\" above), then run the same arh ask again."
+  arh_warn "no verifier was available (tried:$tried): usage or rate limit, or authentication.
+       This did not consume a review round; record kept at $out
+       Treat the reset the provider states (\"provider said\" above) as an upper bound, not a
+       schedule: run the same arh ask again after a bounded wait instead of sleeping until then."
   exit "$rc"
 fi
 if [ "$rc" -eq 77 ]; then

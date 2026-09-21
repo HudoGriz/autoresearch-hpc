@@ -51,10 +51,13 @@ also stops the other family's reviews. Plan one study at a time, or budget API k
 - Detect limits from structured events, not by searching the log: the prompt itself
   may mention "rate limit". Claude reports a `result` event with `is_error` and a
   text such as "You've hit your session limit · resets 2:20pm". Codex emits `error`
-  and `turn.failed` events ("try again at 5:05 PM"). Parse the reset time and sleep
-  until then instead of polling.
+  and `turn.failed` events ("try again at 5:05 PM"). Parse the reset time, but treat it
+  as an upper bound: Codex once stated a reset five days out, and a probe 44 minutes
+  later succeeded. Re-probe on a bounded interval and sleep to the stated time only
+  when it is sooner.
 - `arh ask` exits 75 on a limit and prints the provider's line with its reset time;
-  the attempt spends no review round.
+  the attempt spends no review round, and each harness in `verifier_fallback` is tried
+  first, so a limit on one family need not stop the review.
 - A provider can refuse a whole study on topic grounds. Codex refused a SARS-CoV-2
   host-transcriptomics replication as "flagged for possible biological risk", although
   the input was a public table of host gene counts. The same question asked briefly
