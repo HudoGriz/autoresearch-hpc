@@ -5,6 +5,10 @@ Versions are protocol/tooling versions; see `PROTOCOL.md`.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] — 2026-09-24
+
 Most fixes below were found during internal field deployment on a Slurm +
 Singularity workflow with a separately configured reviewer. The source research
 material is intentionally not part of this software release; the failure classes

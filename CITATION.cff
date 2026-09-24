@@ -9,8 +9,8 @@ abstract: >-
   not as a scientific truth guarantee.
 type: software
 license: MIT
-version: 0.2.0
-date-released: "2026-09-11"
+version: 0.3.0
+date-released: "2026-09-24"
 repository-code: "https://github.com/HudoGriz/autoresearch-hpc"
 keywords:
   - reproducible research
