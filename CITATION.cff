@@ -12,6 +12,14 @@ license: MIT
 version: 0.3.0
 date-released: "2026-09-24"
 repository-code: "https://github.com/HudoGriz/autoresearch-hpc"
+doi: "10.5281/zenodo.22937869"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22937869"
+    description: Concept DOI, always resolving to the latest release
+  - type: doi
+    value: "10.5281/zenodo.22937870"
+    description: Version DOI for release v0.3.0
 keywords:
   - reproducible research
   - research software engineering

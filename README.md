@@ -7,6 +7,7 @@
   <a href="docs/validation.md"><img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-orange"></a>
   <a href="PROTOCOL.md"><img alt="Protocol 0.2.0" src="https://img.shields.io/badge/protocol-0.2.0-blue"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="https://doi.org/10.5281/zenodo.22937869"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.22937869.svg"></a>
 </p>
 
 <p align="center">
@@ -231,6 +232,32 @@ This is a cooperative research-integrity system, not a hostile-code sandbox or a
 | **Migration / hardening** | [`arh migrate` for 0.1 studies, and implementation notes](docs/migration-hardening.md) |
 | **Changes** | [CHANGELOG.md](CHANGELOG.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+## Cite this software
+
+Each release is archived on Zenodo. Cite the version you actually ran.
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22937869.svg)](https://doi.org/10.5281/zenodo.22937869)
+
+| | DOI |
+|---|---|
+| **This project**, any version | [`10.5281/zenodo.22937869`](https://doi.org/10.5281/zenodo.22937869) |
+| **v0.3.0** specifically | [`10.5281/zenodo.22937870`](https://doi.org/10.5281/zenodo.22937870) |
+
+The concept DOI above always resolves to the latest release; the version DOI
+pins one. [`CITATION.cff`](CITATION.cff) carries the same metadata in a form
+GitHub's "Cite this repository" button and most reference managers can read.
+
+```bibtex
+@software{autoresearch_hpc,
+  title   = {AutoResearch HPC: an auditable protocol for AI-assisted research on HPC},
+  author  = {{AutoResearch HPC contributors}},
+  version = {0.3.0},
+  year    = {2026},
+  doi     = {10.5281/zenodo.22937869},
+  url     = {https://github.com/HudoGriz/autoresearch-hpc}
+}
+```
 
 ## Built on existing work
 
