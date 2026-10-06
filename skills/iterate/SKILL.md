@@ -51,6 +51,10 @@ Scientific packages come from `arh env create NAME pkg=version ...`, solved once
 the task image and locked. `arh submit WORKFLOW.nf --lint` checks a workflow before
 it runs; `AGENTS.md` shows a minimal one.
 
+A confirmation on held-out data (`sealed_inputs`) first freezes every artefact
+carrying a decision: `arh freeze -n N MODEL THRESHOLDS SCRIPTS...`. Only then can
+its runs read the sealed paths, and each read is recorded (`arh freeze list`).
+
 Check acceptance criteria before interpretation. A failed criterion is this
 iteration's result: report and conclude it, then pre-declare the handling in a new
 iteration. It is not a reason to stop.

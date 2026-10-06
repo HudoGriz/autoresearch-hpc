@@ -53,6 +53,11 @@ it no longer matches.
 3.8 A pre-declaration gate MUST NOT overwrite an existing freeze. Missing
 configured standing-rule files MUST fail the gate.
 
+3.9 A confirmation on held-out data MUST be preceded by a write-once freeze
+that records the hash of every artefact carrying a decision it applies (model,
+thresholds, decision rules, code). A run of that iteration MUST be refused when
+any frozen artefact no longer matches.
+
 ## 4. Append-only
 
 4.1 An iteration MUST NOT be modified to change its conclusion.
@@ -88,6 +93,10 @@ assertion that the data survived. “The tool ran without error” is not eviden
 identify the code/workflow, environment and completion status sufficiently to
 bind the record to the run. Complete replayable provenance is a stronger goal
 than conformance to this clause.
+
+5.8 Inputs a project declares sealed MUST NOT be readable by a run unless the
+run's iteration holds a valid freeze (§3.9). Every run that can read them MUST be
+recorded with the freeze it ran under.
 
 ## 6. Cross-checking
 
@@ -203,6 +212,11 @@ An implementation conforms to protocol 0.2.0 if it mechanically refuses
 violations of §2.1, §3.1, §3.5, §3.6, §3.7, §4.1, §5.2 and §6c.4 — **eight
 mechanically enforced boundaries** — and implements the review-integrity checks
 of §6.6 and §6.7. The remainder MAY be enforced by review or additional tooling.
+
+A project that declares sealed inputs relies on §3.9 and §5.8 as well, and a
+conforming implementation MUST refuse both mechanically: a run whose frozen
+artefacts changed, and a run that would read a sealed input without a valid
+freeze.
 
 `test/run_tests.sh` asserts those boundaries and the hardened review contract;
 `test/conformance.py` injects one violation per boundary and records the refusals.

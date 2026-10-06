@@ -142,6 +142,7 @@ my-study/
 │       ├── CLAIM.json
 │       ├── README.md                pre-declaration written before results
 │       ├── PREDECLARATION.sha256    frozen declaration hash
+│       ├── FREEZE.json              decisions a confirmation applies, frozen before it reads sealed data
 │       ├── scripts/  resources/  metadata/
 │       ├── results/  logs/          results, run receipts, traces
 │       ├── CROSSCHECK_*.md          foreign-family reviews
@@ -181,7 +182,10 @@ arh dag init -n N           # reconstruct the discovery path, inputs to claim
 arh dag freeze -n N         # freeze that specification
 arh replicate run ...       # blind reimplementation from the frozen DAG
 arh evoke list              # optional specialist generators available at this site
+arh freeze -n N PATH...     # freeze a confirmation's decisions; only then may it read sealed inputs
 ```
+
+Held-out data can be declared as `sealed_inputs`. Until an iteration freezes the artefacts its confirmation applies (model, thresholds, decision rules, scripts), its runs see empty mounts in place of the sealed paths, and a workflow that names one is refused. Every read after the freeze is logged, so how many times the held-out data were used is part of the record.
 
 Disagreement between replicators is treated as useful evidence; agreement is not promoted to scientific confirmation by majority vote.
 

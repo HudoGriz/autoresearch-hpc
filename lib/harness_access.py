@@ -40,9 +40,16 @@ def within(path, base):
     return path == base or path.startswith(base + '/')
 
 
+def sealed(root):
+    """Declared sealed inputs, resolved; the harness should not read them either."""
+    from freeze import sealed_inputs
+    return [str(p) for p in sealed_inputs(root)]
+
+
 def write(root, harness, web, inputs):
     root = Path(root)
     ext = sorted(set(outside(root, inputs)))
+    held = sealed(root)
     if harness == 'claude':
         path = root / '.claude/settings.json'
         cfg = load(path)
@@ -51,16 +58,20 @@ def write(root, harness, web, inputs):
             perm['additionalDirectories'] = sorted(set(perm.get('additionalDirectories', [])) | set(ext))
         if web == 'deny':   # a bare tool name removes the tool from the session entirely
             perm['deny'] = sorted(set(perm.get('deny', [])) | set(WEB))
+        if held:            # `//` anchors a Claude Code path rule at the filesystem root
+            perm['deny'] = sorted(set(perm.get('deny', [])) | {f'Read(/{p}/**)' for p in held} | {f'Read(/{p})' for p in held})
         if perm:
             save(path, cfg)
     elif harness == 'opencode':
         path = root / 'opencode.json'
         cfg = load(path)
         perm = cfg.setdefault('permission', {})
-        if ext:
+        if ext or held:
             allowed = perm.setdefault('external_directory', {})
             for p in ext:
                 allowed[p] = allowed[p + '/**'] = 'allow'
+            for p in held:
+                allowed[p] = allowed[p + '/**'] = 'deny'
         if web == 'deny':
             perm.update(webfetch='deny', websearch='deny')
         if not perm:
@@ -86,8 +97,11 @@ def check(root, web, inputs):
         if web == 'deny':
             out += [f'FAIL|opencode.json leaves {t} on although web_access = deny'
                     for t in ('webfetch', 'websearch') if perm.get(t) != 'deny']
+    held = sealed(root)
     if (root / '.claude').is_dir():
         perm = load(root / '.claude/settings.json').get('permissions', {})
+        out += [f'WARN|.claude/settings.json does not deny reading the sealed input {p}'
+                for p in held if f'Read(/{p}/**)' not in perm.get('deny', [])]
         dirs = perm.get('additionalDirectories', [])
         out += [f'WARN|.claude/settings.json does not list the declared input {p} in additionalDirectories'
                 for p in ext if not any(within(p, d) for d in dirs)]

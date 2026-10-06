@@ -6,6 +6,7 @@ import re
 import sys
 from harness import digest, valid_records
 from project import knowledge
+from freeze import state as freeze_state
 
 n = sys.argv[1]
 if not n.isdigit():
@@ -44,5 +45,6 @@ state['knowledge'] = {name: {'path': str(path.relative_to(root)) if root in path
                              'since_claim': 'unrecorded' if name not in claimed else
                                             ('unchanged' if claimed[name] == digest(path) else 'changed')}
                       for name, path in knowledge(root).items()}
+state['freeze'] = freeze_state(root, directory)[0]
 state['next'] = 'inspect altered plan' if state['predeclaration'] == 'ALTERED' else ('freeze plan' if state['predeclaration'] != 'frozen' else ('execute/write report' if not report.exists() else ('review evidence' if not state['reviews'] else 'check results gate and ledger')))
 print(json.dumps(state, ensure_ascii=True, indent=2))

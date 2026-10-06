@@ -60,6 +60,27 @@ arh verify new <object> -m re-implementation
 arh verify gate <object>
 ```
 
+## Confirming on held-out data: freeze, then unseal
+
+When the project declares `sealed_inputs` (an external validation sample, a
+test split), no run can read them while you are still choosing. Once the
+configuration is chosen without them:
+
+```bash
+arh freeze -n N iterations/iteration8/results/model/ iterations/iteration8/results/thresholds.json \
+    iterations/iterationN/scripts/
+arh submit iterations/iterationN/scripts/confirm.nf -n itN_confirm
+```
+
+`FREEZE.json` is written once and names every file the confirmation applies:
+the model, the thresholds and emission rule, the feature list, the scripts.
+Freeze everything that carries a decision, not only the model file. A run of
+iteration N then reads the sealed inputs read-only, and `arh submit` refuses it
+if any frozen file has changed. Every read is appended to `.arh/unseals.tsv` and
+shown by `arh freeze list`, so how often the held-out data were used is on
+record. Without a valid freeze the sealed paths are covered by empty mounts, and
+a workflow, params file or script that names one is refused before it runs.
+
 ## Writing a workflow for `arh submit`
 
 `arh submit` runs a Nextflow workflow that belongs to a claimed iteration with a

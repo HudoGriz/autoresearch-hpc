@@ -24,6 +24,7 @@ if [ "$image" = runtime ]; then
     case "$input" in /*) ;; *) input="$ARH_ROOT/$input" ;; esac
     args+=(--bind "$input:$input:ro")
   done
+  while IFS= read -r mask; do [ -z "$mask" ] || args+=(--bind "$mask:ro"); done < <(arh_sealed_masks)
   exec "$backend" "${args[@]}" "$runtime_image" "$@"
 fi
 

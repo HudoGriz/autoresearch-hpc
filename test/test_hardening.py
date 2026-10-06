@@ -929,5 +929,97 @@ elif args[0] == 'list':
         self.assertIn('a mode with no check', gotchas.read_text())          # an existing file is never replaced
 
 
+    # --- freezes and sealed inputs (field feedback #21, #29) --------------------------------------
+
+    def seal(self):
+        """A held-out directory inside a declared immutable input, declared sealed."""
+        data = Path(self.temp.name) / 'data'
+        held = data / 'heldout'
+        held.mkdir(parents=True)
+        (held / 'truth.txt').write_text('held-out truth\n')
+        (data / 'open.txt').write_text('open\n')
+        self.set_config('project.md', immutable_inputs=data, sealed_inputs=held)
+        return data, held
+
+    def test_freeze_is_write_once_and_binds_every_named_file(self):
+        # A hand-written guard hashed the model but not the thresholds that carried the rule (2026-09-12).
+        model = self.it / 'results/model'; model.mkdir(parents=True)
+        (model / 'weights.bin').write_bytes(b'w')
+        thresholds = self.it / 'scripts/thresholds.json'; thresholds.write_text('{"t": 0.5}\n')
+        self.call('freeze', '-n', '1', str(model), str(thresholds))
+        frozen = json.loads((self.it / 'FREEZE.json').read_text())
+        self.assertEqual(set(frozen['files']), {'iterations/iteration1/results/model/weights.bin',
+                                                'iterations/iteration1/scripts/thresholds.json'})
+        self.assertIn('written once', self.call('freeze', '-n', '1', str(thresholds), good=False).stderr)
+        self.call('freeze', 'check', '-n', '1')
+        self.assertEqual(json.loads(self.call('status', '--json').stdout)['iterations'][0]['freeze'], 'valid')
+        thresholds.write_text('{"t": 0.4}\n')
+        self.assertIn('thresholds.json', self.call('freeze', 'check', '-n', '1', good=False).stdout)
+        self.ask()
+        self.assertIn('freeze: frozen file(s) changed', self.gate(good=False).stdout)
+        script = self.it / 'scripts/it1_01_confirm.sh'; script.write_text('exit 0\n')
+        self.assertIn('changed since the freeze', self.call('submit', str(script), '-n', 'confirm', good=False).stderr)
+
+    def test_freeze_refuses_without_a_plan_outside_the_project_and_on_sealed_data(self):
+        _, held = self.seal()
+        n = self.call('claim', '-t', 'unplanned').stdout.strip()
+        thing = self.root / f'iterations/iteration{n}/scripts/x.txt'; thing.write_text('x\n')
+        self.assertIn('pre-declaration first', self.call('freeze', '-n', n, str(thing), good=False).stderr)
+        outside = Path(self.temp.name) / 'outside.txt'; outside.write_text('x\n')
+        self.assertIn('outside the project', self.call('freeze', '-n', '1', str(outside), good=False).stderr)
+        self.assertIn('sealed input', self.call('freeze', '-n', '1', str(held / 'truth.txt'), good=False).stderr)
+        self.assertFalse((self.it / 'FREEZE.json').exists())
+
+    def test_workflow_naming_a_sealed_input_is_refused_before_a_freeze(self):
+        _, held = self.seal()
+        script = self.it / 'scripts/it1_01_peek.sh'; script.write_text(f'cat {held}/truth.txt\n')
+        failed = self.call('submit', str(script), '-n', 'peek', good=False)
+        self.assertIn('sealed input', failed.stderr)
+        self.assertFalse((self.it / 'logs/nextflow/peek').exists())        # refused before any attempt
+        self.call('guard', str(held / 'x'), good=False)
+
+    @needs_site
+    def test_sealed_input_is_hidden_until_the_freeze_then_read_and_logged(self):
+        data, held = self.seal()
+        out = self.it / 'results/seen.txt'
+        script = self.it / 'scripts/it1_01_read.sh'
+        script.write_text(f'set -eu\ncat "{data}/open.txt" > /dev/null\nls -A "{data}/held""out" > "{out}"\n'
+                          f'cat "{data}/held""out/truth.txt" >> "{out}"\n')
+        self.call('submit', str(script), '-n', 'early', good=False)
+        self.assertEqual(out.read_text(), '')                             # an empty mount, not the data
+        early = json.loads(next((self.it / 'logs/nextflow/early').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(early['sealed_inputs'], {'read': [], 'masked': [str(held)]})
+        self.assertIn('singularity.autoMounts = false',
+                      next((self.it / 'logs/nextflow/early').glob('attempt-*/execution.config')).read_text())
+        self.call('freeze', '-n', '1', str(script))
+        self.call('submit', str(script), '-n', 'confirm')
+        self.assertIn('held-out truth', out.read_text())
+        record = json.loads(next((self.it / 'logs/nextflow/confirm').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(record['sealed_inputs']['read'], [str(held)])
+        self.assertEqual(record['freeze_sha256'], hashlib.sha256((self.it / 'FREEZE.json').read_bytes()).hexdigest())
+        log = (self.root / '.arh/unseals.tsv').read_text().splitlines()
+        self.assertEqual((len(log), log[1].split('\t')[1:3]), (2, ['1', 'confirm']))
+        self.assertIn('read by iteration(s) 1', self.call('freeze', 'list').stdout)
+
+    @needs_site
+    def test_arh_run_never_reads_a_sealed_input(self):
+        data, held = self.seal()
+        self.assertEqual(self.call('run', 'runtime', '--', 'ls', '-A', str(held)).stdout, '')
+        self.assertIn('open', self.call('run', 'runtime', '--', 'cat', str(data / 'open.txt')).stdout)
+
+    def test_doctor_and_harnesses_know_about_sealed_inputs(self):
+        data, held = self.seal()
+        self.assertIn('sealed: ' + str(held), self.call('doctor', good=None).stdout)
+        subprocess.run([str(ROOT / 'harness/install.sh'), str(self.root), 'claude', 'opencode'],
+                       env=self.env, check=True, capture_output=True)
+        deny = json.loads((self.root / '.claude/settings.json').read_text())['permissions']['deny']
+        self.assertIn(f'Read(/{held}/**)', deny)
+        self.assertEqual(json.loads((self.root / 'opencode.json').read_text())['permission']['external_directory'][str(held)],
+                         'deny')
+        # An immutable input inside a sealed one would be hidden by the seal's mount.
+        self.set_config('project.md', sealed_inputs=data, immutable_inputs=held)
+        self.assertIn('lies inside sealed input', self.call('doctor', good=False).stdout)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

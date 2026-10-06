@@ -29,7 +29,8 @@ same directives the producer followed.
 ## Data inventory
 
 <!-- Where the data are. Declare each location in immutable_inputs in
-.arh/config/project.md.
+.arh/config/project.md, or in sealed_inputs if only a frozen confirmation may
+read it.
 
 ### YYYY-MM-DD — dataset
 **Location:** absolute path

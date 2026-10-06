@@ -32,9 +32,11 @@ if [ "$json" = 1 ]; then
     if [ -f "$dir/DAG.sha256" ]; then dag=frozen
     elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
     narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
+    if [ ! -f "$dir/FREEZE.json" ]; then frz=none
+    elif python3 "$ARH_HOME/lib/freeze.py" check "$ARH_ROOT" "$dir" >/dev/null 2>&1; then frz=valid; else frz=changed; fi
     [ "$first" = 1 ] && first=0 || printf ','
-    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s"}' \
-      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")"
+    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s", "freeze": "%s"}' \
+      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")" "$frz"
   done
   printf '\n  ]\n}\n'
   exit 0
@@ -74,4 +76,8 @@ for d in $iters; do
 done
 [ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
 [ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: a new review of\n     them counts only with arh ask --terms-changed REASON.\n' "$changed"
+if [ -n "$(arh_config_get "$ARH_PROJ" sealed_inputs "")" ] || compgen -G "$ARH_ITERS/iteration*/FREEZE.json" >/dev/null; then
+  printf '\nfreezes and sealed inputs (arh freeze list):\n'
+  python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" | sed 's/^/  /'
+fi
 exit 0

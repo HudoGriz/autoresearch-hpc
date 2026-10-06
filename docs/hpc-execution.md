@@ -156,9 +156,28 @@ failure appears only after `arh submit` has created its attempt directory, so
 check new workflows first with `arh submit WORKFLOW.nf --lint`, which runs
 `nextflow lint` with the pinned controller and submits nothing.
 
+### Sealed inputs and freezes
+
+`sealed_inputs` in `project.md` names held-out data. For a run that may not read
+them, `arh submit` adds an empty read-only bind over each sealed path (after the
+immutable inputs, so a sealed directory inside a broader input is covered too)
+and sets `singularity.autoMounts = false`: Nextflow's automounts bind a staged
+input's directory before ARH's options, and Singularity keeps the first bind of
+a target, so an automount would otherwise expose it. It also refuses a workflow,
+params file or iteration script whose text names a sealed path. `arh run` always
+covers them.
+
+A run of an iteration with a valid `FREEZE.json` (`arh freeze -n N PATH...`)
+binds the sealed paths read-only instead. Its receipt records `freeze_sha256`
+and `sealed_inputs.read`, and `.arh/unseals.tsv` gets one row per sealed path and
+run. `arh submit` refuses the run if any file named in `FREEZE.json` has changed.
+
 ## Isolation boundary
 
 Immutable inputs are bound read-only; the task environment is also read-only.
+Sealed inputs are hidden from every container that is not a frozen confirmation,
+but the agent's own shell can still read whatever the operating system lets it;
+`harness/install.sh` adds deny rules where a harness supports them.
 This is a cooperative research protocol, not a sandbox for hostile Nextflow code.
 Workflow authors must preserve the container policy and declare scientific
 dependencies and inputs. The host controller, scheduler clients and container

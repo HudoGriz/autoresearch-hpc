@@ -207,6 +207,17 @@ if [ -n "$site_gotchas" ]; then
   else arh_fail "site_gotchas names $site_gotchas, which is not a readable file"; warn=$((warn+1)); fi
 fi
 
+if [ -n "$(arh_config_get "$ARH_PROJ" sealed_inputs "")" ]; then
+  printf '\nsealed inputs:\n'
+  while IFS='|' read -r level msg; do
+    case "$level" in
+      OK) arh_ok "$msg" ;;
+      FAIL) arh_fail "$msg"; warn=$((warn+1)) ;;
+      *) arh_warn "$msg" ;;
+    esac
+  done < <(python3 "$ARH_HOME/lib/freeze.py" doctor "$ARH_ROOT")
+fi
+
 printf '\nrules:\n'
 for r in $(arh_config_get "$ARH_PROJ" rules ""); do
   [ -f "$ARH_ROOT/rules/$r.md" ] && arh_ok "$r" || { arh_fail "$r — configured but missing"; warn=$((warn+1)); }

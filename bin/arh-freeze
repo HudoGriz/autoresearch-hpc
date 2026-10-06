@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Freeze the decision artefacts a confirmation applies, before it reads held-out data.
+#
+#   arh freeze -n N PATH...     hash every file under each PATH into iterationN/FREEZE.json (write-once)
+#   arh freeze check -n N       do the frozen files still match?
+#   arh freeze list             freezes, and which iterations read each sealed input
+#
+# With sealed_inputs declared in .arh/config/project.md, a run of iteration N can read them only
+# while FREEZE.json exists and every file it names still matches; arh submit records each such read.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
+sub=create
+case "${1-}" in
+  -h|--help|"") usage; exit 0 ;;
+  check|list) sub="$1"; shift ;;
+esac
+n=""; paths=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="${2-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) arh_die "unexpected option: $1" ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+arh_load_project
+
+if [ "$sub" = list ]; then
+  exec python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS"
+fi
+case "$n" in ""|*[!0-9]*) arh_die "which iteration? arh freeze $([ "$sub" = check ] && echo 'check ')-n N" ;; esac
+dir="$ARH_ITERS/iteration$n"
+[ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+
+if [ "$sub" = check ]; then
+  exec python3 "$ARH_HOME/lib/freeze.py" check "$ARH_ROOT" "$dir"
+fi
+[ ${#paths[@]} -gt 0 ] || arh_die "name what the confirmation applies: arh freeze -n $n MODEL THRESHOLDS SCRIPTS..."
+arh_guard_path "$dir/FREEZE.json"
+exec python3 "$ARH_HOME/lib/freeze.py" create "$ARH_ROOT" "$dir" "$(arh_agent_name)" "${paths[@]}"

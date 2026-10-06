@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Protocol conformance matrix: inject each protocol violation and check that arh refuses it.
 
-E1-E11 run this checkout's `arh` in a scratch project against a stand-in reviewer, so no model
-is called. E5b, E6 and E9 run real tasks and need --site, a configured site.md. A Slurm or PBS
+E1-E13 run this checkout's `arh` in a scratch project against a stand-in reviewer, so no model
+is called. E5b, E6, E9, E12 and E13 run real tasks and need --site, a configured site.md. A Slurm or PBS
 site submits real jobs, so put --workdir on a filesystem the compute nodes can see. Without
---site those three are reported as skipped. The matrix is printed and written as JSON.
+--site those five are reported as skipped. The matrix is printed and written as JSON.
 
     python3 test/conformance.py [--site SITE.md] [--workdir DIR] [--json FILE] [--claims N]
                                 [--claim-launcher 'srun -N 4 --ntasks-per-node 8'] [--keep]
@@ -32,7 +32,7 @@ REPORT = 'Negative controls reject failures. Detection limit: one check. Candida
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--site', type=Path, help='site.md for the cases that run tasks (E5b, E6, E9)')
+    parser.add_argument('--site', type=Path, help='site.md for the cases that run tasks (E5b, E6, E9, E12, E13)')
     parser.add_argument('--workdir', type=Path, help='where the scratch project is created (default: $TMPDIR)')
     parser.add_argument('--json', type=Path, default=Path('conformance.json'), help='result file')
     parser.add_argument('--claims', type=int, default=8, help='concurrent claims in E4')
@@ -146,7 +146,9 @@ def main():
     # E5b, E6, E9: real tasks through Nextflow and the site's scheduler.
     task_cases = [('E5b', 'task writes to a declared immutable input', 'write refused inside the task'),
                   ('E6', 'task exits with an error', 'failure reported; receipt and logs kept'),
-                  ('E9', 'submission interrupted while its task runs', 'signal recorded; launch lock released')]
+                  ('E9', 'submission interrupted while its task runs', 'signal recorded; launch lock released'),
+                  ('E12', 'held-out data read before a freeze', 'named path refused; hidden path unreadable'),
+                  ('E13', 'frozen decision changed before the confirmation', 'confirmation refused')]
     if not args.site:
         for cid, violation, expected in task_cases:
             case(cid, violation, expected, None, 'skipped: needs --site')
@@ -201,6 +203,35 @@ def main():
              and released and cancelled,
              f"task started {started}; signal {receipt('slow', 'signal')}; lock released {released}"
              + (f'; job gone from queue {cancelled}' if scheduler == 'slurm' else ''))
+
+        # E12, E13: sealed inputs. The held-out file sits inside a declared immutable input, so only the
+        # seal stands between a task and it; the second script builds the path so no text names it.
+        held = inputs / 'heldout'
+        held.mkdir()
+        (held / 'truth.txt').write_text('held-out truth\n')
+        before_seal = cfg.read_text()
+        cfg.write_text(before_seal.replace('sealed_inputs     =', f'sealed_inputs     = {held}', 1))
+        n, it = iteration('sealed confirmation', report=False)
+        named_script = submit('named', f'cat {held}/truth.txt\n')
+        named = arh('submit', str(named_script), '-n', 'named')
+        named_script.unlink()           # every script of the iteration is scanned for sealed paths
+        built = submit('built', f'set -eu\ncat "{inputs}/held""out/truth.txt" > "{it}/results/seen.txt"\n')
+        hidden = arh('submit', str(built), '-n', 'hidden')
+        leaked = (it / 'results/seen.txt').is_file() and 'held-out' in (it / 'results/seen.txt').read_text()
+        decision = it / 'scripts/model.txt'
+        decision.write_text('threshold = 0.5\n')
+        must('freeze', '-n', n, str(decision), str(built))
+        confirmed = arh('submit', str(built), '-n', 'confirm')
+        read = (it / 'results/seen.txt').is_file() and 'held-out' in (it / 'results/seen.txt').read_text()
+        logged = (project / '.arh/unseals.tsv').is_file() and str(held) in (project / '.arh/unseals.tsv').read_text()
+        case(*task_cases[3], named.returncode != 0 and 'sealed input' in named.stderr
+             and hidden.returncode != 0 and not leaked and confirmed.returncode == 0 and read and logged,
+             f'named path refused {named.returncode != 0}; hidden path leaked {leaked}; '
+             f'confirmation after freeze read it {read}; read logged {logged}')
+        decision.write_text('threshold = 0.4\n')
+        changed = arh('submit', str(built), '-n', 'confirm2')
+        case(*task_cases[4], changed.returncode != 0 and 'changed since the freeze' in changed.stderr, changed.stderr)
+        cfg.write_text(before_seal)
 
     # E7: claimed under terms that name a same-family verifier, so only the family rule applies.
     unreviewed = set()                  # iterations the matrix leaves without a valid review

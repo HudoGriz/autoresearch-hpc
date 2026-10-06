@@ -19,6 +19,21 @@ Singularity with two producer accounts and two verifier families.
   `arh delegate` gives the executor the directives in full, and `arh context` reports whether
   they changed since the claim. `arh doctor` warns when a file is missing, when `AGENTS.md`
   lacks the rule, and when a gotcha has no assertion.
+- **`arh freeze` and `sealed_inputs`: held-out data that only a frozen confirmation can read.**
+  A study's most important safeguard, that its external sample was scored only after a
+  configuration was chosen without it, lived in hand-written scripts, and the hand-written guard
+  hashed the model but not the thresholds file that carried the decision rule (field feedback
+  #21, #29). `arh freeze -n N PATH...` writes a write-once `FREEZE.json` with the hash of every
+  file under each path, after the pre-declaration is frozen. Paths in `sealed_inputs`
+  (`project.md`) are covered by empty read-only mounts in every `arh submit` and `arh run`
+  container, Nextflow's automounts are off for such runs, and a workflow, params file or iteration
+  script that names a sealed path is refused, unless the run belongs to an iteration whose freeze
+  is valid. That run binds them read-only, records the freeze in `run.json` and appends the read
+  to `.arh/unseals.tsv`. `arh submit` refuses a run whose frozen files changed, `arh gate results`
+  fails on one, `arh freeze list` and `arh status` show every freeze and which iterations read
+  each sealed input, and `arh guard` refuses writes into them. `harness/install.sh` denies the
+  harness's own reads of sealed paths where the harness can express it (Claude Code, OpenCode).
+  `PROTOCOL.md` gains §3.9 and §5.8.
 - **`site_gotchas` in `site.md`** names a Markdown file of tool and cluster pitfalls shared by
   every project on the machine, so a lesson is paid for once per site instead of once per
   project. It is read, hashed and checked like the project's own files, and

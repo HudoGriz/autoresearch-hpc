@@ -13,6 +13,7 @@ import shlex
 import sys
 import tempfile
 
+import freeze
 from locks import Held, acquire, release
 from project import config, guard
 
@@ -59,9 +60,25 @@ def run():
         parser.error('workflow must belong to a claimed iteration')
     if args.lint:
         return lint(workflow, root, site, parser)
-    freeze = iteration / 'PREDECLARATION.sha256'
-    if not freeze.is_file() or freeze.read_text().splitlines()[0] != sha(iteration / 'README.md'):
+    predeclared = iteration / 'PREDECLARATION.sha256'
+    if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(iteration / 'README.md'):
         parser.error('iteration must have an unchanged frozen pre-declaration')
+    # A confirmation applies frozen decisions; one whose decisions changed under it is not that run.
+    frozen_state, freeze_sha, changed = freeze.state(root, iteration)
+    if frozen_state == 'changed':
+        parser.error('files frozen in FREEZE.json changed since the freeze: ' + ', '.join(changed)
+                     + '. A changed configuration is a new iteration.')
+    sealed = freeze.sealed_inputs(root)
+    unsealed = bool(sealed) and frozen_state == 'valid'
+    if sealed and not unsealed:
+        scripts_dir = iteration / 'scripts'
+        texts = [workflow] + ([args.params.resolve()] if args.params else []) + (
+            [p for p in sorted(scripts_dir.rglob('*')) if p.is_file()] if scripts_dir.is_dir() else [])
+        named = freeze.references(root, texts)
+        if named:
+            parser.error('sealed input ' + named[0][1] + ' is named in ' + str(Path(named[0][0]).relative_to(root))
+                         + ': only a run of an iteration with a valid freeze may read sealed inputs '
+                         '(arh freeze -n N FILE...).')
     name = args.name or workflow.stem
     if not name or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in name):
         parser.error('name must contain only letters, digits, underscores and hyphens')
@@ -84,8 +101,9 @@ def run():
     if len(installed) != 1 or json.loads(installed[0].read_text()).get('version') != version:
         parser.error('host Nextflow environment does not match the configured version')
     expected = sha(binary)
-    engine = guard(iteration / 'metadata/nextflow' / name, root, immutable)
-    logs = guard((args.logdir or iteration / 'logs/nextflow') / name, root, immutable)
+    protected = immutable + [str(p) for p in sealed]
+    engine = guard(iteration / 'metadata/nextflow' / name, root, protected)
+    logs = guard((args.logdir or iteration / 'logs/nextflow') / name, root, protected)
     # Custom log locations must also respect iteration ownership.
     if iteration not in logs.parents:
         parser.error('logs must stay under the producing iteration')
@@ -131,13 +149,25 @@ def run():
             source = Path(item)
             source = (source if source.is_absolute() else root / source).resolve()
             binds.append(str(source) + ':' + str(source) + ':ro')
+        # Sealed inputs: bound read-only for a frozen confirmation; otherwise covered by an empty
+        # mount, which also hides them inside a broader immutable input. Nextflow's automounts bind a
+        # staged input's directory before these options and Singularity keeps the first bind of a
+        # target, so automounts are off for a run that may not read them.
+        masked = []
+        if unsealed:
+            binds += [f'{p}:{p}:ro' for p in sealed]
+        else:
+            for source, target in freeze.masks(root):
+                binds.append(f'{source}:{target}:ro')
+                masked.append(str(target))
         options = ' '.join('--bind ' + shlex.quote(bind) for bind in binds)
         if task_prefix:
             options += ' --env ' + shlex.quote('PATH=' + task_prefix + '/bin:/usr/local/bin:/usr/bin:/bin')
         lines = [f'process.executor = {literal(executor)}', 'process.errorStrategy = "terminate"',
                  'process.maxRetries = 0', 'tower.enabled = false', 'wave.enabled = false',
                  f'process.container = {literal(image)}', 'singularity.enabled = true',
-                 'singularity.autoMounts = true', f'singularity.runOptions = {literal(options)}']
+                 f"singularity.autoMounts = {'false' if sealed and not unsealed else 'true'}",
+                 f'singularity.runOptions = {literal(options)}']
         if executor == 'slurm':
             for key, directive in [('slurm_partition', 'queue'), ('slurm_time', 'time'),
                                    ('slurm_mem', 'memory')]:
@@ -185,8 +215,14 @@ def run():
                       driver_package_sha256=sha(installed[0]),
                       environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
                       resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat())
+        if frozen_state != 'none':
+            record['freeze_sha256'] = freeze_sha
+        if sealed:
+            record['sealed_inputs'] = dict(read=[str(p) for p in sealed] if unsealed else [], masked=masked)
         receipt = attempt / 'run.json'
         receipt.write_text(json.dumps(record, indent=2) + '\n')
+        if unsealed:
+            freeze.record_unseal(root, iteration.name[9:], name, attempt.name, sealed, freeze_sha)
         received = []
         with (attempt / 'console.log').open('w') as output:
             proc = subprocess.Popen(cmd, cwd=engine, env=env, stdout=output, stderr=subprocess.STDOUT)

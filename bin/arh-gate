@@ -136,6 +136,15 @@ case "$sub" in
       fi
     fi
 
+    # A confirmation's frozen decisions must still be the ones it applied.
+    if [ -f "$dir/FREEZE.json" ]; then
+      if out=$(python3 "$ARH_HOME/lib/freeze.py" check "$ARH_ROOT" "$dir" 2>&1); then arh_ok "freeze: $out"
+      else arh_fail "freeze: $out"; fails=$((fails+1)); fi
+    fi
+    if [ -f "$ARH_STATE/unseals.tsv" ]; then
+      awk -F'\t' -v n="$n" 'NR>1 && $2==n {print "  read sealed input " $5 " in run " $3 " (" $1 ")"}' "$ARH_STATE/unseals.tsv"
+    fi
+
     report="$dir/results/report/iteration${n}_report.md"
     if [ -f "$report" ]; then arh_ok "report present"; check_rules "$report" report
     else arh_fail "no report at ${report#"$ARH_ROOT"/}"; fails=$((fails+1)); fi

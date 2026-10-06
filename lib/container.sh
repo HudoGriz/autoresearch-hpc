@@ -54,7 +54,9 @@ arh_ctr_run() {
       args=(exec --cleanenv --containall --env LC_ALL=C)
       for b in $ro_binds; do [ -n "$b" ] && args+=(--bind "$b:$b:ro"); done
       for b in $binds;    do [ -n "$b" ] && args+=(--bind "$b"); done
-      args+=(--bind "$ARH_ROOT:$ARH_ROOT" --pwd "$ARH_ROOT" "$image")
+      args+=(--bind "$ARH_ROOT:$ARH_ROOT")
+      while IFS= read -r b; do [ -z "$b" ] || args+=(--bind "$b:ro"); done < <(arh_sealed_masks)
+      args+=(--pwd "$ARH_ROOT" "$image")
       "$backend" "${args[@]}" "$@"
       ;;
     docker)
@@ -62,7 +64,9 @@ arh_ctr_run() {
       args=(run --rm -u "$(id -u):$(id -g)" -e LC_ALL=C)
       for b in $ro_binds; do [ -n "$b" ] && args+=(-v "$b:$b:ro"); done
       for b in $binds;    do [ -n "$b" ] && args+=(-v "$b"); done
-      args+=(-v "$ARH_ROOT:$ARH_ROOT" -w "$ARH_ROOT" "$image")
+      args+=(-v "$ARH_ROOT:$ARH_ROOT")
+      while IFS= read -r b; do [ -z "$b" ] || args+=(-v "$b:ro"); done < <(arh_sealed_masks)
+      args+=(-w "$ARH_ROOT" "$image")
       docker "${args[@]}" "$@"
       ;;
     none)
