@@ -114,6 +114,16 @@ request="$run/request.md"; output="$run/artifacts"
   if [ -f "$dir/README.md" ]; then
     printf '## Iteration pre-declaration (frozen; read, do not edit)\n\n'; cat "$dir/README.md"; printf '\n'
   fi
+  # Directives bind the executor as much as the orchestrator; a delegated session has no other way to
+  # learn what the operator decided. Gotchas can be long, so they are named rather than inlined.
+  if [ -f "$ARH_ROOT/DIRECTIVES.md" ]; then
+    printf '\n## Operator directives and durable knowledge (DIRECTIVES.md; follow them)\n\n'
+    cat "$ARH_ROOT/DIRECTIVES.md"; printf '\n'
+  fi
+  printf '\n## Known silent failure modes\n\nRead %s/GOTCHAS.md before writing code' "$ARH_ROOT"
+  site_gotchas=$(arh_config_get "$ARH_SITE" site_gotchas "")
+  [ -z "$site_gotchas" ] || [ ! -f "$site_gotchas" ] || printf ', and the shared site file %s' "$site_gotchas"
+  printf '. Report anything new you learn about the data or the tools in your response, so the orchestrator can record it there.\n'
   if [ -n "$prompt_file" ]; then
     printf '\n## Task\n\n'; cat "$prompt_file"; printf '\n'
   fi

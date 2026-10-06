@@ -17,6 +17,7 @@
     "title": { "type": "string", "minLength": 1, "description": "The question, stated as a question." },
     "status": { "enum": ["CLAIMED", "PREDECLARED", "RUNNING", "CONCLUDED", "ABANDONED"] },
     "session": { "type": "string" },
-    "harness_config_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$", "description": "SHA-256 of .arh/config/harnesses.md at claim time, so a change to the review terms during the iteration is visible. Empty when the file did not exist." }
+    "harness_config_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$", "description": "SHA-256 of .arh/config/harnesses.md at claim time, so a change to the review terms during the iteration is visible. Empty when the file did not exist." },
+    "knowledge_sha256": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "SHA-256 of the durable-knowledge files at claim time (DIRECTIVES.md, GOTCHAS.md, and site_gotchas when site.md names one), keyed by file. Files that did not exist are absent." }
   }
 }

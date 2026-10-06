@@ -89,6 +89,18 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         claim['harness_config_sha256'] = hashlib.sha256(self.config.read_bytes()).hexdigest()
         (self.it / 'CLAIM.json').write_text(json.dumps(claim, indent=2) + '\n')
 
+    def set_config(self, name, **values):
+        """Set keys in the arh-config block of .arh/config/NAME, adding any the file lacks (the test
+        site's site.md can predate a key)."""
+        path = self.root / '.arh/config' / name
+        text = path.read_text()
+        for key, value in values.items():
+            line = f'{key} = {value}'
+            text, n = re.subn(rf'(?m)^[ \t]*{re.escape(key)}[ \t]*=.*$', lambda m: line, text)
+            if not n:
+                text = re.sub(r'(?ms)(^```arh-config\n.*?)(^```)', lambda m: m.group(1) + line + '\n' + m.group(2), text, count=1)
+        path.write_text(text)
+
     def ask(self, good=True):
         return self.call('ask', '-n', '1', good=good)
 
@@ -858,6 +870,63 @@ elif args[0] == 'list':
         shutil.rmtree(prefix)
         self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt from its lock, package list verified
         self.assertTrue(Path(prefix, '.arh-complete').is_file())
+
+
+    # --- durable knowledge (field feedback #39) -------------------------------------------------
+
+    def test_knowledge_files_are_scaffolded_and_bound_to_the_claim(self):
+        # Operator directives once reached a study only through one harness's private memory, which
+        # no other harness, account or reviewer could read (2026-10-05).
+        directives = self.root / 'DIRECTIVES.md'
+        self.assertIn('## Operator directives', directives.read_text())
+        claim = json.loads((self.it / 'CLAIM.json').read_text())
+        self.assertEqual(claim['knowledge_sha256']['DIRECTIVES.md'], hashlib.sha256(directives.read_bytes()).hexdigest())
+        self.assertIn('GOTCHAS.md', claim['knowledge_sha256'])
+        self.assertEqual(json.loads(self.call('context', '-n', '1').stdout)['knowledge']['DIRECTIVES.md']['since_claim'],
+                         'unchanged')
+        directives.write_text(directives.read_text() + '\n### 2026-10-05 — score in HCI regions only\n')
+        self.assertEqual(json.loads(self.call('context', '-n', '1').stdout)['knowledge']['DIRECTIVES.md']['since_claim'],
+                         'changed')
+
+    def test_review_is_pointed_at_and_bound_to_the_directives(self):
+        directives = self.root / 'DIRECTIVES.md'
+        directives.write_text(directives.read_text() + '\n### 2026-10-05 — HG002 confirms, never selects\n')
+        self.assertIn('DIRECTIVES.md', self.call('ask', '-n', '1', '--dry-run').stdout)
+        self.ask()
+        record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
+        self.assertEqual(record['knowledge_sha256']['DIRECTIVES.md'],
+                         hashlib.sha256(directives.read_bytes()).hexdigest())
+
+    def test_delegated_executor_receives_the_directives(self):
+        self.configure(extra_config='executor = reviewer\n')
+        directives = self.root / 'DIRECTIVES.md'
+        directives.write_text(directives.read_text() + '\n### 2026-10-05 — the ONT truth trains and scores\n')
+        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--dry-run').stdout
+        self.assertIn('the ONT truth trains and scores', dry)
+        self.assertIn('GOTCHAS.md', dry)
+
+    def test_site_gotchas_are_shared_checked_and_hashed(self):
+        shared = Path(self.temp.name) / 'site/GOTCHAS.md'
+        shared.parent.mkdir(); shared.write_text('# Site gotchas\n\n## truvari 5.4 with pysam 0.24\n**Assertion:** pin pysam\n')
+        self.set_config('site.md', site_gotchas=shared)
+        self.assertIn(str(shared), self.call('ask', '-n', '1', '--dry-run').stdout)
+        self.assertIn('site_gotchas: ' + str(shared), self.call('doctor', good=None).stdout)
+        n = self.call('claim', '-t', 'second').stdout.strip()
+        claim = json.loads((self.root / f'iterations/iteration{n}/CLAIM.json').read_text())
+        self.assertIn('site_gotchas', claim['knowledge_sha256'])
+        shared.unlink()
+        self.assertIn('not a readable file', self.call('doctor', good=False).stdout)
+
+    def test_doctor_names_missing_knowledge_and_bare_gotchas(self):
+        gotchas = self.root / 'GOTCHAS.md'
+        gotchas.write_text(gotchas.read_text() + '\n## a mode with no check\n**Symptom:** looks fine\n')
+        (self.root / 'DIRECTIVES.md').unlink()
+        err = self.call('doctor', good=None).stderr
+        self.assertIn('DIRECTIVES.md is missing', err)
+        self.assertIn('without an assertion (a failure mode nobody can detect recurs): a mode with no check', err)
+        self.call('migrate', str(self.root), '--apply')
+        self.assertTrue((self.root / 'DIRECTIVES.md').is_file())
+        self.assertIn('a mode with no check', gotchas.read_text())          # an existing file is never replaced
 
 
 if __name__ == '__main__':

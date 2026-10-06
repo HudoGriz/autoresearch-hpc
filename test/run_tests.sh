@@ -60,7 +60,7 @@ check "arh init creates a project"          0 arh init "$PROJ"
 if [ -n "${ARH_TEST_SITE:-}" ]; then cp "$ARH_TEST_SITE" "$PROJ/.arh/config/site.md"; fi
 check "arh init refuses to re-init"         1 arh init "$PROJ"
 for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md .arh/config/generators.md \
-         PROGRESS.md AGENTS.md GOTCHAS.md rules/null-is-upper-bound.md .arh/registry.tsv; do
+         PROGRESS.md AGENTS.md GOTCHAS.md DIRECTIVES.md rules/null-is-upper-bound.md .arh/registry.tsv; do
   [ -e "$PROJ/$p" ] && ok "created $p" || no "created $p"
 done
 [ -L "$PROJ/CLAUDE.md" ] && ok "CLAUDE.md symlinks to AGENTS.md" || no "CLAUDE.md symlinks to AGENTS.md"
@@ -76,6 +76,8 @@ n=$(arh claim -t "Does the toy signal exceed its null?" -a tester 2>/dev/null)
 python3 -c "import json;json.load(open('iterations/iteration1/CLAIM.json'))" 2>/dev/null \
   && ok "CLAIM.json is valid JSON" || no "CLAIM.json is valid JSON"
 grep_ok "registry row appended" "^1[[:space:]]+tester" .arh/registry.tsv
+python3 -c "import json; assert 'DIRECTIVES.md' in json.load(open('iterations/iteration1/CLAIM.json'))['knowledge_sha256']" 2>/dev/null \
+  && ok "claim records the knowledge files' hashes" || no "claim records the knowledge files' hashes"
 
 # Concurrent claims must not collide. This is the failure the protocol exists
 # to prevent: two agents creating the same iteration directory.
@@ -274,6 +276,8 @@ printf '%s' "$out" | grep -q "^# Role: adversary" \
   && ok "prompt carries the role instructions" || no "prompt carries the role instructions"
 printf '%s' "$out" | grep -q "PRE-DECLARED" \
   && ok "prompt carries the pre-declaration" || no "prompt carries the pre-declaration"
+printf '%s' "$out" | grep -q "DIRECTIVES.md" \
+  && ok "prompt points the reviewer at the directives" || no "prompt points the reviewer at the directives"
 check "arh ask rejects an unknown role"        1 arh ask --role nonsense -n 1 --dry-run
 python3 - <<'EOF'
 import pathlib

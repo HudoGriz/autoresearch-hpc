@@ -5,7 +5,11 @@ harness-agnostic contract. Codex, OpenCode, Cursor and Copilot can read it
 directly; Claude Code reads it through `CLAUDE.md`, which symlinks here.
 
 **Read `PROGRESS.md` first.** It is the authoritative project state and resume
-point. Never reconstruct state from conversation history.
+point. Never reconstruct state from conversation history. Then read
+`DIRECTIVES.md` (what the operator decided, where the data are, what was learned
+outside the project) and `GOTCHAS.md` (failure modes that produce plausible
+output), plus the site's shared file if `.arh/config/site.md` names one as
+`site_gotchas`.
 
 ## The shape of the work
 
@@ -150,6 +154,17 @@ workflow {
    fetch or otherwise look up the results you are asked to produce.
    `harness/install.sh` turns the harness's web tools off, and `arh doctor`
    checks that they stay off.
+
+10. **Durable knowledge goes in the project, never only in private memory.**
+   A fact that outlives this session is written to the project's files and kept
+   with the study: an operator directive, a data location, an external finding
+   or tool behaviour a design depends on (`DIRECTIVES.md`), a silent failure mode
+   with its assertion (`GOTCHAS.md`), the state of the work (`PROGRESS.md`). A
+   harness's private memory (Claude Code auto-memory, a Codex memory, a chat
+   history) is invisible to every other harness, to a second account's session and
+   to the reviewer; it may hold a pointer to the project file, not the fact. A
+   pitfall of a tool or of the cluster also goes in the `site_gotchas` file when
+   one is configured and writable.
 
 ## Reporting
 

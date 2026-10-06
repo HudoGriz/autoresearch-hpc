@@ -85,6 +85,12 @@ generators = cfg / 'generators.md'
 if not generators.exists():
     rewrites[generators] = (home / 'config/generators.md').read_text()
     changes.append(f'{generators.relative_to(root)}: optional external-generator registry added')
+# Durable knowledge lives in the project (agent contract rule 10). A study that predates the files
+# gets empty templates; existing ones are never touched.
+for name in ('DIRECTIVES.md', 'GOTCHAS.md'):
+    if not (root / name).exists():
+        rewrites[root / name] = (home / 'templates' / name).read_text().replace('{{PROJECT}}', root.name)
+        changes.append(f'{name}: added from the template (where directives and gotchas are written)')
 for p in sorted((root / 'rules').glob('*.md')):
     plan(p, FENCE.sub(r'\1arh-config', p.read_text()), 'rule fence')
 ledger = root / config_value(cfg / 'project.md', 'ledger', 'PROGRESS.md')

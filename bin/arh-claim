@@ -57,6 +57,10 @@ if [ -f "$ARH_HARN" ]; then
   terms=$(arh_sha256 "$dir/metadata/harnesses.claimed.md")
 fi
 
+# What the claim was made knowing: the hashes of DIRECTIVES.md, GOTCHAS.md and the site's shared gotchas,
+# so a later session can see whether the directives changed under the iteration.
+knowledge=$(python3 "$ARH_HOME/lib/project.py" knowledge-hashes "$ARH_ROOT")
+
 cat > "$dir/CLAIM.json" <<EOF
 {
   "iteration": $n,
@@ -69,7 +73,8 @@ cat > "$dir/CLAIM.json" <<EOF
   "title": $(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/'),
   "status": "CLAIMED",
   "session": "${ARH_SESSION:-}",
-  "harness_config_sha256": "$terms"
+  "harness_config_sha256": "$terms",
+  "knowledge_sha256": $knowledge
 }
 EOF
 
@@ -85,3 +90,4 @@ mkdir -p "$dir"/{scripts,results,logs,resources,metadata}
 printf '%s\n' "$n"
 printf 'claimed iteration %s at %s\n' "$n" "$dir" >&2
 printf 'next: arh new -n %s   (complete the pre-declaration BEFORE running anything)\n' "$n" >&2
+printf 'read: DIRECTIVES.md and GOTCHAS.md; write what this session learns there, not to private memory\n' >&2

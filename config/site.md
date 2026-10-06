@@ -45,6 +45,16 @@ must still use the configured digest-pinned runtime image.
 Declare auxiliary images as `image_<name> = <path or URI>`, then refer to them
 by `<name>`. A bare name resolves under `image_dir`.
 
+## Shared knowledge
+
+`site_gotchas` names a Markdown file of pitfalls that belong to this machine
+rather than to one study: a tool release that mis-handles a flag, a scheduler
+quirk, a truncated shared input. Every project on the site that points at the
+same file reads it, so a lesson costs one project instead of each of them.
+`arh ask` and `arh delegate` point reviewers and executors at it, `arh claim`
+records its hash, and `arh doctor` checks that it is readable. Leave it empty
+when there is no shared file.
+
 ```arh-config
 scheduler         = local
 container_runtime = singularity
@@ -78,6 +88,9 @@ image_dir         = .arh/images
 # image_python    = docker://python@sha256:<64 lowercase hexadecimal digits>
 
 extra_binds       =
+
+# --- shared knowledge ----------------------------------------------------
+site_gotchas      =
 ```
 
 Non-smoke runs require declared content identity. Local image files use

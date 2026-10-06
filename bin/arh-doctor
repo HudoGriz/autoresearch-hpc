@@ -125,8 +125,11 @@ done
 arh_warn_agent_mismatch
 web=$(arh_config_get "$ARH_HARN" web_access allow)
 case "$web" in allow|deny) ;; *) arh_fail "web_access must be allow or deny, not '$web'"; warn=$((warn+1)); web=allow ;; esac
-# shellcheck disable=SC2046  # immutable_inputs is a space-separated list
-access=$(python3 "$ARH_HOME/lib/harness_access.py" check "$ARH_ROOT" "$web" $(arh_config_get "$ARH_PROJ" immutable_inputs ""))
+reach=$(arh_config_get "$ARH_PROJ" immutable_inputs "")
+shared=$(arh_config_get "$ARH_SITE" site_gotchas "")
+[ -z "$shared" ] || reach="$reach $(dirname "$shared")"
+# shellcheck disable=SC2086  # immutable_inputs is a space-separated list
+access=$(python3 "$ARH_HOME/lib/harness_access.py" check "$ARH_ROOT" "$web" $reach)
 if [ -z "$access" ]; then arh_ok "harness access: declared inputs reachable, web_access = $web"
 else
   while IFS='|' read -r level msg; do
@@ -172,6 +175,36 @@ else
       warn=$((warn+1))
     fi
   done
+fi
+
+printf '\nknowledge:\n'
+# Facts that outlive a session belong in the project, where every harness and the reviewer read them
+# (agent contract rule 10). A study once ran on directives held only in one harness's private memory.
+for f in DIRECTIVES.md GOTCHAS.md; do
+  if [ -f "$ARH_ROOT/$f" ]; then arh_ok "$f"
+  else
+    arh_warn "$f is missing, so what it should hold lives only in some session's memory; fix: arh migrate $ARH_ROOT --apply"
+  fi
+done
+if [ -f "$ARH_ROOT/AGENTS.md" ] && ! grep -q 'never only in private memory' "$ARH_ROOT/AGENTS.md"; then
+  arh_warn "AGENTS.md does not tell agents where durable knowledge goes; fix: arh migrate $ARH_ROOT --apply"
+fi
+if [ -f "$ARH_ROOT/GOTCHAS.md" ]; then
+  bare=$(python3 - "$ARH_ROOT/GOTCHAS.md" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+for name, body in re.findall(r'^## (.+?)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
+    if not name.lower().startswith(('example', '<')) and 'assertion' not in body.lower():
+        print(name.strip()[:60])
+PY
+)
+  [ -z "$bare" ] || arh_warn "GOTCHAS.md entries without an assertion (a failure mode nobody can detect recurs): $(printf '%s' "$bare" | paste -sd';' -)"
+fi
+site_gotchas=$(arh_config_get "$ARH_SITE" site_gotchas "")
+if [ -n "$site_gotchas" ]; then
+  if [ -r "$site_gotchas" ] && [ -f "$site_gotchas" ]; then
+    arh_ok "site_gotchas: $site_gotchas$([ -w "$site_gotchas" ] || printf ' (read-only for you)')"
+  else arh_fail "site_gotchas names $site_gotchas, which is not a readable file"; warn=$((warn+1)); fi
 fi
 
 printf '\nrules:\n'

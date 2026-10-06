@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 
-from project import config as project_config
+from project import config as project_config, knowledge_hashes
 
 
 def digest(path):
@@ -283,7 +283,7 @@ def run():
                 provider_error=provider is not None, provider_error_kind=provider and provider[0],
                 provider_message=provider and provider[2], retry_hint=provider and provider[3],
                 usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None,
-                harness_config_sha256=terms,
+                harness_config_sha256=terms, knowledge_sha256=knowledge_hashes(cwd),
                 terms_changed=(terms_reason or None) if changed else None,
                 terms_changed_keys=changed_terms(directory, config) if changed else None)
     with open(output + '.json', 'x') as record:

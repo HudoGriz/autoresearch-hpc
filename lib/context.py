@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import sys
 from harness import digest, valid_records
+from project import knowledge
 
 n = sys.argv[1]
 if not n.isdigit():
@@ -31,5 +32,17 @@ if runs:
     data = json.loads(runs[-1].read_text())
     state['latest_run'] = {key: data.get(key) for key in ('workflow', 'executor', 'runtime', 'resume', 'exit_code')}
     state['latest_run']['record'] = str(runs[-1].relative_to(directory))
+root = Path(os.environ['ARH_ROOT'])
+claimed = {}
+try:
+    claimed = json.loads((directory / 'CLAIM.json').read_text()).get('knowledge_sha256') or {}
+except (OSError, ValueError, AttributeError):
+    pass
+# Read these before acting; 'changed' means the file was edited after the iteration was claimed.
+state['knowledge'] = {name: {'path': str(path.relative_to(root)) if root in path.parents else str(path),
+                             'sha256': digest(path),
+                             'since_claim': 'unrecorded' if name not in claimed else
+                                            ('unchanged' if claimed[name] == digest(path) else 'changed')}
+                      for name, path in knowledge(root).items()}
 state['next'] = 'inspect altered plan' if state['predeclaration'] == 'ALTERED' else ('freeze plan' if state['predeclaration'] != 'frozen' else ('execute/write report' if not report.exists() else ('review evidence' if not state['reviews'] else 'check results gate and ledger')))
 print(json.dumps(state, ensure_ascii=True, indent=2))

@@ -101,6 +101,8 @@ arh context -n N
 
 `PROGRESS.md` inside the study is the authoritative project state. A project should be resumable cold from what is on disk rather than from an old chat transcript.
 
+What outlives a session is written into the study as well: `DIRECTIVES.md` holds the operator's directives, data locations and external findings, and `GOTCHAS.md` the failure modes that produce plausible output. Agents write there, not to a harness's private memory, which no other harness, account or reviewer can read. A site can share one `site_gotchas` file across all of its projects.
+
 ## The research loop
 
 ```mermaid
@@ -131,6 +133,8 @@ The controller stays on the host so it can see the site's scheduler. Scientific 
 my-study/
 ├── PROGRESS.md                      authoritative resume point / ledger
 ├── AGENTS.md                        harness-agnostic agent contract
+├── DIRECTIVES.md                    operator directives, data inventory, external findings
+├── GOTCHAS.md                       silent failure modes, each with an assertion
 ├── .arh/config/                     site, project and harness settings
 ├── rules/                           standing research rules
 ├── iterations/

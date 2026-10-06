@@ -11,6 +11,9 @@ harnesses=("$@"); [ ${#harnesses[@]} -eq 0 ] && harnesses=(claude codex opencode
 ARH_HOME=$root . "$root/lib/common.sh"
 web=$(arh_config_get "$target/.arh/config/harnesses.md" web_access allow)
 read -ra inputs <<< "$(arh_config_get "$target/.arh/config/project.md" immutable_inputs "")"
+# The site's shared gotchas file is read by every harness too, so its directory must be reachable.
+shared=$(arh_config_get "$target/.arh/config/site.md" site_gotchas "")
+[ -z "$shared" ] || inputs+=("$(dirname "$shared")")
 
 mkdir -p "$target/skills"
 cp -r "$root/skills/." "$target/skills/"

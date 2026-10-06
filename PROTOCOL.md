@@ -184,6 +184,11 @@ history.
 8.3 Generated sections MUST be reproducible from what is on disk, and an
 implementation MUST provide a consistency check.
 
+8.4 Facts a later session needs — operator directives, data locations,
+external findings a design depends on, and silent failure modes — MUST be
+recorded in project files that every harness and reviewer can read. An agent's
+private memory MAY point to them; it MUST NOT be their only record.
+
 ## 9. The operator
 
 9.1 An operator challenge to a result MUST trigger a new iteration, never an

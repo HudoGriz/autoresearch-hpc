@@ -5,7 +5,24 @@ Versions are protocol/tooling versions; see `PROTOCOL.md`.
 
 ## [Unreleased]
 
-Nothing yet.
+Changes from the field feedback of a 34-iteration structural-variant study run on Slurm and
+Singularity with two producer accounts and two verifier families.
+
+### Added
+- **Durable knowledge lives in the project.** Operator directives, data locations and tool
+  facts reached a study only through one harness's private memory, which no other harness,
+  account or reviewer could read. `arh init` now scaffolds `DIRECTIVES.md` beside `GOTCHAS.md`,
+  and `arh migrate` adds both to older studies. The agent contract gains rule 10 (facts that
+  outlive a session are written to the project, private memory may only point to them), and
+  `PROTOCOL.md` §8.4 states it. `arh claim` records the files' hashes in `CLAIM.json`,
+  `arh ask` points the reviewer at the directives and records their hashes in the review record,
+  `arh delegate` gives the executor the directives in full, and `arh context` reports whether
+  they changed since the claim. `arh doctor` warns when a file is missing, when `AGENTS.md`
+  lacks the rule, and when a gotcha has no assertion.
+- **`site_gotchas` in `site.md`** names a Markdown file of tool and cluster pitfalls shared by
+  every project on the machine, so a lesson is paid for once per site instead of once per
+  project. It is read, hashed and checked like the project's own files, and
+  `harness/install.sh` makes its directory reachable from each harness.
 
 ## [0.3.0] — 2026-09-24
 

@@ -8,6 +8,14 @@ description: Run one complete AutoResearch HPC iteration — claim a number, pre
 One iteration answers **one question**. If the question becomes “and also…”,
 that is normally another iteration.
 
+## 0. Read what the project already knows
+
+`PROGRESS.md` (state), `DIRECTIVES.md` (operator directives, data locations,
+external findings) and `GOTCHAS.md` (silent failure modes), plus the site's
+`site_gotchas` file when `.arh/config/site.md` names one. Whatever you learn that
+outlives this session goes back into those files, never only into a harness's
+private memory.
+
 ## 1. Claim
 
 ```bash
