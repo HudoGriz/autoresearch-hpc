@@ -231,9 +231,21 @@ A headless session (`claude -p`, `codex exec`, a batch driver) gets no completio
 notices, and it ends as soon as its reply ends.
 
 - Run `arh submit`, `arh ask` and `arh env create` in the foreground; they block
-  until done. Never background them and never end a reply to wait for one. Work
-  already running (an earlier session, another agent) is waited for with
-  `arh wait -n N`. A pending review is not a reason to end the session.
+  until done. Never background them yourself and never end a reply to wait for
+  one. A run longer than your harness lets a command live goes out with
+  `arh submit WORKFLOW.nf -n NAME --detach`, which returns once the run holds its
+  lock and survives the session; follow it with `arh wait -n N` and
+  `arh status --running` (live submissions with their trace counts, reviews, and
+  the scheduler state of noted jobs). A pending review is not a reason to end the
+  session.
+- `arh status` lists open iterations with who holds them and how long they have
+  been idle. Every `arh` command on an iteration records itself in its lease and
+  warns when another session holds it. Taking over an iteration an earlier session
+  left is explicit: `arh lease take -n N --reason '...'`.
+- On a new site, run `arh doctor --smoke` (and `--smoke gpu` if you will use GPUs)
+  before the first iteration: it runs one task through the real scheduler and
+  image. Run `arh inputs check` after declaring inputs and whenever they change;
+  a truncated CRAM or VCF is caught by its missing end-of-file marker.
 - `arh ask` exit 75: the provider refused on a usage or rate limit, or on
   authentication, and any `verifier_fallback` was already tried. No review round
   was spent. The reset time it prints is an upper bound, not a schedule: run the

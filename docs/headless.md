@@ -21,6 +21,42 @@ lost two rounds each before this was found. Codex sessions block and were unaffe
   blocks until the iteration's running submissions and reviews finish, for work
   started by an earlier session.
 
+## Runs longer than a session, and sessions that end mid-iteration
+
+`arh submit` blocks and forwards a stop signal to Nextflow, so a harness that caps
+how long a command may live (Claude Code: two hours for a background task) stopped
+long runs when the cap hit. A field study restarted one under `setsid nohup` and
+watched `trace.tsv` with a separate monitor.
+
+- `arh submit WORKFLOW.nf -n NAME --detach` starts the run in its own session and
+  returns once it holds its launch lock. `arh wait -n N` blocks on it;
+  `arh status --running` shows each live submission with its trace counts, running
+  reviews, and the scheduler state of job ids recorded with `arh note --job`.
+- Two sessions on two accounts once drove one study. The second learned what the
+  first had left running only from its transcript. Every `arh` command on an
+  iteration now records itself in the iteration's lease, `arh status` lists open
+  iterations with their holder and idle time (flagged `STALE` after
+  `lease_stale_hours`, 24 by default), and a command from a different agent, user,
+  host or `ARH_SESSION` warns. A takeover is `arh lease take -n N --reason TEXT`.
+  Set `ARH_SESSION` in a driver to tell apart two sessions of one harness on one
+  host.
+- Work that cannot go through `arh submit` is recorded as it starts:
+  `arh note -n N --job JOBID TEXT`.
+
+## Check the site and the data before the first iteration
+
+`arh doctor` checks that binaries and settings exist. `arh doctor --smoke` also runs
+one task through the configured scheduler and task image and reports what the task
+sees: the task environment, a writable project, read-only immutable inputs, hidden
+sealed inputs, and with `--smoke gpu` a GPU in a task labelled `gpu`. Evidence goes
+to `.arh/smoke/`.
+
+`arh inputs check` reads the end-of-file marker of every CRAM 3 and BGZF file (BAM,
+BCF, `.vcf.gz`, indices) under the declared inputs; `--deep` decompresses gzip files.
+A truncated CRAM once made a caller exit 0 with calls for chr1-10 only. Results
+go to `.arh/inputs/checks.jsonl`; every run receipt records them and `arh submit`
+warns when a declared input failed.
+
 ## Do not inherit the operator's session
 
 A driver started from inside an agent session passes that session's variables to

@@ -194,8 +194,16 @@ arh_secret_scan() {
   local note="$1" tmp="" rc=0 hits; shift
   [ "$(arh_config_get "$ARH_HARN" secret_scan on)" != off ] || return 0
   if [ -n "$note" ]; then tmp=$(mktemp); printf '%s\n' "$note" > "$tmp"; set -- "$@" "$tmp"; fi
-  hits=$(python3 "$ARH_HOME/lib/secrets.py" scan "$@") || rc=1
+  hits=$(python3 "$ARH_HOME/lib/secret_scan.py" scan "$@") || rc=1
   [ "$rc" = 0 ] || printf '%s\n' "${hits//"$tmp"/--note}" >&2
   [ -z "$tmp" ] || rm -f "$tmp"
   return "$rc"
+}
+
+# arh_lease_touch DIR COMMAND: record that COMMAND acted on the iteration in DIR, warning when another
+# session holds it. Never fails the command that calls it.
+arh_lease_touch() {
+  [ -f "$1/CLAIM.json" ] || return 0
+  python3 "$ARH_HOME/lib/lease.py" touch "$1" "$2" "$(arh_agent_name)" "${USER:-unknown}" "$(uname -n)" \
+    "${ARH_SESSION:-}" || true
 }

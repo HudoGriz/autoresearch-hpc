@@ -146,6 +146,7 @@ if [ "$dry" = 1 ]; then
   exit 0
 fi
 
+arh_lease_touch "$dir" "arh delegate --role $role"
 printf 'delegate: role=%s harness=%s (%s) iteration=%s\n' "$role" "$harness" "$fam" "$n" >&2
 set +e
 python3 "$ARH_HOME/lib/evoke.py" run "$cmd" "$version_cmd" "$request" "$output" "$ARH_ROOT" \

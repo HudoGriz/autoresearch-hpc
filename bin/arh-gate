@@ -69,6 +69,7 @@ case "$sub" in
     arh_guard_path "$dir/PREDECLARATION.sha256"
     [ ! -e "$dir/PREDECLARATION.sha256" ] || arh_die "already frozen; corrections require a new iteration"
     printf 'gate: pre-declaration, iteration %s\n' "$n"
+    arh_lease_touch "$dir" "arh gate predeclare"
 
     # Results must not exist yet. A pre-declaration written after the answer is
     # not a pre-declaration.
@@ -113,10 +114,32 @@ case "$sub" in
       while IFS= read -r line; do arh_fail "$line"; done <<< "$imports"; fails=$((fails+1)); imports=""
     fi
 
+    # Commands the plan declares in an arh-smoke block are run once in their image before the freeze:
+    # a flag copied from a patched build's VCF header failed only on the first real task (2026-10-04).
+    # One command per line, optionally prefixed by the image key: `vg: vg --version`.
+    smoke_cmds=$(awk '/^[ \t]*```[ \t]*arh-smoke[ \t]*$/ {inb=1; next} /^[ \t]*```/ {inb=0} inb' "$readme")
+    smoke_line=""
+    if [ -n "${smoke_cmds//[[:space:]]/}" ] && [ "$fails" = 0 ]; then
+      smoke_out="$dir/metadata/predeclare-smoke.txt"; mkdir -p "$dir/metadata"; : > "$smoke_out"
+      while IFS= read -r line; do
+        case "$line" in ''|\#*) continue ;; esac
+        image=runtime; command=$line
+        if printf '%s' "$line" | grep -qE '^[A-Za-z0-9_-]+:[[:space:]]'; then image=${line%%:*}; command=${line#*:}; fi
+        printf '$ [%s] %s\n' "$image" "$command" >> "$smoke_out"
+        if "$ARH_HOME/bin/arh" run "$image" -- /bin/sh -c "$command" >> "$smoke_out" 2>&1; then
+          arh_ok "smoke [$image]:$command"
+        else
+          arh_fail "smoke [$image]:$command failed (output in ${smoke_out#"$ARH_ROOT"/})"; fails=$((fails+1))
+        fi
+      done <<< "$smoke_cmds"
+      smoke_line="smoke $(arh_sha256 "$smoke_out") ${smoke_out#"$ARH_ROOT"/}"
+    fi
+
     if [ "$fails" -gt 0 ]; then
       printf '\ngate FAILED (%s). Nothing was frozen; fix and re-run.\n' "$fails" >&2; exit 1
     fi
-    ( set -C; { arh_sha256 "$readme"; arh_now; [ -z "$imports" ] || printf '%s\n' "$imports"; } > "$dir/PREDECLARATION.sha256" ) \
+    ( set -C; { arh_sha256 "$readme"; arh_now; [ -z "$imports" ] || printf '%s\n' "$imports"
+                [ -z "$smoke_line" ] || printf '%s\n' "$smoke_line"; } > "$dir/PREDECLARATION.sha256" ) \
       || arh_die "freeze already exists"
     printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
     printf 'The README hash is frozen; later edits will fail validation. Corrections go in a new iteration.\n'
@@ -128,6 +151,7 @@ case "$sub" in
     readme="$dir/README.md"
     frozen="$dir/PREDECLARATION.sha256"
     printf 'gate: results, iteration %s\n' "$n"
+    arh_lease_touch "$dir" "arh gate results"
 
     if [ ! -f "$frozen" ]; then
       arh_fail "no frozen pre-declaration — results were produced outside the protocol"

@@ -1172,5 +1172,102 @@ elif args[0] == 'list':
         self.ask()
 
 
+    # --- unattended runs, leases and pre-flight checks (field feedback #5, #11, #35-#38) ----------
+
+    @needs_site
+    def test_detached_submission_outlives_its_caller_and_can_be_followed(self):
+        # A harness's two-hour cap on background tasks stopped a long run (2026-10-04).
+        script = self.it / 'scripts/it1_01_slow.sh'; script.write_text('sleep 20\n')
+        started = time.time()
+        out = self.call('submit', str(script), '-n', 'slow', '--detach', timeout=300)
+        self.assertLess(time.time() - started, 120)
+        self.assertIn('detached as pid', out.stderr)
+        self.assertIn('submission slow', self.call('status', '--running').stdout)
+        self.call('wait', '-n', '1', '--timeout', '600', timeout=700)
+        record = json.loads(next((self.it / 'logs/nextflow/slow').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(record['exit_code'], 0)
+        self.assertIn('nothing running', self.call('status', '--running').stdout)
+
+    def test_lease_names_the_holder_warns_another_session_and_records_a_takeover(self):
+        # A second account's session learned what the first had left running only from its transcript.
+        self.call('note', '-n', '1', 'first session')        # creates the lease if setUp's claim predates it
+        holder = json.loads((self.it / 'metadata/lease.json').read_text())['holder']
+        env, self.env = self.env, dict(self.env, ARH_AGENT='other-agent', ARH_SESSION='s2')
+        try:
+            warned = self.call('note', '-n', '1', 'second session')
+            self.assertIn('is held by', warned.stderr)
+            self.call('lease', 'take', '-n', '1', good=False)                 # a takeover needs a reason
+            self.call('lease', 'take', '-n', '1', '--reason', 'the first session hit its usage limit')
+        finally:
+            self.env = env
+        lease = json.loads((self.it / 'metadata/lease.json').read_text())
+        self.assertEqual((lease['holder']['agent'], lease['holder']['session']), ('other-agent', 's2'))
+        history = json.loads((self.it / 'metadata/lease-history.jsonl').read_text().splitlines()[-1])
+        self.assertEqual(history['previous'], holder)
+        self.assertIn('held by other-agent', self.call('status').stdout)
+
+    def test_inputs_check_reads_end_markers_and_caches_passes(self):
+        # A truncated CRAM (no end-of-file container) made a caller drop chr11-22 silently (2026-10-04).
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import inputs
+        data = Path(self.temp.name) / 'inputs'; data.mkdir()
+        bgzf_head = bytes.fromhex('1f8b08040000000000ff060042430200')
+        (data / 'whole.vcf.gz').write_bytes(bgzf_head + b'x' * 64 + inputs.BGZF_EOF)
+        (data / 'cut.vcf.gz').write_bytes(bgzf_head + b'x' * 64)
+        (data / 'whole.cram').write_bytes(b'CRAM\x03\x00' + b'x' * 64 + inputs.CRAM3_EOF)
+        (data / 'cut.cram').write_bytes(b'CRAM\x03\x00' + b'\x00' * 64)
+        import gzip as gz
+        (data / 'plain.txt.gz').write_bytes(gz.compress(b'abc' * 1000)[:-12])
+        self.set_config('project.md', immutable_inputs=data)
+        out = self.call('inputs', 'check', good=False).stdout
+        self.assertIn('cut.vcf.gz: BGZF end-of-file block missing', out)
+        self.assertIn('cut.cram: CRAM end-of-file container missing', out)
+        self.assertIn('5 checked', out)
+        listed = self.call('inputs', 'list').stdout
+        self.assertIn('ok   ', listed); self.assertIn('whole.cram: CRAM end-of-file container present', listed)
+        self.assertIn('plain.txt.gz: decompression failed',
+                      self.call('inputs', 'check', '--deep', str(data / 'plain.txt.gz'), good=False).stdout)
+        (data / 'cut.vcf.gz').unlink(); (data / 'cut.cram').unlink(); (data / 'plain.txt.gz').unlink()
+        self.assertIn('0 checked, 2 unchanged', self.call('inputs', 'check').stdout)
+        self.assertIn('failed their last integrity check', self.call('doctor', good=None).stderr)
+
+    @needs_site
+    def test_submit_cites_input_checks_in_its_receipt(self):
+        data = Path(self.temp.name) / 'inputs'; data.mkdir()
+        (data / 'cut.bam').write_bytes(b'\x1f\x8b\x08\x04' + b'x' * 40)
+        self.set_config('project.md', immutable_inputs=data)
+        self.call('inputs', 'check', good=False)
+        script = self.it / 'scripts/it1_01_ok.sh'; script.write_text('exit 0\n')
+        result = self.call('submit', str(script), '-n', 'ok')
+        self.assertIn('failed their last integrity check', result.stderr)
+        record = json.loads(next((self.it / 'logs/nextflow/ok').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(record['input_checks']['failed'], [os.path.realpath(data / 'cut.bam')])
+
+    @needs_site
+    def test_doctor_smoke_runs_one_task_through_the_boundary(self):
+        # doctor said "No problems found" while no task could run (2026-09-10).
+        data, held = self.seal()
+        out = self.call('doctor', '--smoke', good=None, timeout=900).stdout
+        self.assertIn('immutable input visible and read-only: ' + os.path.realpath(data), out)
+        self.assertIn('sealed input hidden: ' + str(held), out)
+        self.assertIn('the task ran through the scheduler and completed', out)
+
+    @needs_site
+    def test_predeclared_commands_run_before_the_freeze(self):
+        # A flag copied from a patched build failed only on the first real task (2026-10-04).
+        n = self.call('claim', '-t', 'smoke').stdout.strip()
+        it = self.root / f'iterations/iteration{n}'
+        headings = ['Question', 'Estimand', 'Instrument', 'Acceptance criteria', 'Negative controls', 'Detection limit', 'Prediction']
+        body = '\n'.join(f'## {i}. {h}\nFixture.\n' for i, h in enumerate(headings, 1))
+        (it / 'README.md').write_text(body + "\n```arh-smoke\n# a comment\nruntime: python3 --version\nruntime: false\n```\n")
+        self.assertIn('smoke [runtime]: false failed', self.call('gate', 'predeclare', '-n', n, good=False).stdout)
+        self.assertFalse((it / 'PREDECLARATION.sha256').exists())
+        (it / 'README.md').write_text(body + "\n```arh-smoke\nruntime: python3 --version\n```\n")
+        self.call('gate', 'predeclare', '-n', n)
+        self.assertIn('Python 3', (it / 'metadata/predeclare-smoke.txt').read_text())
+        frozen = (it / 'PREDECLARATION.sha256').read_text()
+        self.assertIn('smoke ' + hashlib.sha256((it / 'metadata/predeclare-smoke.txt').read_bytes()).hexdigest(), frozen)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

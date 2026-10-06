@@ -40,4 +40,5 @@ if [ "$sub" = check ]; then
 fi
 [ ${#paths[@]} -gt 0 ] || arh_die "name what the confirmation applies: arh freeze -n $n MODEL THRESHOLDS SCRIPTS..."
 arh_guard_path "$dir/FREEZE.json"
+arh_lease_touch "$dir" "arh freeze"
 exec python3 "$ARH_HOME/lib/freeze.py" create "$ARH_ROOT" "$dir" "$(arh_agent_name)" "${paths[@]}"

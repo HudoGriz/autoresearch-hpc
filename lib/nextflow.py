@@ -12,12 +12,15 @@ import shutil
 import shlex
 import sys
 import tempfile
+import time
 
 import re
 
 import freeze
 import imports
-from locks import Held, acquire, release
+import inputs
+import lease
+from locks import Held, acquire, owner, release
 from project import config, guard
 
 GPU_LABELS = ('gpu', 'process_gpu')
@@ -81,6 +84,34 @@ def lint(workflow, root, site, parser):
                               cwd=scratch, env=env).returncode
 
 
+def detach(lock, logs, owner_dir, kind):
+    """Start this submission again in its own session and return once it holds the launch lock.
+
+    `arh submit` blocks until Nextflow exits and forwards a stop signal to it, so an agent harness
+    that caps background tasks (Claude Code: 2 h) stopped long runs when the cap hit (2026-10-04).
+    The child runs in a new session, so a signal to the caller's process group does not reach it."""
+    log = logs / ('detached-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '.log')
+    argv = [a for a in sys.argv[1:] if a != '--detach']
+    with open(log, 'w') as out:
+        child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *argv], stdin=subprocess.DEVNULL,
+                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+                                 env=dict(os.environ, ARH_DETACHED='1'))
+    deadline = time.time() + 600
+    while time.time() < deadline and child.poll() is None:
+        record = owner(lock)
+        if record and record.get('pid') == child.pid:
+            break
+        time.sleep(0.5)
+    if child.poll() is not None and child.returncode:
+        print(log.read_text()[-3000:], file=sys.stderr)
+        return child.returncode
+    follow = (f'arh wait -n {owner_dir.name[9:]}' if kind == 'iteration' else 'arh status --running')
+    print(log)
+    print(f'arh: detached as pid {child.pid}; follow it with `{follow}` or `arh status --running`; '
+          f'its output, and the attempt directory when it ends, are in {log}', file=sys.stderr)
+    return 0
+
+
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('workflow', type=Path)
@@ -90,37 +121,47 @@ def run():
     parser.add_argument('--params', type=Path, help='Nextflow JSON/YAML params file')
     parser.add_argument('-l', '--logdir', type=Path)
     parser.add_argument('--lint', action='store_true', help='check the workflow with the pinned Nextflow; nothing runs')
+    parser.add_argument('--detach', action='store_true',
+                        help='return once the run holds its launch lock; follow it with arh wait or arh status --running')
     args = parser.parse_args()
     root, home = Path(os.environ['ARH_ROOT']), Path(os.environ['ARH_HOME'])
     site = config(root / '.arh/config/site.md')
     project = config(root / '.arh/config/project.md')
     immutable = project.get('immutable_inputs', '').split()
     workflow = args.workflow.resolve()
-    if not workflow.is_file() or root not in workflow.parents:
-        parser.error('workflow must be a local file inside the study')
-    # The owner is the claimed iteration the workflow sits in, or a verification object: a
-    # verification's computation gets the same pinned image and receipt as an iteration's.
-    verify_base = (root / project.get('verification_dir', 'verification')).resolve()
-    iteration = next((p for p in workflow.parents if (p / 'CLAIM.json').is_file()), None)
-    kind, plan = 'iteration', None
-    if iteration is None and verify_base in workflow.parents:
-        candidate = verify_base / workflow.relative_to(verify_base).parts[0]
-        if (candidate / 'PREDECLARATION.md').is_file():
-            iteration, kind = candidate, 'verification'
-    if iteration is None or root not in iteration.parents:
-        parser.error('workflow must belong to a claimed iteration or a verification (arh verify new)')
-    plan = iteration / ('README.md' if kind == 'iteration' else 'PREDECLARATION.md')
+    # `arh doctor --smoke` runs the framework's own one-task workflow through the real executor and
+    # container. It is fixed framework code, so it needs no plan; its evidence stays in .arh/smoke/.
+    if workflow == (home / 'workflows/smoke.nf').resolve():
+        iteration, kind, plan = root / '.arh/smoke', 'smoke', None
+        iteration.mkdir(parents=True, exist_ok=True)
+    else:
+        if not workflow.is_file() or root not in workflow.parents:
+            parser.error('workflow must be a local file inside the study')
+        # The owner is the claimed iteration the workflow sits in, or a verification object: a
+        # verification's computation gets the same pinned image and receipt as an iteration's.
+        verify_base = (root / project.get('verification_dir', 'verification')).resolve()
+        iteration = next((p for p in workflow.parents if (p / 'CLAIM.json').is_file()), None)
+        kind = 'iteration'
+        if iteration is None and verify_base in workflow.parents:
+            candidate = verify_base / workflow.relative_to(verify_base).parts[0]
+            if (candidate / 'PREDECLARATION.md').is_file():
+                iteration, kind = candidate, 'verification'
+        if iteration is None or root not in iteration.parents:
+            parser.error('workflow must belong to a claimed iteration or a verification (arh verify new)')
+        plan = iteration / ('README.md' if kind == 'iteration' else 'PREDECLARATION.md')
     if args.lint:
         return lint(workflow, root, site, parser)
-    predeclared = iteration / 'PREDECLARATION.sha256'
-    if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(plan):
-        parser.error(f'{kind} must have an unchanged frozen pre-declaration')
-    import_sha256, problems = imports.check(root, iteration, plan)
-    for problem in problems:
-        if problem.startswith('warn:'):
-            print('arh: ' + problem[5:], file=sys.stderr)
-        else:
-            parser.error(problem + '. A changed dependency is a new iteration.')
+    import_sha256 = {}
+    if kind != 'smoke':
+        predeclared = iteration / 'PREDECLARATION.sha256'
+        if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(plan):
+            parser.error(f'{kind} must have an unchanged frozen pre-declaration')
+        import_sha256, problems = imports.check(root, iteration, plan)
+        for problem in problems:
+            if problem.startswith('warn:'):
+                print('arh: ' + problem[5:], file=sys.stderr)
+            else:
+                parser.error(problem + '. A changed dependency is a new iteration.')
     # A confirmation applies frozen decisions; one whose decisions changed under it is not that run.
     frozen_state, freeze_sha, changed = freeze.state(root, iteration)
     if frozen_state == 'changed':
@@ -128,7 +169,7 @@ def run():
                      + '. A changed configuration is a new iteration.')
     sealed = freeze.sealed_inputs(root)
     unsealed = bool(sealed) and frozen_state == 'valid'
-    if sealed and not unsealed:
+    if sealed and not unsealed and kind != 'smoke':
         scripts_dir = iteration / 'scripts'
         texts = [workflow] + ([args.params.resolve()] if args.params else []) + (
             [p for p in sorted(scripts_dir.rglob('*')) if p.is_file()] if scripts_dir.is_dir() else [])
@@ -201,6 +242,18 @@ def run():
     engine.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
     lock = engine / '.launch-lock'
+    if kind == 'iteration' and not os.environ.get('ARH_DETACHED'):    # a detached child's caller did it
+        lease.touch(iteration, 'arh submit ' + name, dict(agent=os.environ.get('ARH_LEASE_AGENT', '?'),
+                                                         user=os.environ.get('USER', 'unknown'),
+                                                         host=os.uname().nodename,
+                                                         session=os.environ.get('ARH_SESSION') or None))
+    if args.detach:
+        return detach(lock, logs, iteration, kind)
+    # A declared input that failed its last integrity check is named in every run that can read it.
+    checked = inputs.summary(root)
+    if checked and checked['failed']:
+        print('arh: declared inputs failed their last integrity check (arh inputs list): '
+              + ', '.join(checked['failed'][:3]) + (' …' if len(checked['failed']) > 3 else ''), file=sys.stderr)
     try:
         acquire(lock, what='launch lock')
     except Held as held:
@@ -313,15 +366,18 @@ def run():
                   + (' …' if len(undeclared) > 5 else ''), file=sys.stderr)
         record = dict(engine='nextflow', version=version, executable_sha256=expected, environment_prefix=prefix,
                       owner=dict(kind=kind, path=str(iteration.relative_to(root))),
-                      workflow=str(workflow.relative_to(root)), workflow_sha256=sha(workflow),
+                      workflow=str(workflow.relative_to(root)) if root in workflow.parents else str(workflow),
+                      workflow_sha256=sha(workflow),
                       script_sha256=script_sha256, import_sha256=import_sha256, referenced_sha256=referenced,
-                      predeclaration_sha256=sha(plan),
+                      predeclaration_sha256=sha(plan) if plan else None,
                       params_sha256=sha(args.params) if args.params else None,
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
                       environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
                       resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat())
+        if checked:
+            record['input_checks'] = checked
         if images:
             record['images'] = images
         if gpu:

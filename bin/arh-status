@@ -3,15 +3,21 @@
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
-json=0
+json=0; running=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) json=1; shift ;;
-    --help) echo 'usage: arh status [--json]'; exit 0 ;;
+    --running) running=1; shift ;;
+    --help) echo 'usage: arh status [--json] [--running]'; exit 0 ;;
     *) shift ;;
   esac
 done
 arh_load_project
+
+# What is running now: live submissions with their trace counts, reviews, and noted scheduler jobs.
+if [ "$running" = 1 ]; then
+  exec python3 "$ARH_HOME/lib/running.py" "$ARH_ROOT" "$ARH_ITERS" "$ARH_VERIFY" "$(arh_config_get "$ARH_SITE" scheduler local)"
+fi
 
 # Machine-readable form, so `arh` is a usable API and callers need not scrape text.
 if [ "$json" = 1 ]; then
@@ -78,6 +84,8 @@ for d in $iters; do
 done
 [ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
 [ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: a new review of\n     them counts only with arh ask --terms-changed REASON.\n' "$changed"
+open=$(python3 "$ARH_HOME/lib/lease.py" open "$ARH_ITERS" "$(arh_config_get "$ARH_PROJ" lease_stale_hours 24)")
+[ -z "$open" ] || printf '\nopen iterations (arh lease show -n N; arh status --running for what runs now):\n%s\n' "$open"
 [ -z "$noted" ] || printf '\nwork outside arh submit, without run receipts (arh note list):%s\n' "$noted"
 vrows=$(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY")
 if [ -n "$vrows" ]; then

@@ -25,6 +25,10 @@ Consulting a registry and creating the directory afterwards is a race.
 2.4 Numbers are never reused. An abandoned iteration keeps its number and is
 marked `ABANDONED`.
 
+2.5 Work on a claimed iteration SHOULD be attributable to the session doing it,
+and a session that takes over an iteration another session holds SHOULD record
+the takeover and its reason.
+
 ## 3. Pre-declaration
 
 3.1 An iteration MUST carry a pre-declaration written **before any result
@@ -103,6 +107,10 @@ receipt-producing execution path, including GPU work, auxiliary tool images and
 verifications. Computation that runs outside it MUST be recorded in the project
 as having done so. Code a plan imports from another iteration MUST be named in
 that plan and bound to it by hash.
+
+5.10 Declared inputs SHOULD be checked for integrity (at least that a
+compressed or container file is complete) before a run reads them, and the
+result SHOULD be recorded with the run.
 
 ## 6. Cross-checking
 

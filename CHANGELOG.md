@@ -56,6 +56,23 @@ Singularity with two producer accounts and two verifier families.
   - **`arh note -n N [--job ID] TEXT`** records work that ran outside `arh submit`.
     `arh status` counts notes, `arh context` shows them, and `arh gate results` warns about
     them and about results that no receipt accounts for.
+- **Unattended runs that outlive a session, and sessions that end mid-iteration** (field
+  feedback #11, #35, #36). `arh submit --detach` starts the run in its own session and returns
+  once it holds its launch lock. `arh status --running` lists live submissions with their trace
+  counts, running reviews, and the Slurm state of noted job ids. Every command that acts on an
+  iteration records itself in the iteration's lease (`metadata/lease.json`); `arh status` lists
+  open iterations with their holder and idle time, a command from another agent, user, host or
+  `ARH_SESSION` warns, and `arh lease take -n N --reason TEXT` makes a takeover explicit.
+- **Checks that catch a broken run before it runs** (field feedback #5, #37, #38).
+  `arh doctor --smoke [gpu]` runs one framework task through the configured scheduler and image
+  and reports what it sees: the task environment, a writable project, read-only immutable inputs,
+  hidden sealed inputs and a GPU. An `arh-smoke` block in a pre-declaration lists commands that
+  `arh gate predeclare` runs once in their image before freezing; the output's hash is frozen with
+  the plan. `arh inputs check` reads the end-of-file marker of CRAM 3 and BGZF files (and with
+  `--deep` decompresses gzip) under the declared inputs, caches passing results by size and
+  modification time, and records them where run receipts cite them; `arh submit` warns when a
+  declared input failed. On the field study's data it flags the truncated CRAM that cost a truth
+  set and passes the re-run that replaced it.
 - **Credential scan before anything leaves the site.** `arh ask`, `arh delegate` and
   `arh evoke` refuse to send a plan, report, task or note carrying something shaped like a
   credential (cloud, GitHub, model-provider and chat tokens, private keys, assigned secrets);

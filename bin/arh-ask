@@ -105,6 +105,7 @@ blind=0
 case "$role" in reimplementer) blind=1 ;; esac
 
 arh_guard_path "$dir"
+[ "$dry" = 1 ] || arh_lease_touch "$dir" "arh ask --role $role"
 prompt=$(mktemp "$dir/logs/prompt.XXXXXX")
 lock=""
 cleanup() { rm -f "$prompt"; [ -z "$lock" ] || { rm -f "$lock/owner.json"; rmdir "$lock"; }; }

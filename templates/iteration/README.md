@@ -33,6 +33,16 @@ here, so its hash is frozen with this plan and checked at every submit
 imports =
 ```
 
+Commands the instrument depends on, one per line, are run once in their image by
+`arh gate predeclare` before the plan is frozen, so a wrong flag or a missing
+tool fails here and not on the first real task (`runtime` is the task image;
+`name:` selects `image_<name>`; lines starting with `#` are skipped):
+
+```arh-smoke
+# runtime: python3 -c 'import sklearn; print(sklearn.__version__)'
+# vg: vg call --help
+```
+
 ## 4. Acceptance criteria
 
 <what must be true for this iteration to have run correctly, checked before any

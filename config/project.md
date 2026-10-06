@@ -47,4 +47,6 @@ sealed_inputs     =
 rules             = association-not-causation null-is-upper-bound negative-controls-required detection-limit-stated
 required_sections = Question, Estimand, Instrument, Acceptance criteria, Negative controls, Detection limit, Prediction
 require_crosscheck = true
+# arh status flags an open iteration as STALE after this many hours without arh activity.
+lease_stale_hours = 24
 ```

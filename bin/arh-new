@@ -48,6 +48,7 @@ else
   mv "$dir/README.md.new" "$dir/README.md"
 fi
 
+arh_lease_touch "$dir" "arh new"
 printf 'wrote %s\n' "$dir/README.md"
 printf '\nComplete every section, then:  arh gate predeclare -n %s\n' "$n"
 printf 'No result may be recorded until that gate passes and freezes the hash.\n'

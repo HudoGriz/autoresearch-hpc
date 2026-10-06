@@ -59,6 +59,7 @@ dir="$ARH_ITERS/iteration$n"
 [ ${#text[@]} -gt 0 ] || arh_die "say what ran and where its output is: arh note -n $n --job 967736 'LAYA folds by sbatch array; logs in logs/laya/'"
 case "$job" in *[!A-Za-z0-9_.:+-]*) arh_die "--job takes a scheduler job id" ;; esac
 arh_guard_path "$dir/metadata/notes.jsonl"
+arh_lease_touch "$dir" "arh note"
 mkdir -p "$dir/metadata"
 python3 - "$dir/metadata/notes.jsonl" "$(arh_now)" "$(arh_agent_name)" "$(uname -n)" "$job" "${text[*]}" <<'PY'
 import json, sys

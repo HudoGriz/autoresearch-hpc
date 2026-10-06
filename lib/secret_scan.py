@@ -6,7 +6,7 @@ request. A 2026 measurement of agents on a production cluster counted 127 expose
 weeks. The patterns are high-precision token shapes; a false positive is cleared by removing the
 text or, for a project that has a reason, with `secret_scan = off` in harnesses.md.
 
-  secrets.py scan FILE...     one line per finding (file:line: kind: redacted match); exit 1 if any
+  secret_scan.py scan FILE...     one line per finding (file:line: kind: redacted match); exit 1 if any
 """
 import re
 import sys

@@ -2,7 +2,14 @@
 # Check the local/HPC environment and print concrete setup actions.
 set -euo pipefail
 . "${ARH_HOME:?}/lib/common.sh"
-[ "${1-}" = "--help" ] && { echo 'usage: arh doctor'; exit 0; }
+smoke=""
+case "${1-}" in
+  --help|-h) echo 'usage: arh doctor [--smoke [gpu]]
+--smoke runs one task through the configured scheduler and task image and checks what it can see:
+the task environment, a writable project, read-only immutable inputs, hidden sealed inputs, and with
+gpu a GPU in a task labelled gpu. It waits for the scheduler.'; exit 0 ;;
+  --smoke) smoke=cpu; [ "${2-}" != gpu ] || smoke=gpu ;;
+esac
 warn=0
 printf 'AutoResearch HPC  ARH_HOME=%s\n\n' "$ARH_HOME"
 
@@ -222,6 +229,56 @@ printf '\nrules:\n'
 for r in $(arh_config_get "$ARH_PROJ" rules ""); do
   [ -f "$ARH_ROOT/rules/$r.md" ] && arh_ok "$r" || { arh_fail "$r — configured but missing"; warn=$((warn+1)); }
 done
+
+if [ -f "$ARH_STATE/inputs/checks.jsonl" ]; then
+  printf '\ninputs:\n'
+  summary=$(python3 "$ARH_HOME/lib/inputs.py" summary "$ARH_ROOT")
+  failed=$(printf '%s' "$summary" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["failed"]) if d else 0)')
+  if [ "$failed" = 0 ]; then arh_ok "every checked input passed its last integrity check (arh inputs list)"
+  else arh_warn "$failed input file(s) failed their last integrity check (arh inputs list)"; fi
+fi
+
+# Binaries existing is not the boundary working: run one task through it (field feedback #5).
+if [ -n "$smoke" ]; then
+  printf '\nsmoke test (one task through scheduler %s and the task image):\n' "$sched"
+  if [ "$warn" -gt 0 ]; then
+    arh_fail "skipped: fix the setup problems above first"; warn=$((warn+1))
+  else
+    mkdir -p "$ARH_STATE/smoke"
+    python3 - "$ARH_ROOT" "$ARH_STATE/smoke/params.json" "$smoke" "$ARH_HOME" <<'PY'
+import json, os, sys
+from pathlib import Path
+root, out, mode, home = sys.argv[1:5]
+sys.path.insert(0, home + '/lib')
+from project import config
+from freeze import sealed_inputs
+immutable = [os.path.realpath(p if os.path.isabs(p) else os.path.join(root, p))
+             for p in config(Path(root) / '.arh/config/project.md').get('immutable_inputs', '').split()]
+Path(out).write_text(json.dumps(dict(immutable=immutable, sealed=[str(p) for p in sealed_inputs(root)],
+                                     gpu=mode == 'gpu'), indent=2) + '\n')
+PY
+    if "$ARH_HOME/bin/arh" submit "$ARH_HOME/workflows/smoke.nf" -n smoke --params "$ARH_STATE/smoke/params.json" >/dev/null 2>"$ARH_STATE/smoke/submit.err"
+    then rc=0; else rc=$?; fi
+    attempt=$(find "$ARH_STATE/smoke/logs/nextflow/smoke" -maxdepth 1 -name 'attempt-*' -type d -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+    if [ -z "$attempt" ]; then
+      arh_fail "the smoke submission did not start: $(tail -3 "$ARH_STATE/smoke/submit.err" | tr '\n' ' ')"; warn=$((warn+1))
+    else
+      while IFS= read -r line; do
+        case "$line" in
+          ok\ *) arh_ok "${line#ok   }" ;;
+          FAIL\ *) arh_fail "${line#FAIL }"; warn=$((warn+1)) ;;
+        esac
+      done < <(grep -E '^(ok|FAIL) ' "$attempt/console.log")
+      done_tasks=$(awk -F'\t' 'NR>1 && $5=="COMPLETED"' "$attempt/trace.tsv" 2>/dev/null | grep -c . || true)
+      if [ "$rc" = 0 ] && [ "${done_tasks:-0}" -ge 1 ]; then
+        arh_ok "the task ran through the scheduler and completed (evidence: ${attempt#"$ARH_ROOT"/})"
+      else
+        arh_fail "the smoke submission exited $rc with ${done_tasks:-0} completed task(s); see ${attempt#"$ARH_ROOT"/}/console.log"
+        warn=$((warn+1))
+      fi
+    fi
+  fi
+fi
 
 printf '\n'
 [ "$warn" -gt 0 ] && { printf '%s setup problem(s) found. Fix the FAIL items above and rerun `arh doctor`.\n' "$warn"; exit 1; }

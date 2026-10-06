@@ -516,6 +516,10 @@ check "arh freeze list runs"                0 arh freeze list
 check "arh freeze needs the files to freeze" 1 arh freeze -n 1
 check "arh note list runs"                  0 arh note list
 check "arh note needs text"                1 arh note -n 1
+check "arh lease show runs"                0 arh lease show -n 1
+check "arh lease take needs a reason"      1 arh lease take -n 1
+check "arh inputs list runs"               0 arh inputs list
+check "arh status --running runs"          0 arh status --running
 check "arh env list runs"                  0 arh env list
 check "arh env rejects a reserved name"    1 arh env create nextflow-host zlib
 
