@@ -161,13 +161,18 @@ def check(root, paths, deep, force):
 
 
 def summary(root):
-    """For a run receipt: the log's hash, how many files passed, and which failed."""
+    """For a run receipt: the log's hash, and how many files under the declared (immutable or sealed)
+    inputs were checked and which of them failed. Files checked by explicit path elsewhere are left out."""
     latest = history(root)
     log = log_path(root)
-    if not latest:
+    sealed = config(Path(root) / '.arh/config/project.md').get('sealed_inputs', '').split()
+    bases = [os.path.realpath(p) for p in declared(root)] + [
+        os.path.realpath(p if os.path.isabs(p) else os.path.join(root, p)) for p in sealed]
+    mine = {p: r for p, r in latest.items() if any(p == b or p.startswith(b.rstrip('/') + '/') for b in bases)}
+    if not mine:
         return None
-    return dict(log_sha256=hashlib.sha256(log.read_bytes()).hexdigest(), checked=len(latest),
-                failed=sorted(p for p, r in latest.items() if not r.get('ok')))
+    return dict(log_sha256=hashlib.sha256(log.read_bytes()).hexdigest(), checked=len(mine),
+                failed=sorted(p for p, r in mine.items() if not r.get('ok')))
 
 
 if __name__ == '__main__':

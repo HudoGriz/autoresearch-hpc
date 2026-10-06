@@ -2,23 +2,25 @@
 
 ## Current baseline
 
-A run on 2026-09-21 against a configured local site (Nextflow 26.04.6 from a host
-micromamba environment, scientific tasks through Singularity-compatible Apptainer on
-Linux) passed:
+A run on 2026-10-06 at commit `1d98801` against a configured local site (Nextflow 26.04.6
+from a host micromamba environment, scientific tasks through Singularity-compatible
+Apptainer on Linux, an NVIDIA TITAN RTX on the host) passed:
 
 | Suite | Command | Result |
 |---|---|---|
-| Core protocol checks | `test/run_tests.sh` | 158 / 158 |
-| Boundary regressions | `python3 test/test_hardening.py` | 70 / 70 (1 network case skipped) |
-| Protocol conformance matrix | `python3 test/conformance.py --site SITE` | 12 / 12 |
+| Core protocol checks | `test/run_tests.sh` | 173 / 173 |
+| Boundary regressions | `ARH_TEST_GPU=1 python3 test/test_hardening.py` | 98 / 98 (1 network case skipped) |
+| Protocol conformance matrix | `python3 test/conformance.py --site SITE` | 14 / 14, locally and on Slurm with the project on CephFS |
 | Deterministic synthetic example | `bash examples/mean-shift/check.sh` | OK |
+
+The v0.3.0 release (commit `77b7cfc`) passed 158 / 158, 70 / 70 and 12 / 12 on 2026-09-21.
 
 ## Protocol conformance matrix
 
 `test/conformance.py` injects one violation per protocol boundary into a scratch project
 and checks the specified refusal. A stand-in reviewer answers `arh ask`, so no model is
-called. The cases that run real tasks (E5b, E6, E9) need `--site`; without it they are
-reported as skipped. The result is written as JSON with the commit it ran on, marked
+called. The cases that run real tasks (E5b, E6, E9, E12, E13) need `--site`; without it
+they are reported as skipped. The result is written as JSON with the commit it ran on, marked
 `-dirty` when the checkout had uncommitted changes.
 
 | ID | Injected violation | Specified behaviour |
@@ -35,6 +37,8 @@ reported as skipped. The result is written as JSON with the commit it ran on, ma
 | E9 | submission interrupted while its task runs | signal recorded; launch lock released; scheduler job gone |
 | E10 | fresh shell with no chat history | status, next and the ledger name each iteration's state |
 | E11 | review configuration changed after the claim | review refused unless the reason is recorded |
+| E12 | held-out data read before a freeze | a workflow naming the sealed path is refused; a task building the path sees an empty mount; after `arh freeze` the confirmation reads it and the read is logged |
+| E13 | frozen decision changed before the confirmation | `arh submit` refuses the run |
 
 On 2026-09-21 all twelve cases passed on a local site, and again on Slurm with the
 scratch project on a shared CephFS directory. With
@@ -52,6 +56,34 @@ execution checks and the Singularity-runtime check — require a site whose
 `runtime_image`, `runtime_sha256` and `nextflow_prefix` are actually populated.
 Pointing `ARH_TEST_SITE` at the repository's own `config/site.md` template, which
 leaves those empty, fails them. This is a property of the site, not of the code.
+
+## Field checks of the post-0.3.0 mechanisms (2026-10-06)
+
+These were run by hand on the maintainers' Slurm cluster, beyond the suites above:
+
+- **GPU.** A task labelled `gpu` saw the host's TITAN RTX through `--nv` on a local
+  executor (`test_gpu_process_runs_with_nv` with `ARH_TEST_GPU=1`, and
+  `arh doctor --smoke gpu`). On Slurm, a task labelled `gpu` with `accelerator 1` was
+  sent to the `gpu` partition with `--gres=gpu:1`; it waited behind other users' GPU jobs
+  and had not started when this page was written, so no Slurm GPU task has yet been
+  observed running.
+- **A second image.** A process labelled `image_seqkit` ran on Slurm in a pulled
+  `seqkit 2.9.0` biocontainer with the image's own `PATH`; `trace.tsv` recorded the image.
+  The first attempt failed because Nextflow needs `ps` in every container and the
+  declared image's `PATH` hid the task environment's; the task environment's `bin/` is
+  now appended after the image's own.
+- **Detach.** `arh submit --detach` returned in 1.1 s on Slurm, and `arh status --running`
+  showed the submission's trace counts while it ran.
+- **Input integrity.** `arh inputs check` on a field study's ONT data flagged the CRAM
+  whose truncation had silently cost a truth set (no CRAM end-of-file container) and
+  passed the CRAM and VCF of the re-run that replaced it.
+- **Smoke test.** `arh doctor --smoke` with an immutable input and a sealed input inside
+  it reported the input read-only and the sealed path hidden; it also caught a false
+  positive in its own first version (`[ -s ]` is true for an empty directory).
+- **Report numbers.** On eleven concluded reports of the field study, the results gate's
+  number check left 0 to 22 of 65 to 178 numbers unmatched per report, mostly values
+  computed in the prose (differences, interval half-widths) or quoted from other
+  iterations.
 
 ## Earlier runs
 
@@ -77,8 +109,10 @@ by the reviewer. The original review remains unchanged.
 ## Retained limits
 
 Remaining limits include mutable host environment storage, controller writes
-outside task-container protections, untested PBS and heterogeneous/GPU tasks,
-and model overhead beyond submitted prompt/output limits. This is a cooperative
+outside task-container protections, PBS execution beyond the conformance matrix,
+GPU tasks on a scheduler (routed but not yet observed running), and model overhead
+beyond submitted prompt/output limits. Sealed inputs are hidden from tasks, not from
+the agent's own shell, and declared inputs are checked for truncation, not hashed. This is a cooperative
 research protocol, not containment for hostile workflow code or a scientific
 truth guarantee.
 

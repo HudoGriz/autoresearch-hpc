@@ -212,7 +212,7 @@ The framework does **not** treat model agreement as scientific truth. Cross-fami
 
 ## Validation and boundaries
 
-AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-21 the suite passed **158 / 158 core protocol checks** and **70 boundary regressions** against a configured local site, and the **protocol conformance matrix** (`test/conformance.py`, eleven injected violations) passed in full on a local site and on Slurm, with claims raced from four compute nodes on a shared CephFS directory. Internal field deployment exposed review, submission and provenance defects, now represented by regression tests.
+AutoResearch HPC is **experimental and pre-1.0**. On 2026-10-06 the suite passed **173 / 173 core protocol checks** and **98 boundary regressions** against a configured local site, and the **protocol conformance matrix** (`test/conformance.py`, thirteen injected violations) passed in full on a local site and on Slurm with the project on shared CephFS; the v0.3.0 release passed its eleven-scenario matrix on Slurm with claims raced from four compute nodes. Internal field deployment exposed review, submission and provenance defects, now represented by regression tests.
 
 ```bash
 # ARH_TEST_SITE must point at a site.md with runtime_image, runtime_sha256 and
@@ -220,7 +220,7 @@ AutoResearch HPC is **experimental and pre-1.0**. On 2026-09-21 the suite passed
 export ARH_TEST_SITE=/absolute/path/to/configured/local/site.md
 test/run_tests.sh
 python3 test/test_hardening.py
-python3 test/conformance.py --site "$ARH_TEST_SITE"   # E1-E11; writes conformance.json
+python3 test/conformance.py --site "$ARH_TEST_SITE"   # E1-E13; writes conformance.json
 bash examples/mean-shift/check.sh
 ```
 

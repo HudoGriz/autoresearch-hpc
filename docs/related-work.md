@@ -45,6 +45,48 @@ simply by using a stronger model:
 | Analysis chosen after seeing the answer | pre-registration literature, broadly | hash-frozen pre-declaration (§3.6–3.7) |
 | Reviewer agents hallucinating plausible constraints | reviewer-ensemble critiques | verdicts are evidence, not rulings (§6.5) |
 
+## Agents on shared HPC systems, and checking what they produce
+
+A 2026 measurement of a production cluster ([Zheng et al., *Towards Efficient HPC
+Systems for Agents: Challenges and Opportunities*](https://arxiv.org/abs/2609.38723))
+found coding agents were 19.5% of users but submitted 55.8% of jobs and used 42.7% of
+GPU-hours. It reports the failure modes this framework was hardened against in the field,
+measured at cluster scale, and several of its proposed directions correspond to mechanisms
+here:
+
+| Measured on the cluster | Mechanism here |
+|---|---|
+| agents act "directly through shell and scheduler interfaces, which leaves no natural point at which provenance is captured" | `arh submit` is that point: every run, including GPU tasks, second images and verifications, gets a receipt; work outside it is recorded with `arh note` (§5.9) |
+| 57% of agent users with failures repeat an identical failure across sessions; lessons are relearned per user | `DIRECTIVES.md` and `GOTCHAS.md` in the project, a site-wide `site_gotchas` file, each entry with its source and conditions (§8.4) |
+| 32.7% of agent jobs finish within a minute and 10.3% are cancelled ("trial storms") | `arh submit --lint`, `arh doctor --smoke`, an `arh-smoke` block run at the pre-declaration gate, `arh inputs check` |
+| sessions last a median of 7.5 days and are lost on disruption | `arh submit --detach`, iteration leases, `arh status --running` |
+| 127 API keys exposed in three weeks; secrets leak through model requests | `arh ask`, `arh delegate` and `arh evoke` refuse requests carrying credentials |
+
+[RASER](https://arxiv.org/abs/2609.03598) (Attar-Khorasani, Lieber and Ghiasvand, 2026)
+adds checkpointed, work-stealing agent job arrays to Slurm, and
+[Academy](https://arxiv.org/abs/2505.05428) (Kamatar et al., IPDPS 2026) deploys stateful
+agents across HPC systems and facilities. Both address how agents execute; this framework
+addresses what an agent's result rests on, and runs on top of the site's existing scheduler.
+[PROV-AGENT](https://arxiv.org/abs/2508.02866) (Souza et al., IEEE e-Science 2025) records
+agent interactions as W3C PROV provenance at run time; the receipts here are coarser and
+bound to a frozen plan.
+
+On the verification side, [Luo, Kasirzadeh and Shah](https://arxiv.org/abs/2509.08713)
+(NeurIPS 2025 AI4Science) show that inappropriate benchmark selection, data leakage, metric
+misuse and post-hoc selection in AI-scientist systems are found far more often from trace
+logs and code than from the final paper, which is the case for keeping the whole record. A
+2026 survey of AI scientists ([Ding et al.](https://arxiv.org/abs/2608.05179)) finds that 83%
+of runnable systems release code but only 38% release execution traces, and names
+verification, not task completion, as the field's bottleneck; it does not cover
+pre-registration or cross-family review. [Thomas, Gligoric and Shah](https://arxiv.org/abs/2606.27687)
+(2026) apply pre-registration to LLM-based p-hacking, committing to an analysis before the
+model it runs on exists. [RECLAIM](https://arxiv.org/abs/2609.28850) (Salunkhe et al., 2026)
+finds that the most common error of agents reproducing ML papers is never checking the
+method against the paper's numbers, and [ReAgent](https://arxiv.org/abs/2609.22111) (Shen et
+al., 2026) checks agent-written papers against their repositories. The results gate's
+number check and its finding-by-finding review response are small, local versions of the
+same idea: a claim is checked against the artefact it rests on.
+
 ## What it borrows
 
 **Pre-registration**, from clinical trials and psychology's replication reform —
