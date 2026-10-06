@@ -34,10 +34,42 @@ Singularity with two producer accounts and two verifier families.
   each sealed input, and `arh guard` refuses writes into them. `harness/install.sh` denies the
   harness's own reads of sealed paths where the harness can express it (Claude Code, OpenCode).
   `PROTOCOL.md` gains §3.9 and §5.8.
+- **Nothing that produces a result runs without a receipt.** In the field study every GPU arm,
+  a verification recount and a second tool image ran outside `arh submit`, so none had a run
+  receipt, and reviews flagged it (field feedback #14, #18, #33, #34, #35, #41).
+  - **GPUs:** a process labelled `gpu` or `process_gpu`, or with an `accelerator` directive,
+    runs with `--nv`, and on Slurm goes to `gpu_partition` with `--gres=gpu[:gpu_type]:N`,
+    `--constraint` and `gpu_extra` from `site.md`. The generated settings are label-aware
+    closures, so a process with several labels gets all of them.
+  - **Images by label:** `label 'image_<name>'` runs a process in a declared, digest-checked
+    local image with that image's own `PATH`; the receipt records the images and `trace.tsv`
+    gains a `container` column.
+  - **Imports:** a plan declares code it takes from other iterations (`imports =` in an
+    `arh-config` block). Their hashes are frozen into `PREDECLARATION.sha256`, `arh submit`
+    refuses a run in which one changed, and other iterations' scripts that are named but not
+    declared are hashed as `referenced_sha256`, with a warning.
+  - **Verifications run and conclude:** `arh verify run OBJECT WORKFLOW` submits through the
+    same path as an iteration; `arh verify conclude` checks the frozen plan, a `RESULT.md` with
+    one `OUTCOME:` line and a successful receipt of the plan (or `--without-run REASON`), and
+    writes `CONCLUDED.json`. `arh verify new --of N` records the target, and the ledger and
+    `arh status` list verifications beside the iterations they check.
+  - **`arh note -n N [--job ID] TEXT`** records work that ran outside `arh submit`.
+    `arh status` counts notes, `arh context` shows them, and `arh gate results` warns about
+    them and about results that no receipt accounts for.
+- **Credential scan before anything leaves the site.** `arh ask`, `arh delegate` and
+  `arh evoke` refuse to send a plan, report, task or note carrying something shaped like a
+  credential (cloud, GitHub, model-provider and chat tokens, private keys, assigned secrets);
+  a dry run warns. `secret_scan = off` in `harnesses.md` disables it.
 - **`site_gotchas` in `site.md`** names a Markdown file of tool and cluster pitfalls shared by
   every project on the machine, so a lesson is paid for once per site instead of once per
   project. It is read, hashed and checked like the project's own files, and
   `harness/install.sh` makes its directory reachable from each harness.
+
+### Changed
+- `arh verify gate` refuses to overwrite an existing freeze, as `arh gate predeclare` always
+  has (§3.8); it used to rewrite `PREDECLARATION.sha256`.
+- The ledger's generated status block lists verifications. A ledger rendered by 0.3.0 is
+  reported as stale by `arh ledger check` until `arh ledger render` runs once.
 
 ## [0.3.0] — 2026-09-24
 

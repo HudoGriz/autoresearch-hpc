@@ -46,5 +46,9 @@ state['knowledge'] = {name: {'path': str(path.relative_to(root)) if root in path
                                             ('unchanged' if claimed[name] == digest(path) else 'changed')}
                       for name, path in knowledge(root).items()}
 state['freeze'] = freeze_state(root, directory)[0]
+# Work that ran outside arh submit (arh note): the last few, so a resuming session sees it.
+notes = directory / 'metadata/notes.jsonl'
+state['notes'] = [json.loads(line) for line in (notes.read_text().splitlines() if notes.is_file() else [])
+                  if line.strip()][-5:]
 state['next'] = 'inspect altered plan' if state['predeclaration'] == 'ALTERED' else ('freeze plan' if state['predeclaration'] != 'frozen' else ('execute/write report' if not report.exists() else ('review evidence' if not state['reviews'] else 'check results gate and ledger')))
 print(json.dumps(state, ensure_ascii=True, indent=2))

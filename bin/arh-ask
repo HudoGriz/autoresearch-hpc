@@ -153,6 +153,15 @@ trap cleanup EXIT
   fi
   printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(arh_config_get "$ARH_HARN" ask_output_words 500)"
 } > "$prompt"
+# A credential pasted into a plan or report would leave the site with the review request.
+sources=("$dir/README.md")
+[ ! -f "$dir/results/report/iteration${n}_report.md" ] || sources+=("$dir/results/report/iteration${n}_report.md")
+[ "$blind" = 0 ] || sources+=("$dir/DAG.md")
+if ! arh_secret_scan "$extra" "${sources[@]}"; then
+  [ "$dry" = 1 ] || arh_die "the review request would carry what looks like a credential (above). Nothing was sent.
+       Remove it from the file; if it is a false positive, set secret_scan = off in .arh/config/harnesses.md"
+  arh_warn "the review request carries what looks like a credential (above); arh ask would refuse to send it"
+fi
 max_input=$(arh_config_get "$ARH_HARN" ask_max_input_bytes 48000)
 max_rounds=$(arh_config_get "$ARH_HARN" ask_max_rounds 2)
 if [ "$dry" = 1 ]; then

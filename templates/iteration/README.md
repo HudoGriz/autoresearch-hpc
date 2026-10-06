@@ -25,6 +25,14 @@ correct computation of the wrong quantity.>
 their accessions, and the seed. Name an image declared in site.md so the run is
 pinned; an unpinned tool is not an instrument.>
 
+Code this iteration imports from another iteration's `scripts/` is declared
+here, so its hash is frozen with this plan and checked at every submit
+(space-separated, relative to the project root; leave empty if none):
+
+```arh-config
+imports =
+```
+
 ## 4. Acceptance criteria
 
 <what must be true for this iteration to have run correctly, checked before any

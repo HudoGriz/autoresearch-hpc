@@ -186,3 +186,16 @@ arh_sealed_masks() {
   [ -n "$(arh_config_get "$ARH_PROJ" sealed_inputs "")" ] || return 0
   python3 "$ARH_HOME/lib/freeze.py" masks "$ARH_ROOT"
 }
+
+# arh_secret_scan NOTE FILE...: succeed unless the files, or the note text, carry something shaped like
+# a credential; the findings go to stderr, redacted. Run on what arh ask, arh delegate and arh evoke
+# are about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
+arh_secret_scan() {
+  local note="$1" tmp="" rc=0 hits; shift
+  [ "$(arh_config_get "$ARH_HARN" secret_scan on)" != off ] || return 0
+  if [ -n "$note" ]; then tmp=$(mktemp); printf '%s\n' "$note" > "$tmp"; set -- "$@" "$tmp"; fi
+  hits=$(python3 "$ARH_HOME/lib/secrets.py" scan "$@") || rc=1
+  [ "$rc" = 0 ] || printf '%s\n' "${hits//"$tmp"/--note}" >&2
+  [ -z "$tmp" ] || rm -f "$tmp"
+  return "$rc"
+}

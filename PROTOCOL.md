@@ -98,6 +98,12 @@ than conformance to this clause.
 run's iteration holds a valid freeze (§3.9). Every run that can read them MUST be
 recorded with the freeze it ran under.
 
+5.9 Computation that produces or checks a result SHOULD run through the
+receipt-producing execution path, including GPU work, auxiliary tool images and
+verifications. Computation that runs outside it MUST be recorded in the project
+as having done so. Code a plan imports from another iteration MUST be named in
+that plan and bound to it by hash.
+
 ## 6. Cross-checking
 
 6.1 Before an iteration is concluded, it SHOULD be reviewed by a harness in a
@@ -197,6 +203,9 @@ implementation MUST provide a consistency check.
 external findings a design depends on, and silent failure modes — MUST be
 recorded in project files that every harness and reviewer can read. An agent's
 private memory MAY point to them; it MUST NOT be their only record.
+
+8.5 A verification's outcome MUST be recorded with the frozen plan and the runs
+it rests on, and shown beside the iteration it verifies.
 
 ## 9. The operator
 

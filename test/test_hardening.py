@@ -1021,5 +1021,156 @@ elif args[0] == 'list':
         self.assertIn('lies inside sealed input', self.call('doctor', good=False).stdout)
 
 
+    # --- nothing runs without a receipt (field feedback #14, #18, #33, #34, #35, #41) -------------
+
+    def test_slurm_gpu_settings_are_per_task(self):
+        # Every GPU arm of a field study ran by hand-written sbatch: tasks had no way to ask for one,
+        # and 16 folds landed on cards too small for them (2026-09-22).
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import nextflow
+        site = {'slurm_partition': 'all', 'slurm_account': 'lab', 'gpu_partition': 'gpu', 'gpu_type': 'a100',
+                'gpu_constraint': 'gpu80g'}
+        plain = nextflow.slurm_settings(site, False)
+        self.assertIn('process.queue = "all"', plain)
+        self.assertIn('process.clusterOptions = "--account=lab"', plain)
+        gpu = '\n'.join(nextflow.slurm_settings(site, True))
+        self.assertIn(nextflow.WANTS_GPU + ' ? "gpu" : "all"', gpu)
+        self.assertIn("' --gres=gpu:a100:' + (task.accelerator ? (task.accelerator.request ?: 1) : 1)", gpu)
+        self.assertIn('--constraint=gpu80g', gpu)
+
+    def nf(self, name, body):
+        path = self.it / 'scripts' / name
+        path.write_text(body)
+        return path
+
+    @needs_site
+    def test_gpu_process_runs_with_nv(self):
+        wf = self.nf('it1_01_gpu.nf', 'process G {\n    label \'gpu\'\n    output:\n    stdout\n'
+                     '    script:\n    """\n    (nvidia-smi -L 2>&1 || echo no-gpu) | head -1\n    """\n}\n'
+                     'workflow {\n    G() | view\n}\n')
+        self.call('submit', str(wf), '-n', 'gpu', timeout=900)
+        attempt = next((self.it / 'logs/nextflow/gpu').glob('attempt-*'))
+        self.assertIn("' --nv'", (attempt / 'execution.config').read_text())
+        self.assertIn('gpu', json.loads((attempt / 'run.json').read_text()))
+        if os.environ.get('ARH_TEST_GPU'):          # a host with a GPU: the task must see it
+            self.assertIn('GPU 0', (attempt / 'console.log').read_text())
+
+    @needs_site
+    def test_image_label_runs_in_its_declared_image_with_its_own_path(self):
+        site = Path(os.environ['ARH_TEST_SITE']).read_text()
+        image = re.search(r'(?m)^runtime_image\s*=\s*(\S+)', site).group(1)
+        digest = re.search(r'(?m)^runtime_sha256\s*=\s*(\S+)', site).group(1)
+        self.set_config('site.md', image_alt=image, image_alt_sha256=digest, image_alt_path='/alt/bin:/usr/bin:/bin')
+        wf = self.nf('it1_01_alt.nf', 'process A {\n    label \'image_alt\'\n    output:\n    stdout\n'
+                     '    script:\n    """\n    echo "PATH=\\$PATH"\n    """\n}\nworkflow {\n    A() | view\n}\n')
+        self.call('submit', str(wf), '-n', 'alt', timeout=900)
+        attempt = next((self.it / 'logs/nextflow/alt').glob('attempt-*'))
+        self.assertIn('PATH=/alt/bin:/usr/bin:/bin', (attempt / 'console.log').read_text())    # its tools first
+        record = json.loads((attempt / 'run.json').read_text())
+        self.assertEqual(record['images']['image_alt']['sha256'], digest)
+        trace = (attempt / 'trace.tsv').read_text().splitlines()
+        self.assertEqual(trace[0].split('\t')[-1], 'container')
+        self.assertEqual(trace[1].split('\t')[-1], image)
+        self.set_config('site.md', image_alt_sha256='0' * 64)
+        self.assertIn('digest does not match', self.call('submit', str(wf), '-n', 'alt2', good=False).stderr)
+
+    def plan_with_imports(self, *paths):
+        n = self.call('claim', '-t', 'uses a helper').stdout.strip()
+        self.call('new', '-n', n)
+        it = self.root / f'iterations/iteration{n}'
+        headings = ['Question', 'Estimand', 'Instrument', 'Acceptance criteria', 'Negative controls', 'Detection limit', 'Prediction']
+        (it / 'README.md').write_text('\n'.join(f'## {i}. {h}\nFixture.\n' for i, h in enumerate(headings, 1))
+                                      + '\n```arh-config\nimports = ' + ' '.join(paths) + '\n```\n')
+        return n, it
+
+    def test_declared_imports_are_frozen_with_the_plan_and_checked_at_submit(self):
+        # A pre-declaration promised the shared library was unchanged; nothing could check it (2026-09-29).
+        lib = self.it / 'scripts/it1_00_lib.py'; lib.write_text('THRESHOLD = 0.5\n')
+        n, it = self.plan_with_imports('iterations/iteration1/scripts/it1_00_lib.py')
+        self.assertIn('imports: 1 file(s) hashed with the plan', self.call('gate', 'predeclare', '-n', n).stdout)
+        self.assertIn(f"import {hashlib.sha256(lib.read_bytes()).hexdigest()} iterations/iteration1/scripts/it1_00_lib.py",
+                      (it / 'PREDECLARATION.sha256').read_text())
+        lib.write_text('THRESHOLD = 0.4\n')
+        script = it / 'scripts' / f'it{n}_01_run.sh'; script.write_text('exit 0\n')
+        self.assertIn('changed since the pre-declaration was frozen',
+                      self.call('submit', str(script), '-n', 'run', good=False).stderr)
+        m, _ = self.plan_with_imports('iterations/iteration1/scripts/missing.py')
+        self.assertIn('does not exist', self.call('gate', 'predeclare', '-n', m, good=False).stdout)
+
+    @needs_site
+    def test_undeclared_reference_to_another_iteration_is_hashed(self):
+        (self.it / 'scripts/it1_00_helper.py').write_text('print(1)\n')
+        n, it = self.plan_with_imports()
+        self.call('gate', 'predeclare', '-n', n)
+        script = it / 'scripts' / f'it{n}_01_run.sh'
+        script.write_text(f'python3 {self.root}/iterations/iteration1/scripts/it1_00_helper.py\n')
+        result = self.call('submit', str(script), '-n', 'run')
+        self.assertIn('does not declare as imports', result.stderr)
+        record = json.loads(next((it / 'logs/nextflow/run').glob('attempt-*/run.json')).read_text())
+        self.assertIn('iterations/iteration1/scripts/it1_00_helper.py', record['referenced_sha256'])
+
+    def verification(self, name='recount'):
+        self.call('verify', 'new', name, '-m', 'recalculation', '--of', '1')
+        d = self.root / 'verification' / name
+        (d / 'PREDECLARATION.md').write_text(
+            '# Verification\n\n## What is being verified\nIteration 1.\n\n## Mode\nRecalculation.\n\n'
+            '## Analytic variant\nSeed 1.\n\n## Success criterion\nThe same records come back, by name.\n\n'
+            '## What a failure would mean\nThe count was wrong.\n')
+        self.call('verify', 'gate', name)
+        return d
+
+    @needs_site
+    def test_verification_runs_through_submit_and_concludes_on_its_receipt(self):
+        # A verification recount ran on a login node, outside the task image, with no receipt (2026-10-05).
+        d = self.verification()
+        (d / 'scripts').mkdir(exist_ok=True)
+        check = d / 'scripts/check.sh'; check.write_text(f'echo 3 > {d}/results/count.txt\n')
+        self.call('verify', 'run', 'recount', str(check), '-n', 'check')
+        record = json.loads(next((d / 'logs/nextflow/check').glob('attempt-*/run.json')).read_text())
+        self.assertEqual(record['owner'], {'kind': 'verification', 'path': 'verification/recount'})
+        self.assertIn('wrote', self.call('verify', 'conclude', 'recount', good=False).stderr)   # scaffolds RESULT.md
+        (d / 'RESULT.md').write_text('# Result\n\nOUTCOME: CONFIRMED\n\n## What was run\ncheck\n')
+        self.assertIn('CONFIRMED (verifies iteration 1); 1 run receipt', self.call('verify', 'conclude', 'recount').stdout)
+        self.assertIn('concluded: CONFIRMED', self.call('verify', 'list').stdout)
+        self.assertIn('verification recount: CONFIRMED', self.call('gate', 'results', '-n', '1', good=None).stdout)
+        self.call('ledger', 'render')
+        self.assertIn('| recount | 1 | frozen | CONFIRMED |', (self.root / 'PROGRESS.md').read_text())
+        self.assertIn('already concluded', self.call('verify', 'conclude', 'recount', good=False).stderr)
+
+    def test_verification_needs_a_receipt_or_a_reason(self):
+        d = self.verification()
+        self.assertIn('already frozen', self.call('verify', 'gate', 'recount', good=False).stderr)
+        (d / 'RESULT.md').write_text('OUTCOME: REFUTED\n')
+        self.assertIn('no successful run receipt', self.call('verify', 'conclude', 'recount', good=False).stderr)
+        self.call('verify', 'conclude', 'recount', '--without-run', 'read two counts from the report')
+        self.assertEqual(json.loads((d / 'CONCLUDED.json').read_text())['without_run'], 'read two counts from the report')
+
+    def test_out_of_band_work_is_noted_and_named_at_the_gate(self):
+        # A GPU job chain ran unrecorded; a second session found it only in the first one's transcript.
+        self.call('note', '-n', '1', '--job', '967736', 'LAYA folds by sbatch array; logs in logs/laya/')
+        self.assertIn('job 967736', self.call('note', 'list').stdout)
+        self.assertEqual(json.loads(self.call('status', '--json').stdout)['iterations'][0]['notes'], 1)
+        self.assertEqual(json.loads(self.call('context', '-n', '1').stdout)['notes'][0]['job'], '967736')
+        (self.it / 'results/folds.tsv').write_text('fold\tf1\n')
+        self.ask()
+        out = self.gate().stdout
+        self.assertIn('1 note(s) of work outside arh submit', out)
+        self.assertIn('no arh submit run receipt does', out)
+
+    def test_requests_carrying_a_credential_are_not_sent(self):
+        key = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0' * 2
+        self.report.write_text(self.report.read_text() + f'\nexport ANTHROPIC_API_KEY={key}\n')
+        failed = self.ask(good=False)
+        self.assertIn('Anthropic API key', failed.stderr); self.assertNotIn(key, failed.stderr)
+        self.assertFalse(list(self.it.glob('CROSSCHECK_*')))
+        self.assertIn('would refuse', self.call('ask', '-n', '1', '--dry-run').stderr)
+        self.configure(extra_config='executor = reviewer\n')
+        task = self.root / 'task.md'; task.write_text(f'password = "{key}"\n')
+        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), good=False)
+        self.assertFalse((self.it / 'metadata/delegations').exists())
+        self.configure(extra_config='secret_scan = off\n')
+        self.ask()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

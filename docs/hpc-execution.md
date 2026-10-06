@@ -129,6 +129,50 @@ without packages rebuilds the environment from its lock and checks that the pack
 list is identical. A built environment does not change: a different package set is
 a new name. Run receipts hash every `.arh/*-explicit.lock`.
 
+### GPUs
+
+A process that carries `label 'gpu'` (nf-core's `process_gpu` works too) or an
+`accelerator N` directive runs with Singularity's `--nv`. On Slurm it goes to
+`gpu_partition` (default `slurm_partition`) with `--gres=gpu[:gpu_type]:N`, plus
+`--constraint=gpu_constraint` and `gpu_extra` when set; other processes keep the
+ordinary partition. The settings are written as label-aware closures in the
+generated `execution.config`, because when a process has two labels the last
+`withLabel` selector would otherwise win. The receipt records the GPU settings.
+A process that sets its own `containerOptions`, `queue` or `clusterOptions`
+replaces these.
+
+### A second tool image
+
+`label 'image_<name>'` runs a process in the image declared as `image_<name>`
+in `site.md` instead of the task image. The image must be a local file whose
+digest matches `image_<name>_sha256`, checked at every submit. The process gets
+the image's own `PATH` (read from the image, or `image_<name>_path`), followed
+by the task environment's `bin/`: the image's tools win, and Nextflow still finds
+the `ps` it needs in every container, which many tool images lack. The receipt records
+`images` (path, digest, `PATH`), and `trace.tsv` gains a `container` column naming
+the image each task ran in.
+
+### Imports from other iterations
+
+A plan declares code it takes from another iteration's `scripts/` in an
+`arh-config` block (`imports = iterations/iteration1/scripts/it1_00_lib.py`).
+`arh gate predeclare` appends each file's hash to `PREDECLARATION.sha256`, and
+`arh submit` refuses a run in which one changed. Other iterations' scripts that
+the workflow or its scripts name without declaring them are hashed too
+(`referenced_sha256`), with a warning.
+
+### Verifications and work outside the receipt
+
+`arh verify run OBJECT WORKFLOW` submits a verification's workflow exactly as
+`arh submit` submits an iteration's, with its evidence under
+`verification/OBJECT/`. `arh verify conclude OBJECT` requires a successful receipt
+of the frozen plan unless given `--without-run REASON`.
+
+Work that cannot go through `arh submit` is recorded with
+`arh note -n N --job JOBID TEXT`. `arh status` counts notes, `arh context` shows
+the latest, and `arh gate results` warns about them, and about results that no
+receipt accounts for.
+
 ### Run receipts and caching
 
 The run receipt (`logs/nextflow/<name>/attempt-*/run.json`) hashes the workflow,

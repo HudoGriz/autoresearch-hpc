@@ -8,18 +8,46 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
+usage() {
+  cat <<'USAGE'
+usage:
+  arh verify new OBJECT [-m MODE] [--of N]   scaffold a verification of iteration N's object
+  arh verify gate OBJECT                     freeze its pre-declaration
+  arh verify run OBJECT WORKFLOW [-n NAME] [--params FILE] [--resume] [--lint]
+                                             run it through arh submit: pinned image, receipt
+  arh verify conclude OBJECT [--of N] [--without-run REASON]
+                                             check RESULT.md and the receipts, write CONCLUDED.json
+  arh verify list                            every verification, its state and outcome
+USAGE
+}
 sub="${1:-}"; shift || true
 case "$sub" in
-  -h|--help|"") echo 'usage: arh verify {new|gate|list} [OBJECT] [-m MODE]'; exit 0 ;;
+  -h|--help|"") usage; exit 0 ;;
 esac
 
-obj=""; mode=""
+if [ "$sub" = run ]; then
+  # A verification's computation used to run wherever the agent ran it, outside the task image and
+  # without a receipt (2026-10-05). It now goes through arh submit like an iteration's.
+  obj="${1:-}"; workflow="${2:-}"
+  [ -n "$obj" ] && [ -n "$workflow" ] || arh_die "usage: arh verify run OBJECT WORKFLOW [-n NAME] [--params FILE] [--resume] [--lint]"
+  shift 2
+  arh_load_project
+  dir="$ARH_VERIFY/$obj"
+  [ -f "$dir/PREDECLARATION.md" ] || arh_die "no verification '$obj' (arh verify new $obj)"
+  case "$(arh_abspath "$workflow")" in "$(arh_abspath "$dir")"/*) ;; *) arh_die "the workflow must be under ${dir#"$ARH_ROOT"/}/" ;; esac
+  exec "$ARH_HOME/bin/arh-submit" "$workflow" "$@"
+fi
+
+obj=""; mode=""; of=""; without=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -m|--mode) mode="$2"; shift 2 ;;
+    --of) of="$2"; shift 2 ;;
+    --without-run) without="$2"; shift 2 ;;
     *) obj="$1"; shift ;;
   esac
 done
+case "$of" in *[!0-9]*) arh_die "--of takes an iteration number" ;; esac
 arh_load_project
 mkdir -p "$ARH_VERIFY"
 
@@ -33,6 +61,10 @@ case "$sub" in
     sed -e "s|<object>|$obj|g" -e "s|{{DATE}}|$(arh_today)|g" \
         "$ARH_HOME/templates/verification/PREDECLARATION.md" > "$dir/PREDECLARATION.md"
     [ -n "$mode" ] && printf '\n<!-- mode declared at creation: %s -->\n' "$mode" >> "$dir/PREDECLARATION.md"
+    if [ -n "$of" ]; then
+      [ -d "$ARH_ITERS/iteration$of" ] || arh_die "no iteration $of"
+      printf '{\n  "object": "%s",\n  "of": %s,\n  "mode": "%s",\n  "created": "%s"\n}\n' "$obj" "$of" "$mode" "$(arh_now)" > "$dir/VERIFY.json"
+    fi
     printf 'wrote %s\n\n' "$dir/PREDECLARATION.md"
     printf 'Complete it, then:  arh verify gate %s\n' "$obj"
     printf 'A verification that picks its analytic variant after seeing the answer\n'
@@ -73,10 +105,26 @@ case "$sub" in
       fails=$((fails+1))
     fi
 
+    if imports=$(python3 "$ARH_HOME/lib/imports.py" freeze "$ARH_ROOT" "$pre" 2>&1); then :
+    else
+      while IFS= read -r line; do arh_fail "$line"; done <<< "$imports"; fails=$((fails+1)); imports=""
+    fi
+
     [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s). Nothing was frozen.\n' "$fails" >&2; exit 1; }
-    arh_sha256 "$pre" > "$dir/PREDECLARATION.sha256"
-    printf '%s\n' "$(arh_now)" >> "$dir/PREDECLARATION.sha256"
+    [ ! -e "$dir/PREDECLARATION.sha256" ] || arh_die "already frozen; a changed verification is a new object"
+    ( set -C; { arh_sha256 "$pre"; arh_now; [ -z "$imports" ] || printf '%s\n' "$imports"; } > "$dir/PREDECLARATION.sha256" ) \
+      || arh_die "freeze already exists"
     printf '\ngate PASSED. Frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
+    ;;
+
+  conclude)
+    [ -n "$obj" ] || arh_die "which object? arh verify conclude <name>"
+    dir="$ARH_VERIFY/$obj"
+    [ -f "$dir/PREDECLARATION.md" ] || arh_die "no verification '$obj'"
+    [ ! -e "$dir/CONCLUDED.json" ] || arh_die "already concluded; a further check is a new verification"
+    arh_guard_path "$dir/CONCLUDED.json"
+    exec python3 "$ARH_HOME/lib/verification.py" conclude "$ARH_ROOT" "$dir" "$of" "$without" "$(arh_agent_name)" \
+      "$ARH_HOME/templates/verification/RESULT.md"
     ;;
 
   list)
@@ -88,11 +136,14 @@ case "$sub" in
         [ "$(head -1 "$d/PREDECLARATION.sha256")" = "$(arh_sha256 "$d/PREDECLARATION.md" 2>/dev/null)" ] \
           && st=frozen || st=ALTERED
       else st=draft; fi
-      [ -f "$d/RESULT.md" ] && res=result || res='-'
-      printf '%-28s %-9s %s\n' "$name" "$st" "$res"
+      if [ -f "$d/CONCLUDED.json" ]; then
+        res=$(sed -n 's/.*"outcome"[ ]*:[ ]*"\([A-Z]*\)".*/concluded: \1/p' "$d/CONCLUDED.json" | head -1)
+      elif [ -f "$d/RESULT.md" ]; then res=result; else res='-'; fi
+      of=$(cat "$d/VERIFY.json" "$d/CONCLUDED.json" 2>/dev/null | sed -n 's/.*"of"[ ]*:[ ]*\([0-9][0-9]*\).*/of iteration \1/p' | head -1 || true)
+      printf '%-28s %-9s %-24s %s\n' "$name" "$st" "${res:--}" "$of"
     done
     [ "$found" = 0 ] && printf '(no verifications yet — arh verify new <object>)\n'
     exit 0
     ;;
-  *) arh_die "unknown: $sub" ;;
+  *) usage >&2; arh_die "unknown: $sub" ;;
 esac

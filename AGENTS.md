@@ -56,8 +56,10 @@ To re-examine a result an iteration already produced, use the verification
 track instead of silently revising the original:
 
 ```bash
-arh verify new <object> -m re-implementation
+arh verify new <object> -m re-implementation --of N
 arh verify gate <object>
+arh verify run <object> verification/<object>/scripts/check.nf   # pinned image, run receipt
+arh verify conclude <object>       # RESULT.md with one OUTCOME line, checked against the receipts
 ```
 
 ## Confirming on held-out data: freeze, then unseal
@@ -128,6 +130,18 @@ workflow {
   the task image, locks them in `.arh/NAME-explicit.lock` and prints the prefix to
   call from a process (`<prefix>/bin/python`, `<prefix>/bin/Rscript`). A different
   package set is a new NAME. Do not build environments by hand.
+- GPUs: give the process `label 'gpu'` (or `process_gpu`), or an `accelerator N`
+  directive. It runs with `--nv`, and on Slurm goes to the site's `gpu_partition`
+  with `--gres=gpu:N`. Never run GPU work by hand with `sbatch`.
+- A second tool image: declare `image_<name>` and its `_sha256` in `site.md`, and
+  give the process `label 'image_<name>'`. It runs in that image with the image's
+  own `PATH`; the receipt and `trace.tsv` record which image each task used.
+- Code from another iteration's `scripts/`: declare it under `imports =` in the
+  pre-declaration's `arh-config` block. Its hash is frozen with the plan, and
+  `arh submit` refuses a run in which it changed.
+- Work that truly cannot go through `arh submit` is recorded at once:
+  `arh note -n N --job JOBID 'what ran, where its output is'`. Without a note,
+  nothing in the study says the work exists.
 
 ## Rules that are not negotiable
 
@@ -225,6 +239,9 @@ notices, and it ends as soon as its reply ends.
   was spent. The reset time it prints is an upper bound, not a schedule: run the
   same command again after a bounded wait (for example 30 minutes) instead of
   sleeping until then.
+- `arh ask`, `arh delegate` and `arh evoke` refuse to send a request that carries
+  something shaped like a credential. Remove it from the file; never paste keys or
+  tokens into a pre-declaration, report, task or note.
 - `arh ask` exit 77: the provider refused the content. No round was spent, and
   waiting will not help. Any `verifier_fallback` was already tried; if none gave a
   review, record the refusal as what blocks the iteration.

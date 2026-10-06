@@ -13,9 +13,52 @@ import shlex
 import sys
 import tempfile
 
+import re
+
 import freeze
+import imports
 from locks import Held, acquire, release
 from project import config, guard
+
+GPU_LABELS = ('gpu', 'process_gpu')
+# Groovy, evaluated per task in the generated config: does this task want a GPU?
+WANTS_GPU = ("((task.label ?: []).any { it in ['" + "', '".join(GPU_LABELS) + "'] } || task.accelerator)")
+
+
+def literal(value):
+    return json.dumps(str(value)).replace('$', '\\$')
+
+
+def slurm_settings(site, gpu):
+    """Generated config lines for Slurm. A GPU task goes to the GPU partition with a generic-resource
+    request sized by its accelerator directive; the GPU type or a constraint keeps it off cards too
+    small for it. Other tasks keep the ordinary partition."""
+    lines = [f'process.{directive} = {literal(site[key])}'
+             for key, directive in [('slurm_time', 'time'), ('slurm_mem', 'memory')] if site.get(key)]
+    if site.get('slurm_cpus'):
+        lines.append('process.cpus = ' + str(int(site['slurm_cpus'])))
+    cluster_options = site.get('slurm_extra', '')
+    if site.get('slurm_account'):
+        cluster_options += ' --account=' + shlex.quote(site['slurm_account'])
+    cluster_options = cluster_options.strip()
+    partition = site.get('slurm_partition')
+    if not gpu:
+        if partition:
+            lines.append(f'process.queue = {literal(partition)}')
+        if cluster_options:
+            lines.append('process.clusterOptions = ' + literal(cluster_options))
+        return lines
+    gpu_part = site.get('gpu_partition') or partition
+    gres = 'gpu:' + (site['gpu_type'] + ':' if site.get('gpu_type') else '')
+    extra = ((' --constraint=' + shlex.quote(site['gpu_constraint'])) if site.get('gpu_constraint') else '') \
+        + ((' ' + site['gpu_extra']) if site.get('gpu_extra') else '')
+    if gpu_part:
+        lines.append(f"process.queue = {{ {WANTS_GPU} ? {literal(gpu_part)} : "
+                     f"{literal(partition) if partition else 'null'} }}")
+    lines.append(f"process.clusterOptions = {{ {literal(cluster_options)} + ({WANTS_GPU} ? "
+                 f"' --gres={gres}' + (task.accelerator ? (task.accelerator.request ?: 1) : 1)"
+                 f" + {literal(extra)} : '') }}")
+    return lines
 
 
 def sha(path):
@@ -55,14 +98,29 @@ def run():
     workflow = args.workflow.resolve()
     if not workflow.is_file() or root not in workflow.parents:
         parser.error('workflow must be a local file inside the study')
+    # The owner is the claimed iteration the workflow sits in, or a verification object: a
+    # verification's computation gets the same pinned image and receipt as an iteration's.
+    verify_base = (root / project.get('verification_dir', 'verification')).resolve()
     iteration = next((p for p in workflow.parents if (p / 'CLAIM.json').is_file()), None)
+    kind, plan = 'iteration', None
+    if iteration is None and verify_base in workflow.parents:
+        candidate = verify_base / workflow.relative_to(verify_base).parts[0]
+        if (candidate / 'PREDECLARATION.md').is_file():
+            iteration, kind = candidate, 'verification'
     if iteration is None or root not in iteration.parents:
-        parser.error('workflow must belong to a claimed iteration')
+        parser.error('workflow must belong to a claimed iteration or a verification (arh verify new)')
+    plan = iteration / ('README.md' if kind == 'iteration' else 'PREDECLARATION.md')
     if args.lint:
         return lint(workflow, root, site, parser)
     predeclared = iteration / 'PREDECLARATION.sha256'
-    if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(iteration / 'README.md'):
-        parser.error('iteration must have an unchanged frozen pre-declaration')
+    if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(plan):
+        parser.error(f'{kind} must have an unchanged frozen pre-declaration')
+    import_sha256, problems = imports.check(root, iteration, plan)
+    for problem in problems:
+        if problem.startswith('warn:'):
+            print('arh: ' + problem[5:], file=sys.stderr)
+        else:
+            parser.error(problem + '. A changed dependency is a new iteration.')
     # A confirmation applies frozen decisions; one whose decisions changed under it is not that run.
     frozen_state, freeze_sha, changed = freeze.state(root, iteration)
     if frozen_state == 'changed':
@@ -106,7 +164,40 @@ def run():
     logs = guard((args.logdir or iteration / 'logs/nextflow') / name, root, protected)
     # Custom log locations must also respect iteration ownership.
     if iteration not in logs.parents:
-        parser.error('logs must stay under the producing iteration')
+        parser.error(f'logs must stay under the producing {kind}')
+    # What the workflow asks for: GPUs (label 'gpu' or 'process_gpu', or an accelerator directive) and
+    # declared images (label 'image_<name>'). The workflow and every .nf file beside it are read.
+    scripts_dir = iteration / 'scripts'
+    nf_text = '\n'.join(t.read_text(errors='replace') for t in [workflow] + (
+        sorted(scripts_dir.rglob('*.nf')) if scripts_dir.is_dir() else []) if t.is_file())
+    labels = set(re.findall(r'\blabel\s*\(?\s*[\'"]([A-Za-z0-9_]+)[\'"]', nf_text))
+    gpu = bool(labels & set(GPU_LABELS)) or bool(re.search(r'^\s*accelerator\b', nf_text, re.M))
+    images = {}
+    for label in sorted(l for l in labels if l.startswith('image_')):
+        declared = site.get(label)
+        if not declared:
+            parser.error(f"process label '{label}' needs {label} = <image.sif> and {label}_sha256 in site.md")
+        if '://' in declared:
+            parser.error(f'{label} must be a local image file with {label}_sha256; remote references are not '
+                         'pinned for workflow tasks')
+        path = Path(declared) if Path(declared).is_absolute() else root / site.get('image_dir', '.arh/images') / declared
+        if not path.is_file() or sha(path) != site.get(label + '_sha256'):
+            parser.error(f'{label}: image missing or its digest does not match {label}_sha256')
+        env_path = site.get(label + '_path')
+        if not env_path:          # the image's own PATH; the runtime prefix's would hide its tools
+            try:
+                probe = subprocess.run(['singularity', 'exec', '--cleanenv', '--containall', str(path), '/bin/sh', '-c',
+                                        'printf %s "$PATH"'], capture_output=True, text=True, timeout=300)
+            except (OSError, subprocess.TimeoutExpired):
+                probe = None
+            env_path = probe.stdout.strip() if probe else ''
+            if not probe or probe.returncode or not env_path:
+                parser.error(f'could not read the PATH inside {path}; declare {label}_path in site.md')
+        # The image's tools come first; the task environment's bin/ follows, because Nextflow needs `ps`
+        # in every container to collect task metrics and many tool images do not ship it.
+        if site.get('runtime_prefix'):
+            env_path += ':' + site['runtime_prefix'] + '/bin'
+        images[label] = dict(image=str(path), sha256=sha(path), path=env_path)
     engine.mkdir(parents=True, exist_ok=True)
     logs.mkdir(parents=True, exist_ok=True)
     lock = engine / '.launch-lock'
@@ -131,8 +222,6 @@ def run():
         if reports not in ('html', 'gzip', 'none'):
             parser.error('nextflow_reports must be html, gzip or none')
         runtime = 'singularity'
-        def literal(value):
-            return json.dumps(str(value)).replace('$', '\\$')
         if not shutil.which('singularity'):
             parser.error('Singularity must be available on the host')
         if executor == 'slurm':
@@ -163,23 +252,31 @@ def run():
         options = ' '.join('--bind ' + shlex.quote(bind) for bind in binds)
         if task_prefix:
             options += ' --env ' + shlex.quote('PATH=' + task_prefix + '/bin:/usr/local/bin:/usr/bin:/bin')
+        def has(label):
+            return f'(task.label ?: []).contains({literal(label)})'
+        container = literal(image)
+        for label, spec in sorted(images.items(), reverse=True):
+            container = f"({has(label)} ? {literal(spec['image'])} : {container})"
+        container_options = "''"
+        for label, spec in sorted(images.items(), reverse=True):
+            container_options = f"({has(label)} ? {literal('--env PATH=' + spec['path'])} : {container_options})"
+        if gpu:
+            container_options += f" + ({WANTS_GPU} ? ' --nv' : '')"
         lines = [f'process.executor = {literal(executor)}', 'process.errorStrategy = "terminate"',
                  'process.maxRetries = 0', 'tower.enabled = false', 'wave.enabled = false',
-                 f'process.container = {literal(image)}', 'singularity.enabled = true',
+                 f'process.container = {{ {container} }}' if images else f'process.container = {literal(image)}',
+                 'singularity.enabled = true',
                  f"singularity.autoMounts = {'false' if sealed and not unsealed else 'true'}",
-                 f'singularity.runOptions = {literal(options)}']
+                 f'singularity.runOptions = {literal(options)}',
+                 # The default fields, plus the image each task actually ran in.
+                 "trace.fields = 'task_id,hash,native_id,name,status,exit,submit,duration,realtime,"
+                 "%cpu,peak_rss,peak_vmem,rchar,wchar,container'"]
+        if images or gpu:
+            lines.append(f'process.containerOptions = {{ {container_options} }}')
         if executor == 'slurm':
-            for key, directive in [('slurm_partition', 'queue'), ('slurm_time', 'time'),
-                                   ('slurm_mem', 'memory')]:
-                if site.get(key):
-                    lines.append(f'process.{directive} = {literal(site[key])}')
-            if site.get('slurm_cpus'):
-                lines.append('process.cpus = ' + str(int(site['slurm_cpus'])))
-            cluster_options = site.get('slurm_extra', '')
-            if site.get('slurm_account'):
-                cluster_options += ' --account=' + shlex.quote(site['slurm_account'])
-            if cluster_options.strip():
-                lines.append('process.clusterOptions = ' + literal(cluster_options.strip()))
+            lines += slurm_settings(site, gpu)
+        elif gpu and executor == 'pbs':
+            print('arh: GPU tasks get --nv, but no PBS GPU request is generated; set it in the workflow', file=sys.stderr)
         generated.write_text('\n'.join(lines) + '\n')
         configs = [str(site_nf)] if site_nf.is_file() else []
         configs.append(str(generated))
@@ -205,16 +302,30 @@ def run():
         scripts = iteration / 'scripts'
         script_sha256 = ({str(p.relative_to(root)): sha(p) for p in sorted(scripts.rglob('*'))
                           if p.is_file() and '__pycache__' not in p.parts} if scripts.is_dir() else {})
+        # Other iterations' scripts the workflow or its scripts name: hashed whether or not declared.
+        referenced = imports.referenced(root, iteration, [workflow] + [root / p for p in script_sha256],
+                                        project.get('iterations_dir', 'iterations'),
+                                        project.get('verification_dir', 'verification'))
+        undeclared = sorted(set(referenced) - set(import_sha256))
+        if undeclared:
+            print('arh: the scripts name code from other iterations that the pre-declaration does not declare '
+                  'as imports (hashed in run.json as referenced_sha256): ' + ', '.join(undeclared[:5])
+                  + (' …' if len(undeclared) > 5 else ''), file=sys.stderr)
         record = dict(engine='nextflow', version=version, executable_sha256=expected, environment_prefix=prefix,
+                      owner=dict(kind=kind, path=str(iteration.relative_to(root))),
                       workflow=str(workflow.relative_to(root)), workflow_sha256=sha(workflow),
-                      script_sha256=script_sha256,
-                      predeclaration_sha256=sha(iteration / 'README.md'),
+                      script_sha256=script_sha256, import_sha256=import_sha256, referenced_sha256=referenced,
+                      predeclaration_sha256=sha(plan),
                       params_sha256=sha(args.params) if args.params else None,
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
                       environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
                       resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat())
+        if images:
+            record['images'] = images
+        if gpu:
+            record['gpu'] = {k: site.get(k) or None for k in ('gpu_partition', 'gpu_type', 'gpu_constraint', 'gpu_extra')}
         if frozen_state != 'none':
             record['freeze_sha256'] = freeze_sha
         if sealed:

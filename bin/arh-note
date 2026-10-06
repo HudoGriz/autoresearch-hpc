@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Record work that ran outside `arh submit`, so the record says it exists and has no receipt.
+#
+#   arh note -n N [--job ID] TEXT    append a note to iterationN/metadata/notes.jsonl
+#   arh note list [-n N]             show the notes, newest last
+#
+# GPU arms run by sbatch, a recount on a login node, a job chain a session started before it hit a
+# usage limit: none of these has a run receipt, and a later session could find them only by reading
+# the earlier session's transcript. A note puts them in the study: `arh status` counts them, and
+# `arh gate results` names them.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; }
+sub=add
+case "${1-}" in
+  -h|--help|"") usage; exit 0 ;;
+  list) sub=list; shift ;;
+esac
+n=""; job=""; text=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n|--iteration) n="${2-}"; shift 2 ;;
+    --job) job="${2-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) text+=("$1"); shift ;;
+  esac
+done
+arh_load_project
+case "$n" in *[!0-9]*) arh_die "iteration must be numeric" ;; esac
+
+if [ "$sub" = list ]; then
+  exec python3 - "$ARH_ITERS" "$n" <<'PY'
+import json, sys
+from pathlib import Path
+base, n = Path(sys.argv[1]), sys.argv[2]
+dirs = [base / f'iteration{n}'] if n else sorted((p for p in base.glob('iteration*') if p.name[9:].isdigit()),
+                                                 key=lambda p: int(p.name[9:]))
+shown = 0
+for d in dirs:
+    notes = d / 'metadata/notes.jsonl'
+    for line in (notes.read_text().splitlines() if notes.is_file() else []):
+        try:
+            note = json.loads(line)
+        except ValueError:
+            continue
+        shown += 1
+        job = f" job {note['job']}" if note.get('job') else ''
+        print(f"{d.name[9:]:<5} {note.get('time', '?')}  {note.get('agent', '?')}{job}: {note.get('text', '')}")
+if not shown:
+    print('(no notes — arh note -n N TEXT records work that ran outside arh submit)')
+PY
+fi
+
+[ -n "$n" ] || arh_die "which iteration? arh note -n N [--job ID] TEXT"
+dir="$ARH_ITERS/iteration$n"
+[ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+[ ${#text[@]} -gt 0 ] || arh_die "say what ran and where its output is: arh note -n $n --job 967736 'LAYA folds by sbatch array; logs in logs/laya/'"
+case "$job" in *[!A-Za-z0-9_.:+-]*) arh_die "--job takes a scheduler job id" ;; esac
+arh_guard_path "$dir/metadata/notes.jsonl"
+mkdir -p "$dir/metadata"
+python3 - "$dir/metadata/notes.jsonl" "$(arh_now)" "$(arh_agent_name)" "$(uname -n)" "$job" "${text[*]}" <<'PY'
+import json, sys
+path, time, agent, host, job, text = sys.argv[1:7]
+with open(path, 'a') as handle:
+    handle.write(json.dumps(dict(time=time, agent=agent, host=host, job=job or None, text=text)) + '\n')
+PY
+printf 'noted for iteration %s%s\n' "$n" "${job:+ (job $job)}"

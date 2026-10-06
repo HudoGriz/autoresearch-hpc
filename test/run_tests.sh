@@ -514,6 +514,8 @@ assert i['arms']==1, i['arms']
 check "arh wait returns at once when nothing runs" 0 arh wait -n 1 --timeout 5
 check "arh freeze list runs"                0 arh freeze list
 check "arh freeze needs the files to freeze" 1 arh freeze -n 1
+check "arh note list runs"                  0 arh note list
+check "arh note needs text"                1 arh note -n 1
 check "arh env list runs"                  0 arh env list
 check "arh env rejects a reserved name"    1 arh env create nextflow-host zlib
 

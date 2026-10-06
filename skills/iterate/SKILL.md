@@ -55,6 +55,10 @@ A confirmation on held-out data (`sealed_inputs`) first freezes every artefact
 carrying a decision: `arh freeze -n N MODEL THRESHOLDS SCRIPTS...`. Only then can
 its runs read the sealed paths, and each read is recorded (`arh freeze list`).
 
+GPU work gets `label 'gpu'`, a second tool image `label 'image_<name>'`, and code
+from another iteration is declared under `imports =` in the pre-declaration. Work
+that cannot go through `arh submit` is recorded at once with `arh note`.
+
 Check acceptance criteria before interpretation. A failed criterion is this
 iteration's result: report and conclude it, then pre-declare the handling in a new
 iteration. It is not a reason to stop.

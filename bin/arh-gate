@@ -106,10 +106,18 @@ case "$sub" in
 
     check_rules "$readme" predeclaration
 
+    # Code imported from other iterations is frozen with the plan that relies on it.
+    if imports=$(python3 "$ARH_HOME/lib/imports.py" freeze "$ARH_ROOT" "$readme" 2>&1); then
+      [ -z "$imports" ] || arh_ok "imports: $(printf '%s\n' "$imports" | grep -c .) file(s) hashed with the plan"
+    else
+      while IFS= read -r line; do arh_fail "$line"; done <<< "$imports"; fails=$((fails+1)); imports=""
+    fi
+
     if [ "$fails" -gt 0 ]; then
       printf '\ngate FAILED (%s). Nothing was frozen; fix and re-run.\n' "$fails" >&2; exit 1
     fi
-    ( set -C; { arh_sha256 "$readme"; arh_now; } > "$dir/PREDECLARATION.sha256" ) || arh_die "freeze already exists"
+    ( set -C; { arh_sha256 "$readme"; arh_now; [ -z "$imports" ] || printf '%s\n' "$imports"; } > "$dir/PREDECLARATION.sha256" ) \
+      || arh_die "freeze already exists"
     printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
     printf 'The README hash is frozen; later edits will fail validation. Corrections go in a new iteration.\n'
     ;;
@@ -144,6 +152,19 @@ case "$sub" in
     if [ -f "$ARH_STATE/unseals.tsv" ]; then
       awk -F'\t' -v n="$n" 'NR>1 && $2==n {print "  read sealed input " $5 " in run " $3 " (" $1 ")"}' "$ARH_STATE/unseals.tsv"
     fi
+
+    # Work that ran outside arh submit has no receipt; say so instead of letting the record imply one.
+    receipts=$(find "$dir/logs" -path '*/attempt-*/run.json' 2>/dev/null | grep -c . || true)
+    if [ -n "$(find "$dir/results" -type f ! -path '*/report/*' 2>/dev/null | head -1)" ] && [ "$receipts" = 0 ]; then
+      printf '  WARN results exist but no arh submit run receipt does: what produced them is not on record\n'
+    fi
+    if [ -s "$dir/metadata/notes.jsonl" ]; then
+      printf '  WARN %s note(s) of work outside arh submit, without run receipts (arh note list -n %s)\n' \
+        "$(grep -c . "$dir/metadata/notes.jsonl")" "$n"
+    fi
+    while IFS=$'\t' read -r vname _ vstate voutcome; do
+      [ -n "$vname" ] && printf '  verification %s: %s (%s)\n' "$vname" "$voutcome" "$vstate"
+    done < <(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY" "$n")
 
     report="$dir/results/report/iteration${n}_report.md"
     if [ -f "$report" ]; then arh_ok "report present"; check_rules "$report" report

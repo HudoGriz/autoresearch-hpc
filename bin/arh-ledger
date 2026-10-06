@@ -31,6 +31,12 @@ build_table() {
     arh_crosschecks "$dir" | grep -q . && xc=yes || xc='—'
     printf '| %s | %s | %s | %s | %s | %s |\n' "$d" "${agent:-—}" "$pre" "$res" "$xc" "${title:-—}"
   done
+  # Verifications sit beside the iterations they check (arh verify conclude records the outcome).
+  vrows=$(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY")
+  if [ -n "$vrows" ]; then
+    printf '\n| Verification | Of iteration | Pre-declaration | Outcome |\n|---|---|---|---|\n'
+    printf '%s\n' "$vrows" | awk -F'\t' '{ printf "| %s | %s | %s | %s |\n", $1, $2, ($3 == "ALTERED" ? "**ALTERED**" : $3), $4 }'
+  fi
   printf '\n<!-- arh:status:end -->\n'
 }
 

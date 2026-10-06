@@ -70,6 +70,9 @@ require_foreign_family = true
 # deny for a blinded study, where a producer must not look published results up:
 # harness/install.sh then turns each harness's web tools off, and arh doctor checks them.
 web_access = allow
+# arh ask, arh delegate and arh evoke refuse to send a plan, report or task that carries something
+# shaped like a credential (an API key, a token, a private key). off only for a recorded reason.
+secret_scan = on
 # Tried in order when the verifier cannot review: it refuses the content (arh ask exit 77) or is
 # out of quota (exit 75). Each needs a concrete model family other than the producer's, e.g.:
 # verifier_fallback = gemini

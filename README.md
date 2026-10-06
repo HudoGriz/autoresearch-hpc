@@ -125,7 +125,7 @@ Phase 2 runs on infrastructure you already know:
 Nextflow controller  →  Slurm / PBS / local  →  Singularity / Apptainer tasks
 ```
 
-The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration, not inside the workflow.
+The controller stays on the host so it can see the site's scheduler. Scientific dependencies run in the declared task image; shared paths and site policy live in configuration, not inside the workflow. GPU processes (`label 'gpu'`), processes in a second pinned image (`label 'image_<name>'`) and verifications (`arh verify run`) take the same path and get the same receipt; work that cannot is recorded with `arh note`.
 
 ## What gets recorded
 
@@ -160,7 +160,7 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 |---|---|---|
 | **[Iterate](skills/iterate/SKILL.md)** | Run one complete research iteration | `claim` → `new` → `gate predeclare` → `submit/run` → `ask` → `gate results` → `ledger` |
 | **[Cross-check](skills/cross-check/SKILL.md)** | Critique an iteration from a defined role | `arh ask --role ...` |
-| **[Verify](skills/verify/SKILL.md)** | Re-examine an existing result without rewriting history | `arh verify ...` |
+| **[Verify](skills/verify/SKILL.md)** | Re-examine an existing result without rewriting history | `arh verify new/gate/run/conclude` |
 | **[Arms](skills/arms/SKILL.md)** | Track parallel sub-analyses with explicit fates | `arh arm ...` |
 | **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |

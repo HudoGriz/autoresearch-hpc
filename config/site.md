@@ -45,6 +45,21 @@ must still use the configured digest-pinned runtime image.
 Declare auxiliary images as `image_<name> = <path or URI>`, then refer to them
 by `<name>`. A bare name resolves under `image_dir`.
 
+A workflow process runs in a declared image instead of the task image when it
+carries the label `image_<name>` (`label 'image_vg'`). The image must be a local
+file with `image_<name>_sha256`; `arh submit` checks the digest, gives the
+process the image's own `PATH` (read from the image, or `image_<name>_path`), and
+records the image and digest in the run receipt and in `trace.tsv`.
+
+## GPUs
+
+A process labelled `gpu` (or nf-core's `process_gpu`), or one with an
+`accelerator` directive, runs with `--nv`. On Slurm it is sent to
+`gpu_partition` (default: `slurm_partition`) with `--gres=gpu[:gpu_type]:N`, N
+being the accelerator count (default 1). `gpu_constraint` becomes
+`--constraint`, and `gpu_extra` is appended as is. Use the type or the
+constraint to keep a task off cards with too little memory for it.
+
 ## Shared knowledge
 
 `site_gotchas` names a Markdown file of pitfalls that belong to this machine
@@ -77,6 +92,12 @@ slurm_time        = 01:00:00
 slurm_cpus        = 1
 slurm_mem         = 4G
 slurm_extra       =
+
+# --- GPUs (processes labelled gpu/process_gpu, or with accelerator) -----
+gpu_partition     =
+gpu_type          =
+gpu_constraint    =
+gpu_extra         =
 
 # --- PBS -----------------------------------------------------------------
 pbs_queue         =

@@ -35,8 +35,9 @@ if [ "$json" = 1 ]; then
     if [ ! -f "$dir/FREEZE.json" ]; then frz=none
     elif python3 "$ARH_HOME/lib/freeze.py" check "$ARH_ROOT" "$dir" >/dev/null 2>&1; then frz=valid; else frz=changed; fi
     [ "$first" = 1 ] && first=0 || printf ','
-    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s", "freeze": "%s"}' \
-      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")" "$frz"
+    notes=$(grep -c . "$dir/metadata/notes.jsonl" 2>/dev/null || true)
+    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s", "freeze": "%s", "notes": %s}' \
+      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")" "$frz" "${notes:-0}"
   done
   printf '\n  ]\n}\n'
   exit 0
@@ -51,7 +52,7 @@ printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
-found=0; changed=""
+found=0; changed=""; noted=""
 iters=$(find "$ARH_ITERS" -maxdepth 1 -type d -name 'iteration*' 2>/dev/null \
         | sed -n 's|.*/iteration\([0-9]\{1,\}\)$|\1|p' | sort -n)
 for d in $iters; do
@@ -73,9 +74,16 @@ for d in $iters; do
 
   printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
   [ "$(arh_harness_config_state "$dir")" != changed ] || changed="$changed $d"
+  [ ! -s "$dir/metadata/notes.jsonl" ] || noted="$noted $d($(grep -c . "$dir/metadata/notes.jsonl"))"
 done
 [ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
 [ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: a new review of\n     them counts only with arh ask --terms-changed REASON.\n' "$changed"
+[ -z "$noted" ] || printf '\nwork outside arh submit, without run receipts (arh note list):%s\n' "$noted"
+vrows=$(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY")
+if [ -n "$vrows" ]; then
+  printf '\nverifications (arh verify list):\n'
+  printf '%s\n' "$vrows" | awk -F'\t' '{ printf "  %-28s of %-4s %-8s %s\n", $1, $2, $3, $4 }'
+fi
 if [ -n "$(arh_config_get "$ARH_PROJ" sealed_inputs "")" ] || compgen -G "$ARH_ITERS/iteration*/FREEZE.json" >/dev/null; then
   printf '\nfreezes and sealed inputs (arh freeze list):\n'
   python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" | sed 's/^/  /'
