@@ -73,6 +73,18 @@ Singularity with two producer accounts and two verifier families.
   modification time, and records them where run receipts cite them; `arh submit` warns when a
   declared input failed. On the field study's data it flags the truncated CRAM that cost a truth
   set and passes the re-run that replaced it.
+- **Closing the review loop** (field feedback #12, #16). Reviewers are asked to number their
+  findings (`F1:`, `F2:` ...). `arh gate results` lists every numbered finding of every
+  eligible review and whether `REVIEW_RESPONSE.md` answers it with a decision (accepted,
+  rejected, fixed, deferred, disputed), per review section when there are several, and fails
+  while one is unanswered (`review_response = require | warn | off`; reviews without numbered
+  findings are not checked). `arh gate results -n N --skeleton` prints a response to start from.
+- **Reported numbers traced to results files.** The results gate lists numbers in the report
+  (with a decimal point or a percent sign) that match no file under `results/` at the precision
+  written, as is or as a percentage of a fraction; numbers from the pre-declaration, version
+  strings and the Cross-check section are skipped (`report_numbers = warn | require | off`). On
+  eleven reports of the field study it flagged 0 to 22 of 65 to 178 numbers each, mostly values
+  computed in the prose or quoted from other iterations.
 - **Credential scan before anything leaves the site.** `arh ask`, `arh delegate` and
   `arh evoke` refuse to send a plan, report, task or note carrying something shaped like a
   credential (cloud, GitHub, model-provider and chat tokens, private keys, assigned secrets);

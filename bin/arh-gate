@@ -5,12 +5,14 @@ set -euo pipefail
 . "${ARH_HOME:?}/lib/common.sh"
 
 sub="${1:-}"; shift || true
-case "$sub" in -h|--help|"") echo 'usage: arh gate {predeclare|results|rules} [-n N | FILE]'; exit 0 ;; esac
+case "$sub" in -h|--help|"") echo 'usage: arh gate {predeclare|results|rules} [-n N | FILE]
+arh gate results -n N --skeleton: print a REVIEW_RESPONSE.md listing every numbered review finding'; exit 0 ;; esac
 
-n=""; file=""
+n=""; file=""; skeleton=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -n|--iteration) n="$2"; shift 2 ;;
+    --skeleton) skeleton=1; shift ;;
     *) file="$1"; shift ;;
   esac
 done
@@ -148,6 +150,8 @@ case "$sub" in
   results)
     [ -n "$n" ] || arh_die "arh gate results -n N"
     dir="$ARH_ITERS/iteration$n"
+    # A starting point for REVIEW_RESPONSE.md: every numbered finding of every eligible review.
+    if [ "$skeleton" = 1 ]; then exec python3 "$ARH_HOME/lib/findings.py" skeleton "$dir"; fi
     readme="$dir/README.md"
     frozen="$dir/PREDECLARATION.sha256"
     printf 'gate: results, iteration %s\n' "$n"
@@ -191,7 +195,21 @@ case "$sub" in
     done < <(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY" "$n")
 
     report="$dir/results/report/iteration${n}_report.md"
-    if [ -f "$report" ]; then arh_ok "report present"; check_rules "$report" report
+    if [ -f "$report" ]; then
+      arh_ok "report present"; check_rules "$report" report
+      # Numbers the report states that no results file holds: transcription errors, or values
+      # computed in the prose that belong in a results file (report_numbers = warn | require | off).
+      numbers=$(arh_config_get "$ARH_PROJ" report_numbers warn)
+      if [ "$numbers" != off ]; then
+        unmatched=$(python3 "$ARH_HOME/lib/report_numbers.py" check "$dir" "$report")
+        if [ -n "$unmatched" ]; then
+          count=$(printf '%s\n' "$unmatched" | grep -c .)
+          if [ "$numbers" = require ]; then arh_fail "$count number(s) in the report match no file under results/"; fails=$((fails+1))
+          else printf '  WARN %s number(s) in the report match no file under results/ (check them, or write them to one):\n' "$count"; fi
+          printf '%s\n' "$unmatched" | head -12 | awk -F'\t' '{ printf "       line %s: %s   %s\n", $1, $2, $3 }'
+          [ "$count" -le 12 ] || printf '       … and %s more\n' "$((count - 12))"
+        fi
+      fi
     else arh_fail "no report at ${report#"$ARH_ROOT"/}"; fails=$((fails+1)); fi
 
     if [ "$(arh_config_get "$ARH_PROJ" require_crosscheck true)" = true ]; then
@@ -199,8 +217,9 @@ case "$sub" in
         # Not "foreign": a project may accept same-family review, and describe says which ones were.
         arh_ok "eligible review(s); verdicts are evidence, not endorsement"
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"
-        [ -f "$dir/REVIEW_RESPONSE.md" ] \
-          || printf '  WARN no REVIEW_RESPONSE.md: record what was done about each finding (protocol 6.5)\n'
+        # Protocol 6.5: every numbered finding is answered in REVIEW_RESPONSE.md (review_response).
+        python3 "$ARH_HOME/lib/findings.py" check "$dir" "$(arh_config_get "$ARH_PROJ" review_response require)" \
+          || fails=$((fails+1))
       else
         arh_fail "no eligible cross-check; inspect execution metadata and artifact hashes"
         python3 "$ARH_HOME/lib/harness.py" describe "$dir"

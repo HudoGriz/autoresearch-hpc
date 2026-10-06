@@ -30,6 +30,20 @@ Markdown file with an `arh-config` block declaring how it is enforced. Rules are
 conclusion boundaries — they constrain what an iteration may claim, not what it
 may compute.
 
+## Closing the review
+
+`review_response` decides what `arh gate results` does when a review's numbered
+findings (`F1:`, `F2:` ...) are not answered in `REVIEW_RESPONSE.md` with a
+decision (accepted, rejected, fixed, deferred, disputed): `require` fails the
+gate, `warn` reports them, `off` skips the check. Reviews that number no findings
+are not checked. `arh gate results -n N --skeleton` prints a response to start
+from.
+
+`report_numbers` decides what the gate does with numbers in the report (with a
+decimal point or a percent sign) that match no file under `results/` at the
+precision written: `warn` lists them, `require` fails, `off` skips. Numbers that
+appear in the pre-declaration and the Cross-check section are not checked.
+
 ## Pre-declaration
 
 `required_sections` is a comma-separated list of headings an iteration README
@@ -49,4 +63,6 @@ required_sections = Question, Estimand, Instrument, Acceptance criteria, Negativ
 require_crosscheck = true
 # arh status flags an open iteration as STALE after this many hours without arh activity.
 lease_stale_hours = 24
+review_response   = require
+report_numbers    = warn
 ```

@@ -130,7 +130,9 @@ or scientific truth.
 object being reproduced is a set.
 
 6.5 A cross-check verdict is evidence, not a ruling. Findings MUST be evaluated
-on their merits and rejected objections MUST be recorded with reasons.
+on their merits and rejected objections MUST be recorded with reasons. An
+implementation SHOULD identify each finding and check that the record answers
+it before a result is accepted.
 
 6.6 A required cross-check MUST have a successful invocation record, exactly one
 recognized verdict, concrete producer/verifier family declarations, and matching
@@ -196,6 +198,9 @@ candidate.
 7.5 Negative-control behaviour MUST be reported.
 
 7.6 A prediction that missed MUST be recorded as such and MUST NOT be revised.
+
+7.7 A number a report states SHOULD be traceable to a results file of the
+iteration, at the precision written.
 
 ## 8. The ledger
 

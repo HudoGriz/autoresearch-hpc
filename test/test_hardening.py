@@ -1269,5 +1269,45 @@ elif args[0] == 'list':
         self.assertIn('smoke ' + hashlib.sha256((it / 'metadata/predeclare-smoke.txt').read_bytes()).hexdigest(), frozen)
 
 
+    # --- closing the review loop (field feedback #12, #16) ----------------------------------------
+
+    def test_each_numbered_finding_must_be_answered(self):
+        # Every review of a field study was QUALIFIED for specific findings, and the results gate
+        # passed with no response file at all (2026-09-12).
+        self.configure("print('VERDICT: QUALIFIED\\n\\nF1: the acceptance criterion was asserted, not checked.\\n"
+                       "- **F2:** the control is over-read.')")
+        self.assertIn('numbered: "F1: ..."', self.call('ask', '-n', '1', '--dry-run').stdout)
+        self.ask()
+        failed = self.gate(good=False).stdout
+        self.assertIn('2 numbered finding(s)', failed)
+        self.assertIn('F2 UNANSWERED: the control is over-read.', failed)
+        skeleton = self.call('gate', 'results', '-n', '1', '--skeleton').stdout
+        self.assertIn('- F1: <accepted', skeleton); self.assertIn('- F2: <accepted', skeleton)
+        response = self.it / 'REVIEW_RESPONSE.md'
+        response.write_text('F1: accepted; the criterion is now computed in it1_02.\n')
+        self.assertIn('answers 1 of 2', self.gate(good=False).stdout)
+        response.write_text(response.read_text() + '\nF2: rejected, because the control is reported as a bound.\n')
+        passed = self.gate().stdout
+        self.assertIn('answers 2 of 2', passed)
+        self.assertIn('F2 answered (rejected)', passed)
+        self.set_config('project.md', review_response='warn')
+        response.unlink()
+        self.assertIn('WARN no REVIEW_RESPONSE.md, and the review(s) list 2', self.gate().stdout)
+
+    def test_report_numbers_must_come_from_results(self):
+        # A reviewer caught mis-transcribed numbers in a report (2026-09-12).
+        (self.it / 'results/metrics.json').write_text('{"f1": 0.76912, "precision": 0.7534, "ci": [0.052, 0.072]}\n')
+        self.report.write_text(self.report.read_text() + '\nF1 0.769, precision 75.3%, gain CI [+0.052, +0.072]; '
+                               'recall 0.786 and Sniffles 2.8.1.\n\n## Cross-check\nSee 0.999 in REVIEW_RESPONSE.md.\n')
+        self.ask()
+        out = self.gate().stdout
+        self.assertIn('1 number(s) in the report match no file under results/', out)
+        self.assertIn('0.786', out)
+        for ok in ('0.769', '75.3%', '0.052', '2.8.1', '0.999'):
+            self.assertNotIn(ok + '   ', out)
+        self.set_config('project.md', report_numbers='require')
+        self.gate(good=False)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

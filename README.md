@@ -117,7 +117,7 @@ flowchart LR
 |---|---|---|---|
 | **1 · Pre-declare** | Claim one question, define the estimand, controls, detection limit and acceptance criteria, then freeze the plan | `arh claim` · `arh new` · `arh gate predeclare` | `CLAIM.json` · `README.md` · `PREDECLARATION.sha256` |
 | **2 · Execute** | Run the declared workflow with pinned scientific tooling on the configured compute backend | `arh env` · `arh submit` · `arh run` · `arh wait` | scripts · workflow metadata · run receipts · logs · results |
-| **3 · Review & record** | Report the declared quantity, cross-check it, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · review response · `PROGRESS.md` |
+| **3 · Review & record** | Report the declared quantity, cross-check it, answer every numbered finding, gate the result and update the project record | `arh ask` · `arh gate results` · `arh ledger` | report · cross-check record · review response · `PROGRESS.md` |
 
 Phase 2 runs on infrastructure you already know:
 

@@ -152,6 +152,8 @@ trap cleanup EXIT
   printf '\n---\n\nWrite your findings as Markdown. Begin with a single line:\n'
   printf 'VERDICT: SOUND | QUALIFIED | UNSOUND\n'
   fi
+  printf '\nAfter the VERDICT line, give each finding on its own line, numbered: "F1: ...", "F2: ...",\n'
+  printf 'so each can be answered by its id. Write "No findings." when there are none.\n'
   printf '\nKeep the response within %s words. Cite specific evidence; do not expand the task.\n' "$(arh_config_get "$ARH_HARN" ask_output_words 500)"
 } > "$prompt"
 # A credential pasted into a plan or report would leave the site with the review request.

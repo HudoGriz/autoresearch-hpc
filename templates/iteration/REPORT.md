@@ -22,7 +22,8 @@ result; it has produced a diagnosis of the pipeline.>
 
 <the estimand, its confidence interval, the multiple-testing correction and the
 detection limit. Report the number you pre-declared, even where another number
-is more attractive.>
+is more attractive. Copy every number from a file under results/; the results
+gate lists numbers that match none.>
 
 ## Was the prediction right?
 
@@ -39,4 +40,4 @@ validated is a candidate, not a finding.>
 bound to this report's sha256 and to every file under results/, so filling it in
 afterwards invalidates the review. Record the verdict and what you did about each
 finding — including rejections, with the reason — in ../../REVIEW_RESPONSE.md at
-the iteration root.>
+the iteration root, answering each numbered finding by its id (F1, F2 ...).>

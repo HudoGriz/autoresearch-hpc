@@ -51,6 +51,12 @@ so every command resolves the project from anywhere.
 A review is bound to the report's sha256 and to every file under `results/`.
 Write the report's *Cross-check* section as a pointer before `arh ask`, and put
 your evaluation of the findings in `REVIEW_RESPONSE.md` at the iteration root.
+Reviewers number their findings (`F1:`, `F2:` ...); answer each by its id with a
+decision and the reason (`F2: rejected, because ...`). `arh gate results` fails
+while a numbered finding is unanswered, and `arh gate results -n N --skeleton`
+prints a response to start from. The gate also lists numbers in the report that
+match no file under `results/`: write every reported value to a results file and
+copy it from there, never by hand.
 
 To re-examine a result an iteration already produced, use the verification
 track instead of silently revising the original:

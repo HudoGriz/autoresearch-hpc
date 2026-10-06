@@ -90,8 +90,14 @@ after the review makes it ineligible. So:
 - put your evaluation in `iterations/iterationN/REVIEW_RESPONSE.md` — at the
   iteration root, outside `results/`, and not named `CROSSCHECK_*` (that glob
   counts review attempts);
+- answer every numbered finding by its id with a decision and the reason
+  (`F1: accepted ...`, `F2: rejected, because ...`); `arh gate results -n N
+  --skeleton` lists them, and the gate fails while one is unanswered;
 - if a finding needs new computation, do it through `arh verify`, not by
   changing the iteration, and append the outcome to the response file.
+
+Every number the report states should be in a file under `results/`; the
+results gate lists those that are not.
 
 ## 6. Conclude
 
