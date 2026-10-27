@@ -2213,6 +2213,23 @@ elif args[0] == 'list':
         (self.root / 'rules/unseen.md').write_text(text)
         self.assertIn('document never states: unseen variants', self.gate(good=False).stdout)
 
+    def test_a_reviewed_iteration_stays_open_until_its_gate_passes(self):
+        # Iteration 59 had a report and a review but had not passed its results gate, and arh context
+        # left it out of the open list (field feedback #90).
+        self.call('note', '-n', '1', 'working')
+        self.ask()
+        self.assertRegex(self.call('context').stdout, r'(?m)^  1 +held by')
+        self.gate()
+        self.assertNotRegex(self.call('context').stdout, r'(?m)^  1 +held by')
+        # An iteration concluded before receipts existed, idle for weeks, is counted, not listed.
+        self.call('claim', '-t', 'old')
+        lease = self.root / 'iterations/iteration2/metadata/lease.json'
+        data = json.loads(lease.read_text()); data['last']['time'] = '2026-09-01T00:00:00Z'
+        lease.write_text(json.dumps(data))
+        out = self.call('status').stdout
+        self.assertNotRegex(out, r'(?m)^  2 +held by')
+        self.assertIn('1 more without a conclusion receipt', out)
+
     def test_inputs_check_reads_end_markers_and_caches_passes(self):
         # A truncated CRAM (no end-of-file container) made a caller drop chr11-22 silently (2026-10-04).
         sys.path.insert(0, str(ROOT / 'lib'))
