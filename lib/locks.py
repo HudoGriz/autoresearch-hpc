@@ -23,6 +23,13 @@ def alive(pid):
     return True
 
 
+def boot_id():
+    try:
+        return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    except OSError:
+        return None
+
+
 def owner(lock):
     try:
         return json.loads((Path(lock) / 'owner.json').read_text())
@@ -36,6 +43,9 @@ def state(lock):
     record = owner(lock)
     if not record or record.get('host') != socket.gethostname():
         return 'unverifiable'
+    # After a reboot the recorded pid may belong to some other process (field feedback #97).
+    if record.get('boot_id') and boot_id() and record['boot_id'] != boot_id():
+        return 'stale'
     return 'live' if alive(record.get('pid')) else 'stale'
 
 
@@ -65,6 +75,7 @@ def acquire(lock, pid=None, what='lock'):
         except FileExistsError:
             raise Held('')
     (lock / 'owner.json').write_text(json.dumps({'host': socket.gethostname(), 'pid': pid or os.getpid(),
+                                                 'boot_id': boot_id(),
                                                  'started': datetime.now(timezone.utc).isoformat()}) + '\n')
 
 
@@ -94,13 +105,16 @@ def running(iterations, number=None):
 
 
 def wait(iterations, number, timeout, interval):
-    """Block until no live submission or review lock remains. Exit 124 on timeout."""
-    started, shown = time.time(), None
+    """Block until no live submission or review lock remains. Exit 3 when a submission it saw ended
+    badly (failed, or its process died: field feedback #97), 124 on timeout."""
+    started, shown, seen = time.time(), None, {}
     while True:
         busy, stale = [], []
         for label, lock in running(iterations, number or None):
             if not lock.is_dir():
                 continue
+            if lock.name == '.launch-lock':
+                seen[lock] = label
             st = state(lock)
             (stale if st == 'stale' else busy).append(
                 f'{label}{describe(owner(lock))}' + (' — no owner record, cannot check it' if st == 'unverifiable' and not owner(lock) else ''))
@@ -112,7 +126,13 @@ def wait(iterations, number, timeout, interval):
             shown = (busy, stale)
         if not busy:
             print('idle: no running submissions or reviews', flush=True)
-            return 0
+            from running import ended_badly
+            bad = [line for line in (ended_badly(Path(iterations).parent, label.split(':')[0],
+                                                 lock.parents[3] / 'logs/nextflow' / lock.parent.name)
+                                     for lock, label in seen.items()) if line]
+            for line in bad:
+                print('ended badly: ' + line, flush=True)
+            return 3 if bad else 0
         if timeout and time.time() - started >= timeout:
             print(f'arh: still running after {timeout:g} s: ' + '; '.join(busy), file=sys.stderr)
             return 124

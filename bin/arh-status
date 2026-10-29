@@ -104,6 +104,6 @@ if [ -n "$vrows" ]; then
 fi
 if arh_has_sealed || compgen -G "$ARH_ITERS/iteration*/FREEZE.json" >/dev/null; then
   printf '\nfreezes and sealed inputs (arh freeze list):\n'
-  python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" | sed 's/^/  /'
+  python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" "$only" | sed 's/^/  /'
 fi
 exit 0

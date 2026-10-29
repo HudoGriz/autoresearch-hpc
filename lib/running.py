@@ -89,6 +89,26 @@ def scheduler_states(jobs, scheduler):
     return found
 
 
+def ended_badly(root, label, run_dir):
+    """A line when the newest attempt of RUN_DIR (in the last RECENT_DAYS) failed or died, with the
+    command that resumes it (field feedback #97); None when it succeeded, runs, or is older."""
+    attempts = sorted(run_dir.glob('attempt-*'), key=lambda p: p.stat().st_mtime)
+    if not attempts or time.time() - attempts[-1].stat().st_mtime > RECENT_DAYS * 86400:
+        return None
+    data = receipt(attempts[-1])
+    if not data or data.get('exit_code') == 0:
+        return None
+    where = os.path.relpath(attempts[-1], root)
+    resume = (f"; resume: arh submit {data['workflow']} -n {run_dir.name} --resume --detach"
+              if data.get('workflow') else '')
+    if 'exit_code' not in data:
+        return (f'{label}: submission {run_dir.name} ENDED WITHOUT AN EXIT CODE (the arh process died; '
+                f'node reboot or kill -9), {trace_counts(attempts[-1])} — {where}{resume}')
+    return (f"{label}: submission {run_dir.name} FAILED, exit {data['exit_code']}"
+            + (f" ({data['signal']})" if data.get('signal') else '')
+            + f", {trace_counts(attempts[-1])}, ended {data.get('finished', '?')[:16]}Z — {where}{resume}")
+
+
 def main(root, iterations, verifications, scheduler):
     owners = sorted((p for p in Path(iterations).glob('iteration*') if p.name[9:].isdigit()), key=lambda p: int(p.name[9:]))
     owners += sorted(p for p in Path(verifications).glob('*') if (p / 'PREDECLARATION.md').is_file())
@@ -117,20 +137,9 @@ def main(root, iterations, verifications, scheduler):
             shown += 1
         # The newest attempt of each run that is not live: did it end badly?
         for run_dir in sorted(p for p in d.glob('logs/nextflow/*') if p.is_dir() and p.name not in live):
-            attempts = sorted(run_dir.glob('attempt-*'), key=lambda p: p.stat().st_mtime)
-            if not attempts or time.time() - attempts[-1].stat().st_mtime > RECENT_DAYS * 86400:
-                continue
-            data = receipt(attempts[-1])
-            if not data:
-                continue
-            if 'exit_code' not in data:
-                ended.append(f'{label}: submission {run_dir.name} ENDED WITHOUT AN EXIT CODE (the arh process died; '
-                             f'node reboot or kill -9) — {attempts[-1].relative_to(root)}')
-            elif data['exit_code']:
-                ended.append(f"{label}: submission {run_dir.name} FAILED, exit {data['exit_code']}"
-                             + (f" ({data['signal']})" if data.get('signal') else '')
-                             + f", {trace_counts(attempts[-1])}, ended {data.get('finished', '?')[:16]}Z"
-                             + f' — {attempts[-1].relative_to(root)}')
+            line = ended_badly(root, label, run_dir)
+            if line:
+                ended.append(line)
         if (d / '.review-lock').is_dir() and state(d / '.review-lock') != 'stale':
             print(f'{label}: review running{describe(owner(d / ".review-lock"))}')
             shown += 1

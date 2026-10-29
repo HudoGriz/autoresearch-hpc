@@ -19,10 +19,45 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _artifact_cache(directory):
+    for parent in directory.parents:
+        if (parent / '.arh').is_dir():
+            key = hashlib.sha256(str(directory).encode()).hexdigest()[:16]
+            return parent / '.arh/cache/artifacts' / f'{directory.name}-{key}.json'
+    return None
+
+
 def result_artifacts(directory):
-    directory = Path(directory)
-    return {str(p.relative_to(directory)): digest(p)
-            for p in sorted((directory / 'results').rglob('*')) if p.is_file()}
+    """SHA-256 of every file under results/. Re-reading every tree on each render, status, ask and gate
+    took minutes on CephFS (one iteration holds 26 GB; field feedback #102), so each hash is kept in
+    .arh/cache/artifacts with the file's size, mtime, ctime and inode, and reused only while all four
+    match. ctime cannot be set by a user (even `touch` moves it), so any write is hashed again.
+    ARH_NO_HASH_CACHE=1 hashes everything afresh."""
+    directory = Path(directory).resolve()
+    cache_file = None if os.environ.get('ARH_NO_HASH_CACHE') else _artifact_cache(directory)
+    try:
+        cached = json.loads(cache_file.read_text()) if cache_file else {}
+    except (OSError, ValueError):
+        cached = {}
+    out, fresh = {}, {}
+    for p in sorted((directory / 'results').rglob('*')):
+        if not p.is_file():
+            continue
+        st = p.stat()
+        rel = str(p.relative_to(directory))
+        sig = [st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino]
+        hit = cached.get(rel)
+        out[rel] = hit[4] if isinstance(hit, list) and hit[:4] == sig else digest(p)
+        fresh[rel] = sig + [out[rel]]
+    if cache_file and fresh != cached:
+        try:                     # a lost race or an unwritable cache only costs a re-hash next time
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile('w', dir=cache_file.parent, delete=False) as tmp:
+                json.dump(fresh, tmp)
+            os.replace(tmp.name, cache_file)
+        except OSError:
+            pass
+    return out
 
 
 def claimed_terms(directory):

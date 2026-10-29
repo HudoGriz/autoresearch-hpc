@@ -171,9 +171,14 @@ def unseals(root):
     return [r for r in rows if len(r) >= 6]
 
 
-def listing(root, iterations):
+def listing(root, iterations, only=None):
+    """Every freeze and sealed input; with `only` (iteration numbers), those iterations' freezes and the
+    sealed inputs they read, then one count line: a one-iteration status printed hundreds of
+    'never read' lines for other iterations' inputs (field feedback #96)."""
     root, base = Path(root), Path(iterations)
     dirs = sorted((p for p in base.glob('iteration*') if p.name[9:].isdigit()), key=lambda p: int(p.name[9:]))
+    if only is not None:
+        dirs = [d for d in dirs if d.name[9:] in only]
     shown = False
     for d in dirs:
         st, digest, changed = state(root, d)
@@ -187,14 +192,21 @@ def listing(root, iterations):
         print(f"{d.name[9:]:<5} {data.get('frozen', '?'):<21} {len(data.get('files', {})):>4} file(s)  "
               f"{'frozen' if st == 'valid' else 'CHANGED: ' + ', '.join(changed[:3])}")
     if not shown:
-        print('(no freezes yet — arh freeze -n N FILE...)')
+        print('(no freezes yet — arh freeze -n N FILE...)' if only is None else '(none of these iterations is frozen)')
     groups = sealed_groups(root)
     if groups:
         print('\nsealed inputs:')
         rows = unseals(root)
+        total = 0
         for group, paths in groups.items():
             for s in paths:
+                total += 1
+                if only is not None and not any(r[4] == str(s) and r[1] in only for r in rows):
+                    continue
                 print(f"  {s}{'' if len(groups) == 1 else f' [{group}]'}  — {reads_text(rows, s)}")
+        if only is not None:
+            print(f"  ({total} sealed input(s) in all; those not read by iteration(s) {', '.join(sorted(only, key=int))} "
+                  "are not listed: arh freeze list)")
 
 
 def reads_text(rows, path):
@@ -317,7 +329,7 @@ if __name__ == '__main__':
             sys.exit(1)
         print(f'every frozen file matches FREEZE.json ({digest[:12]})')
     elif cmd == 'list':
-        listing(sys.argv[2], sys.argv[3])
+        listing(sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 and sys.argv[4] else None)
     elif cmd == 'sealed':
         print('\n'.join(map(str, sealed_inputs(sys.argv[2]))))
     elif cmd == 'referenced':
