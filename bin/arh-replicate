@@ -127,7 +127,8 @@ dag="$dir/DAG.md"
 
 # Spread agents across harnesses so families differ where possible.
 if [ -n "$harn_csv" ]; then hs=$(printf '%s' "$harn_csv" | tr ',' ' ')
-else hs=$(arh_config_get "$ARH_HARN" harnesses "codex"); fi
+else hs=$(arh_config_get "$ARH_HARN" harnesses "")
+  [ -n "$hs" ] || arh_die "harnesses is not set in .arh/config/harnesses.md: list the harnesses replication may use, or pass --harnesses"; fi
 avail=""
 for h in $hs; do
   c=$(arh_config_get "$ARH_HARN" "harness_${h}_cmd" "")

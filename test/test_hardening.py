@@ -1869,7 +1869,14 @@ elif args[0] == 'list':
         self.assertEqual(record['freeze_sha256'], hashlib.sha256((self.it / 'FREEZE.json').read_bytes()).hexdigest())
         log = (self.root / '.arh/unseals.tsv').read_text().splitlines()
         self.assertEqual((len(log), log[1].split('\t')[1:3]), (2, ['1', 'confirm']))
-        self.assertIn('read by iteration(s) 1', self.call('freeze', 'list').stdout)
+        # The script never names the sealed path, so the run is recorded as released to, not as read (#114).
+        self.assertEqual(log[1].split('\t')[6], 'released')
+        self.assertIn('released to iteration(s) 1 (no run names it)', self.call('freeze', 'list').stdout)
+        self.assertIn('not named by its workflow', self.call('gate', 'results', '-n', '1', good=None).stdout)
+        named = self.it / 'scripts/it1_02_named.sh'; named.write_text(f'cat "{held}/truth.txt" > /dev/null\n')
+        self.call('submit', str(named), '-n', 'named')
+        listed = self.call('freeze', 'list').stdout
+        self.assertIn('named by a run of iteration(s) 1', listed); self.assertNotIn('no run names it', listed)
 
     @needs_site
     def test_a_freeze_unseals_only_the_groups_it_names(self):
@@ -1892,8 +1899,8 @@ elif args[0] == 'list':
         record = json.loads(next((self.it / 'logs/nextflow/gate_only').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['sealed_inputs'], {'read': [str(gate)], 'masked': [str(held)]})
         listed = self.call('freeze', 'list').stdout
-        self.assertIn(f'{gate} [gate]  — read by iteration(s) 1', listed)
-        self.assertIn(f'{held} [default]  — never read', listed)
+        self.assertIn(f'{gate} [gate]  — released to iteration(s) 1 (no run names it)', listed)
+        self.assertIn(f'{held} [default]  — never released', listed)
         named = self.it / 'scripts/it1_02_named.sh'
         named.write_text(f'cat {held}/truth.txt\n')
         self.assertIn('unseals its group', self.call('submit', str(named), '-n', 'named', good=False).stderr)

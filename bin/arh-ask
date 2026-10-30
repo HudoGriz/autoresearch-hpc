@@ -89,7 +89,8 @@ if [ "$rebuttal" = 0 ] && [ "$role" != reimplementer ] && [ -f "$report_file" ];
   fi
 fi
 
-producer=$(arh_config_get "$ARH_HARN" producer claude)
+producer=$(arh_config_get "$ARH_HARN" producer "")
+[ -n "$producer" ] || arh_die "producer is not set in .arh/config/harnesses.md: name the harness that produced the work"
 # With per-iteration controllers, the iteration's producing agent is the controller it was
 # dispatched to, and an executor may have written the analysis: the verifier must differ from both.
 executor=""; efam=""
@@ -153,7 +154,8 @@ fi
 if [ -n "$harness" ]; then candidates=$harness
 elif [ "$kind" = adjudication ] && [ -n "$review_h" ]; then
   candidates="$review_h $(arh_config_get "$ARH_HARN" verifier_fallback "")"
-else candidates="$(arh_config_get "$ARH_HARN" verifier codex) $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
+else candidates="$(arh_config_get "$ARH_HARN" verifier "") $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
+[ -n "${candidates// /}" ] || arh_die "verifier is not set in .arh/config/harnesses.md: name the reviewing harness, or pass --harness"
 primary=${candidates%% *}
 why=$(ineligible "$primary")
 [ -z "$why" ] || arh_die "$why"

@@ -182,6 +182,13 @@ def run():
                 print('arh: ' + problem[5:], file=sys.stderr)
             else:
                 parser.error(problem + '. A changed dependency is a new iteration.')
+    # A confirmation applies frozen decisions; one whose decisions changed under it is not that run.
+    # Checked first: a file that is both pinned and frozen is refused with this one message, never
+    # first warned about as a deviation to report (field feedback #113).
+    frozen_state, freeze_sha, changed = freeze.state(root, iteration)
+    if frozen_state == 'changed':
+        parser.error('files frozen in FREEZE.json changed since the freeze: ' + ', '.join(changed)
+                     + '. A changed configuration is a new iteration.')
     # Scripts that were in scripts/ when the plan was frozen are pinned with it (frozen_scripts).
     pinned_changed = imports.pinned_changes(root, iteration) if kind != 'smoke' else []
     policy = project.get('frozen_scripts') or 'warn'
@@ -193,11 +200,6 @@ def run():
     if pinned_changed and policy == 'warn':
         print('arh: scripts pinned with the frozen plan changed since the freeze: ' + ', '.join(pinned_changed)
               + '. Report it as a deviation; the run receipt records it.', file=sys.stderr)
-    # A confirmation applies frozen decisions; one whose decisions changed under it is not that run.
-    frozen_state, freeze_sha, changed = freeze.state(root, iteration)
-    if frozen_state == 'changed':
-        parser.error('files frozen in FREEZE.json changed since the freeze: ' + ', '.join(changed)
-                     + '. A changed configuration is a new iteration.')
     sealed = freeze.sealed_inputs(root)
     # A valid freeze releases only the sealed groups it names; every other sealed path stays hidden.
     readable = freeze.unsealed(root, iteration) if sealed and kind != 'smoke' else []
@@ -465,7 +467,12 @@ def run():
         receipt = attempt / 'run.json'
         receipt.write_text(json.dumps(record, indent=2) + '\n')
         if unsealed:
-            freeze.record_unseal(root, iteration.name[9:], name, attempt.name, readable, freeze_sha)
+            # arh cannot see which files a run opens; it records which released paths the run names.
+            scripts_dir = iteration / 'scripts'
+            texts = [workflow] + ([args.params.resolve()] if args.params else []) + (
+                [p for p in sorted(scripts_dir.rglob('*')) if p.is_file()] if scripts_dir.is_dir() else [])
+            freeze.record_unseal(root, iteration.name[9:], name, attempt.name, readable, freeze_sha,
+                                 freeze.references(root, texts, readable))
         received = []
         with (attempt / 'console.log').open('w') as output:
             proc = subprocess.Popen(cmd, cwd=engine, env=env, stdout=output, stderr=subprocess.STDOUT)

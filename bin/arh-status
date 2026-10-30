@@ -63,8 +63,8 @@ printf '%s\n' "$ARH_ROOT"
 printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
   "$(arh_config_get "$ARH_SITE" scheduler local)" \
   "$(arh_config_get "$ARH_SITE" container_runtime none)" \
-  "$(arh_config_get "$ARH_HARN" producer claude)" \
-  "$(arh_config_get "$ARH_HARN" verifier codex)"
+  "$(arh_config_get "$ARH_HARN" producer "(unset)")" \
+  "$(arh_config_get "$ARH_HARN" verifier "(unset)")"
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----

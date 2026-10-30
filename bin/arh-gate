@@ -235,7 +235,9 @@ case "$sub" in
       else arh_fail "freeze: $out"; fails=$((fails+1)); fi
     fi
     if [ -f "$ARH_STATE/unseals.tsv" ]; then
-      awk -F'\t' -v n="$n" 'NR>1 && $2==n {print "  read sealed input " $5 " in run " $3 " (" $1 ")"}' "$ARH_STATE/unseals.tsv"
+      awk -F'\t' -v n="$n" 'NR>1 && $2==n && $3!="pre-seal" {
+        how = ($7 == "named") ? "named by its workflow or scripts" : ($7 == "released") ? "not named by its workflow, params or scripts" : "recorded before arh told the two apart"
+        print "  sealed input " $5 " released to run " $3 " (" $1 "): " how}' "$ARH_STATE/unseals.tsv"
     fi
 
     # Work that ran outside arh submit has no receipt; say so instead of letting the record imply one.
