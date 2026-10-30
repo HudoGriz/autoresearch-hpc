@@ -114,10 +114,14 @@ def check(root, web, inputs):
     cx = root / '.codex/config.toml'
     if web == 'deny' and cx.is_file() and re.search(r'web_search\w*\s*=\s*(true|"(live|cached)")', cx.read_text()):
         out.append('FAIL|.codex/config.toml turns web search on although web_access = deny')
-    # Only these three harnesses' configurations are known here; say so for any other, never pass it.
+    # Only these three CLIs' configurations are known here; say so for any other, never pass it.
+    # A harness is known by the program its command runs (claude_ana runs `claude`), not its name.
     from freeze import config
-    for h in config(root / '.arh/config/harnesses.md').get('harnesses', '').split():
-        if h not in ('claude', 'codex', 'opencode') and (held or web == 'deny'):
+    harn = config(root / '.arh/config/harnesses.md')
+    for h in harn.get('harnesses', '').split():
+        words = [w for w in harn.get(f'harness_{h}_cmd', h).split() if w != 'env' and '=' not in w]
+        program = os.path.basename(words[0]) if words else h
+        if program not in ('claude', 'codex', 'opencode') and (held or web == 'deny'):
             out.append(f'WARN|cannot check that harness {h} denies the sealed inputs or web tools: '
                        'arh knows only the claude, codex and opencode configurations; check it by hand')
     if web == 'deny' and not (oc.is_file() or (root / '.claude').is_dir() or cx.is_file()):

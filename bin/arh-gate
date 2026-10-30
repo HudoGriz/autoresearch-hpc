@@ -236,7 +236,7 @@ case "$sub" in
     fi
     if [ -f "$ARH_STATE/unseals.tsv" ]; then
       awk -F'\t' -v n="$n" 'NR>1 && $2==n && $3!="pre-seal" {
-        how = ($7 == "named") ? "named by its workflow or scripts" : ($7 == "released") ? "not named by its workflow, params or scripts" : "recorded before arh told the two apart"
+        how = ($7 == "named") ? "named by its workflow or scripts" : "not named by its workflow, params or scripts"
         print "  sealed input " $5 " released to run " $3 " (" $1 "): " how}' "$ARH_STATE/unseals.tsv"
     fi
 
