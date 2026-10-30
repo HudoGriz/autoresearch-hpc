@@ -7,9 +7,8 @@ description: Have a different agent harness review an iteration as adversary, re
 
 ```bash
 arh ask --role adversary -n N
-arh ask --role reimplementer -n N --harness codex
-arh ask --role estimand-auditor -n N
-arh ask --role gotcha-scanner -n N
+arh ask --role reimplementer -n N --harness codex     # from the frozen DAG, blind to the code
+arh ask --role adversary -n N --skill paper-claim-audit   # add a research skill (arh skill lists them)
 ```
 
 A same-family review can reproduce the producer's reasoning errors. `arh ask`

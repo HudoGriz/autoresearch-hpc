@@ -41,13 +41,19 @@ import subprocess
 import sys
 import time
 
+# The variables by which a harness marks the session a process belongs to. A controller is its own
+# session, so it never inherits these from the session that dispatched it (field feedback #130).
+# dispatch_env_unset (harnesses.md) replaces the list; session_env names are always dropped.
+INHERITED = ('CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION '
+             'CLAUDE_CODE_SESSION_ATTENDED CODEX_SESSION_ID CODEX_THREAD_ID CODEX_CI')
+
 import agenthome
 import attempts
 from findings import summary as verdict_summary
 from harness import classify, cli_version, digest, reset_epoch
 import lease
 import locks
-from project import config
+from project import config, notify
 from secret_scan import findings as secret_findings, redact_file
 
 OUTCOMES = ('concluded', 'unconcluded', 'blocked')
@@ -238,6 +244,8 @@ def run_controller(n, record, run, harness, k, preamble):
     base, linked = (agenthome.fresh_env(record / 'home', harn.get('fresh_home_files', ''),
                                         harn.get('fresh_home_env_unset', '')) if fresh else (dict(os.environ), []))
     env = dict(base, ARH_SESSION=run['session'], ARH_DISPATCH=str(n), ARH_PROJECT=os.environ['ARH_ROOT'])
+    for name in (harn.get('dispatch_env_unset') or INHERITED).split() + os.environ.get('ARH_SESSION_ENV', '').split():
+        env.pop(name, None)
     for assignment in shlex.split(harn.get('dispatch_env', '')):
         key, _, value = assignment.partition('=')
         if key:
@@ -327,8 +335,10 @@ def supervise(n, seq):
         locks.release(directory / '.dispatch-lock')
     except OSError:
         pass
-    print(f"iteration {n}: controller exited {rc}; outcome {summary.get('outcome') or 'not reported'}"
-          f"{f', after {len(restarts)} restart(s)' if restarts else ''} (metadata/dispatch/{seq})", file=sys.stderr)
+    message = (f"iteration {n}: controller exited {rc}; outcome {summary.get('outcome') or 'not reported'}"
+               f"{f', after {len(restarts)} restart(s)' if restarts else ''} (metadata/dispatch/{seq})")
+    print(message, file=sys.stderr)
+    notify(os.environ['ARH_ROOT'], 'controller-ended', n, message)
     return rc
 
 

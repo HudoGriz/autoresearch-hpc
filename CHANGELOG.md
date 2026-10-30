@@ -10,6 +10,38 @@ Singularity with two producer accounts and two verifier families, and from an ex
 of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studies need
 `arh migrate --apply`, which starts the freeze journal.
 
+### Changed (simpler, two tiers, outsourced tools, 2026-10-30)
+- **Exploratory and confirmatory iterations.** `arh claim --explore` claims a search: a short plan
+  with a selection rule and a journal of every attempt, no freeze, no required review, sealed
+  inputs never released (`arh freeze` refuses), concluded by `arh gate results` once every run is
+  in the journal. `arh claim --promotes N` claims the confirmatory iteration that re-measures the
+  chosen variant on data it was not chosen on; its pre-declaration states how many attempts the
+  choice came from, and the ledger lists exploratory iterations with their attempt counts.
+  Protocol §6b now states these rules in place of arms.
+- **Removed: `arh evoke` and the generator registry** (`config/generators.md`, the evoke skill,
+  `docs/external-generators.md`), **`arh arm`** and its skill, and the `estimand-auditor` and
+  `gotcha-scanner` review roles: unused in a 73-iteration study (every one of its 117 reviews used
+  `adversary`). `lib/evoke.py` stays as `arh delegate`'s runner. Delegation, orchestration, the DAG
+  and blind replication stay.
+- **ARIS research skills, linked, not copied**: `scripts/setup-tools.sh` installs a pinned,
+  sha256-checked release; `arh skill [NAME]` lists them or prints one `SKILL.md` path for any
+  harness, and `arh ask --skill NAME` adds one to the reviewer's instructions.
+- **abtop** (pinned release binary) shows the live sessions linked to an iteration in
+  `arh sessions -n N`, which also sums the CPU hours of its Nextflow tasks from their trace files.
+- **`arh sign -n N`**: the operator's sign-off on a concluded confirmatory finding, refused from
+  inside an agent session or a dispatched controller; it holds while the evidence is unchanged,
+  and the ledger shows it (protocol §9.3).
+- **`notify =`** in site.md: one command told when a run fails, a dispatched controller ends, or a
+  review says UNSOUND or maintains it.
+- **Harness-neutral session links** (feedback #129, #130): `session_env` defaults to Claude Code's
+  and Codex's session variables; a dispatched controller no longer inherits the dispatching
+  session's identity; a harness is known by its program past an `env` or `chaperone` prefix, also
+  in the access check.
+- **Chaperone** for access control: `arh doctor` checks that a harness run through `chaperone`
+  cannot read the sealed inputs.
+- `arh doctor` warns when `PROGRESS.md`, `DIRECTIVES.md` or `GOTCHAS.md` passes 600 lines;
+  `arh migrate` keeps the three latest backups.
+
 ### Changed (integrations on by default, resume after limits, field feedback #97–#116, 2026-10-29/30)
 - **Integrations are on by default** and each can be switched off in `harnesses.md`
   (`docs/integrations.md`): the project is a local git repository of its record, committed after

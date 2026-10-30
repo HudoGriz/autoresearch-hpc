@@ -40,6 +40,8 @@ if [ "$sub" = list ]; then
 fi
 case "$n" in ""|*[!0-9]*) arh_die "which iteration? arh freeze $([ "$sub" = check ] && echo 'check ')-n N" ;; esac
 dir="$ARH_ITERS/iteration$n"
+[ "$(arh_tier "$dir")" != exploratory ] \
+  || arh_die "iteration $n is exploratory: it never unseals anything. Promote its choice: arh claim --promotes $n"
 [ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
 
 if [ "$sub" = check ]; then

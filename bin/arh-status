@@ -37,7 +37,8 @@ if [ "$json" = 1 ]; then
   first=1
   for d in $iters; do
     dir="$ARH_ITERS/iteration$d"
-    if [ -f "$dir/PREDECLARATION.sha256" ]; then
+    if [ "$(arh_tier "$dir")" = exploratory ]; then pre=exploratory
+    elif [ -f "$dir/PREDECLARATION.sha256" ]; then
       [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md" 2>/dev/null)" ] \
         && pre=frozen || pre=altered
     elif [ -f "$dir/README.md" ]; then pre=draft; else pre=none; fi
@@ -46,14 +47,13 @@ if [ "$json" = 1 ]; then
     xc=$(arh_crosschecks "$dir" | grep -c . || true)
     if [ -f "$dir/DAG.sha256" ]; then dag=frozen
     elif [ -f "$dir/DAG.md" ]; then dag=draft; else dag=none; fi
-    narms=$(find "$dir/arms" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | grep -c . || true)
     if [ ! -f "$dir/FREEZE.json" ]; then frz=none
     elif python3 "$ARH_HOME/lib/freeze.py" check "$ARH_ROOT" "$dir" >/dev/null 2>&1; then frz=valid; else frz=changed; fi
     [ "$first" = 1 ] && first=0 || printf ','
     notes=$(grep -c . "$dir/metadata/notes.jsonl" 2>/dev/null || true)
     attempt=$(python3 -c 'import json, sys; print(json.dumps(json.loads(sys.argv[1]).get(sys.argv[2], {})))' "$attempts" "$d")
-    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "arms": %s, "harness_config": "%s", "freeze": "%s", "notes": %s, "attempt": %s}' \
-      "$d" "$pre" "$res" "$xc" "$dag" "$narms" "$(arh_harness_config_state "$dir")" "$frz" "${notes:-0}" "$attempt"
+    printf '\n    {"iteration": %s, "predeclaration": "%s", "results": "%s", "crosschecks": %s, "dag": "%s", "harness_config": "%s", "freeze": "%s", "notes": %s, "attempt": %s}' \
+      "$d" "$pre" "$res" "$xc" "$dag" "$(arh_harness_config_state "$dir")" "$frz" "${notes:-0}" "$attempt"
   done
   printf '\n  ]\n}\n'
   exit 0
@@ -76,7 +76,8 @@ for d in $iters; do
   agent=$(sed -n 's/.*"declared_agent"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
   title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
 
-  if   [ -f "$dir/PREDECLARATION.sha256" ]; then
+  if   [ "$(arh_tier "$dir")" = exploratory ]; then pre=explore
+  elif [ -f "$dir/PREDECLARATION.sha256" ]; then
     if [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md" 2>/dev/null)" ]
     then pre=frozen; else pre=ALTERED; fi
   elif [ -f "$dir/README.md" ]; then pre=draft

@@ -87,6 +87,10 @@ nextflow_reports = html
 # Run when Nextflow exits, attached or detached, with ARH_RUN_EXIT, ARH_RUN_NAME, ARH_RUN_ATTEMPT,
 # ARH_RUN_OWNER and ARH_RUN_SIGNAL set, e.g. a mail or a file a cron watcher reads. Empty: nothing.
 on_exit =
+# Tell the operator when a run fails, a controller ends, or a review says UNSOUND (or maintains it):
+# a shell command run with ARH_EVENT (run-failed, controller-ended, review-unsound), ARH_ITERATION and
+# ARH_MESSAGE set, e.g. curl -s -d "$ARH_MESSAGE" ntfy.sh/<topic>, or mail. Empty: nothing.
+notify =
 # Retry a failed task up to this many times (0: the first failure stops the run). For sites where
 # tasks fail on cluster events; every retry stays in trace.tsv and the receipt records the setting.
 task_retries = 0

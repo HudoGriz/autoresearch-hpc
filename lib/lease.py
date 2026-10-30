@@ -174,6 +174,16 @@ def ps(pid, field):
     return out.stdout.strip() if out.returncode == 0 else ''
 
 
+def program_of(cmd):
+    """The program a command template runs, past an `env` or `chaperone` prefix and its options and
+    assignments: `env -u CLAUDE_CONFIG_DIR claude -p {prompt}` and `chaperone -p ai claude` run claude."""
+    words = shlex.split(cmd)
+    while words and (os.path.basename(words[0]) in ('env', 'chaperone') or '=' in words[0] or words[0].startswith('-')):
+        skip = 2 if words[0] in ('-u', '--unset', '-C', '--chdir', '-p') else 1
+        words = words[skip:]
+    return os.path.basename(words[0]) if words else ''
+
+
 def agent_process():
     """The agent session as the nearest ancestor process whose program is a configured harness
     command (the first word of a harness_<name>_cmd): 'name:pid@host:start'. Needs no knowledge of
@@ -182,7 +192,7 @@ def agent_process():
     for key, value in config(os.environ.get('ARH_HARN', '')).items():
         match = re.fullmatch(r'harness_(.+)_cmd', key)
         try:
-            program = os.path.basename(shlex.split(value)[0]) if match and value.strip() else ''
+            program = program_of(value) if match else ''
         except ValueError:
             continue
         if program and program not in GENERIC:

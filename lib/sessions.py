@@ -9,13 +9,19 @@ report. The record now names them from three sources, without capturing transcri
 - metadata/dispatch/*/run.json: controllers started by arh dispatch, whose output arh keeps;
 - Entire CLI checkpoints, when the project is a git repository that Entire records: commits that
   touched the iteration carry an `Entire-Checkpoint: <id>` trailer, and the checkpoint holds the
-  session's transcript, prompts and tool calls (https://github.com/entireio/cli).
+  session's transcript, prompts and tool calls (https://github.com/entireio/cli);
+- abtop (https://github.com/graykode/abtop), for the sessions running now: tokens, context and
+  status of each live Claude Code, Codex or OpenCode session linked to the iteration.
+
+It also sums the CPU time of the iteration's Nextflow tasks from their trace files.
 
   sessions.py show DIR      the sessions that acted on DIR
   sessions.py json DIR      the same as JSON, for the conclusion receipt
 """
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -100,6 +106,62 @@ def explain(directory, checkpoint):
     return sessions
 
 
+def harness_ids(directory):
+    """Session ids the harnesses reported (session_env), e.g. a Claude Code or Codex session id."""
+    return {e['harness_session'].partition('=')[2] for e in activity(directory) if e.get('harness_session')}
+
+
+def live(directory):
+    """[abtop session] running now and linked to the iteration: a controller arh dispatch started for
+    it (ARH_DISPATCH in its environment), or a session whose id the iteration's activity recorded."""
+    exe = shutil.which('abtop')
+    if not exe:
+        return None
+    try:
+        data = json.loads(subprocess.run([exe, '--json'], capture_output=True, text=True, timeout=30).stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    n, ids = Path(directory).name[9:], harness_ids(directory)
+    out = []
+    for s in data.get('sessions') or []:
+        try:
+            env = Path(f"/proc/{s.get('pid')}/environ").read_bytes().split(b'\0')
+        except OSError:
+            env = []
+        if f'ARH_DISPATCH={n}'.encode() in env or s.get('session_id') in ids:
+            out.append(s)
+    return out
+
+
+DURATION = re.compile(r'([\d.]+)(ms|s|m|h|d)')
+SECONDS = dict(ms=0.001, s=1, m=60, h=3600, d=86400)
+
+
+def compute(directory):
+    """(tasks, CPU hours used) over the iteration's Nextflow trace files: realtime x %cpu per task."""
+    tasks, cpu = 0, 0.0
+    for trace in Path(directory).glob('logs/*/*/attempt-*/trace.tsv'):
+        try:
+            lines = trace.read_text().splitlines()
+        except OSError:
+            continue
+        head = lines[0].split('\t') if lines else []
+        if 'realtime' not in head or '%cpu' not in head:
+            continue
+        rt, pc = head.index('realtime'), head.index('%cpu')
+        for line in lines[1:]:
+            f = line.split('\t')
+            if len(f) <= max(rt, pc):
+                continue
+            tasks += 1
+            secs = sum(float(v) * SECONDS[u] for v, u in DURATION.findall(f[rt]))
+            try:
+                cpu += secs * float(f[pc].rstrip('%')) / 100 / 3600
+            except ValueError:
+                pass
+    return tasks, cpu
+
+
 def dispatches(directory):
     out = []
     for run in sorted((Path(directory) / 'metadata/dispatch').glob('[0-9][0-9][0-9]/run.json')):
@@ -130,6 +192,8 @@ def show(directory):
     print('sessions that ran arh commands on this iteration (metadata/activity.jsonl):')
     for g in groups:
         print(f"  {g['id']:<48} {g['agent']}@{g['host']}  {g['first']} .. {g['last']}  ({g['commands']} commands)")
+    for i in sorted(harness_ids(directory)):
+        print(f'  harness session {i}')
     if not groups:
         print('  none recorded (activity is logged from v0.4 on)')
     for d in dispatches(directory):
@@ -149,6 +213,16 @@ def show(directory):
                     print(f"      {s['agent']} ({s['model']}), session {s['session_id']}, {s['tokens']} tokens")
                 print(f"      read it: entire checkpoint explain {i}" if details is not None
                       else '      read it with Entire CLI: entire checkpoint explain <id>')
+    running = live(directory)
+    if running:
+        print('running now (abtop):')
+        for r in running:
+            print(f"  {r.get('agent_cli')} {r.get('model')}, session {r.get('session_id')}: {r.get('status')}, "
+                  f"context {r.get('context_percent') or 0:.0f}%, {r.get('total_tokens') or 0:,} tokens, "
+                  f"{(r.get('elapsed_secs') or 0) / 3600:.1f} h")
+    tasks, cpu = compute(directory)
+    if tasks:
+        print(f'compute: {tasks} Nextflow task(s), {cpu:.1f} CPU hours used (trace.tsv: realtime x %cpu)')
 
 
 if __name__ == '__main__':

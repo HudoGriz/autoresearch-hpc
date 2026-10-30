@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Integrations: install the pinned tools ARH turns on by default, in seconds.
 #
-# Entire CLI (agent sessions, models and tokens), gitleaks (maintained credential rules) and uv are
-# single release binaries, checked by sha256; basic-memory (search over knowledge/) goes into a uv
-# virtual environment. No conda solve and no Nextflow environment is touched. Pins come from
+# Entire CLI (agent sessions, models and tokens), gitleaks (maintained credential rules), abtop (live
+# view of running agent sessions) and uv are single release binaries, checked by sha256; basic-memory
+# (search over knowledge/) goes into a uv virtual environment; the ARIS research skills are a pinned
+# source archive under <prefix>/aris (arh skill). No conda solve and no Nextflow environment is touched. Pins come from
 # config/dependencies.json; the exact Python packages are locked in .arh/tools-pip.lock and
 # replayed from it on the next build. docs/integrations.md says what each tool does and how to
 # switch it off.
@@ -21,21 +22,23 @@ state="$project/.arh"
 . "$home/lib/common.sh"
 
 case "$(uname -s)-$(uname -m)" in
-  Linux-x86_64|Linux-amd64) platform=linux-64; triple=x86_64-unknown-linux-gnu; goarch=amd64; glarch=x64 ;;
-  Linux-aarch64|Linux-arm64) platform=linux-aarch64; triple=aarch64-unknown-linux-gnu; goarch=arm64; glarch=arm64 ;;
+  Linux-x86_64|Linux-amd64) platform=linux-64; triple=x86_64-unknown-linux-gnu; goarch=amd64; glarch=x64; arch=x86_64 ;;
+  Linux-aarch64|Linux-arm64) platform=linux-aarch64; triple=aarch64-unknown-linux-gnu; goarch=arm64; glarch=arm64; arch=aarch64 ;;
   *) echo "no pinned tool builds for $(uname -s)-$(uname -m): install entire, gitleaks and basic-memory yourself" >&2; exit 1 ;;
 esac
 
-# name url sha256 per binary, then the python version and the pip specs
-mapfile -t pins < <(python3 - "$home/config/dependencies.json" "$platform" "$triple" "$goarch" "$glarch" <<'PY'
+# name url sha256 per binary, then the python version, the pip specs, and the ARIS url and sha256
+mapfile -t pins < <(python3 - "$home/config/dependencies.json" "$platform" "$triple" "$goarch" "$glarch" "$arch" <<'PY'
 import json, sys
 t = json.load(open(sys.argv[1]))['tools']
-platform, triple, goarch, glarch = sys.argv[2:6]
-for name in ('uv', 'entire', 'gitleaks'):
+platform, triple, goarch, glarch, arch = sys.argv[2:7]
+for name in ('uv', 'entire', 'gitleaks', 'abtop'):
     b = t[name]
-    print(name, b['url'].format(version=b['version'], triple=triple, goarch=goarch, glarch=glarch), b['sha256'][platform])
+    print(name, b['url'].format(version=b['version'], triple=triple, goarch=goarch, glarch=glarch, arch=arch),
+          b['sha256'][platform])
 print(t['python'])
 print(' '.join(f'{k}=={v}' for k, v in t['pip'].items()))
+print(t['aris']['url'].format(version=t['aris']['version']), t['aris']['sha256'])
 PY
 )
 key=$(printf '%s\n' "$platform" "${pins[@]}" | sha256sum | cut -c1-16)
@@ -49,25 +52,28 @@ build() {
   mkdir -p "$prefix/bin"
   local tmp name url sha got
   tmp=$(mktemp -d)
-  for line in "${pins[@]:0:3}"; do
+  for line in "${pins[@]:0:4}" "aris ${pins[6]}"; do
     read -r name url sha <<<"$line"
-    curl -fsSL --retry 3 -o "$tmp/$name.tgz" "$url"
-    got=$(sha256sum "$tmp/$name.tgz" | cut -d' ' -f1)
+    curl -fsSL --retry 3 -o "$tmp/$name.archive" "$url"
+    got=$(sha256sum "$tmp/$name.archive" | cut -d' ' -f1)
     [ "$got" = "$sha" ] || { echo "$name checksum mismatch: expected $sha, got $got" >&2; rm -rf "$tmp"; return 1; }
-    mkdir -p "$tmp/$name"; tar -xzf "$tmp/$name.tgz" -C "$tmp/$name"
+    if [ "$name" = aris ]; then
+      mkdir -p "$prefix/aris"; tar -xf "$tmp/$name.archive" -C "$prefix/aris" --strip-components=1; continue
+    fi
+    mkdir -p "$tmp/$name"; tar -xf "$tmp/$name.archive" -C "$tmp/$name"
     find "$tmp/$name" -type f -name "$name" -perm -u+x -exec cp {} "$prefix/bin/$name" \;
     [ -x "$prefix/bin/$name" ] || { echo "no $name binary in $url" >&2; rm -rf "$tmp"; return 1; }
   done
   rm -rf "$tmp"
   export UV_CACHE_DIR="$dir/uv-cache" UV_PYTHON_INSTALL_DIR="$dir/python"
-  "$prefix/bin/uv" venv -q --python "${pins[3]}" "$prefix/venv"
+  "$prefix/bin/uv" venv -q --python "${pins[4]}" "$prefix/venv"
   # basic-memory 0.23.2 pins a pre-release (fastmcp 4.0.0b1). With a lock from an earlier build, its
   # exact versions are installed instead of a fresh resolution.
   if [ -s "$state/tools-pip.lock" ]; then
     VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip sync -q "$state/tools-pip.lock"
   else
     # shellcheck disable=SC2086
-    VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip install -q --prerelease=allow ${pins[4]}
+    VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip install -q --prerelease=allow ${pins[5]}
   fi
   ln -sf ../venv/bin/bm "$prefix/bin/bm"
 }
@@ -87,5 +93,5 @@ p = Path(sys.argv[1]); text = p.read_text(); pat = r'(?m)^tools_prefix\s*=.*$'
 line = f'tools_prefix = {sys.argv[2]}'
 p.write_text(re.sub(pat, line, text) if re.search(pat, text) else text + f'\n```arh-config\n{line}\n```\n')
 PY
-printf 'Tools ready: %s/bin (entire %s, gitleaks %s, bm)\n' "$prefix" \
+printf 'Tools ready: %s/bin (entire %s, gitleaks %s, abtop, bm; ARIS skills in aris/)\n' "$prefix" \
   "$("$prefix/bin/entire" version 2>/dev/null | head -1 | awk '{print $NF}')" "$("$prefix/bin/gitleaks" version 2>/dev/null)"

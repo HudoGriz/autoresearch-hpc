@@ -186,17 +186,21 @@ is required, how findings must be answered, what an `UNSOUND` verdict requires)
 MUST be bound to that iteration; a later change of the project's policy MUST
 NOT apply to it.
 
-## 6b. Arms
+## 6b. Exploratory iterations
 
-6b.1 An iteration MAY be divided into arms — parallel routes to its one
-question. An arm MUST carry its own acceptance criteria and negative control.
+6b.1 An iteration MAY be claimed as exploratory (`arh claim --explore`): a search
+for a variant, not a finding. It needs no frozen pre-declaration and no
+cross-check. It MUST state its aim and its selection rule before the first
+attempt, and record every attempt, failed ones included, in its journal.
 
-6b.2 Every arm MUST receive exactly one fate: `CONCLUDED`, `NULL`, `INFEASIBLE`,
-`KILLED_BY_CONTROL` or `ABANDONED`.
+6b.2 An exploratory iteration MUST NOT read sealed inputs, and its numbers MUST
+NOT be reported as findings.
 
-6b.3 `INFEASIBLE`, `KILLED_BY_CONTROL` and `ABANDONED` are reportable outcomes
-and MUST NOT be omitted. Ten attempted arms with one hit is a different claim
-from one attempted arm with one hit.
+6b.3 A variant chosen by exploration becomes a finding only through a
+confirmatory iteration that promotes it (`arh claim --promotes N`). That
+iteration states how many attempts the choice was made from and measures the
+variant on data the choice was not made on. Ten attempts with one hit is a
+different claim from one attempt with one hit.
 
 ## 6c. Discovery DAG and blind replication
 
@@ -304,6 +308,11 @@ instruction to edit the old one.
 
 9.2 The challenge SHOULD be recorded verbatim as the new iteration's motivation.
 The operator's objections are part of the scientific record.
+
+9.3 A concluded confirmatory finding SHOULD carry the operator's sign-off
+(`arh sign -n N`) before it enters a report for others. A sign-off is a
+person's, never an agent's, and holds only while the evidence it signed is
+unchanged.
 
 ## 10. Conformance
 

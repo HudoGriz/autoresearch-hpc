@@ -16,12 +16,13 @@ import time
 
 import re
 
+import attempts
 import freeze
 import imports
 import inputs
 import lease
 from locks import Held, acquire, owner, release
-from project import config, guard, share
+from project import config, guard, notify as notify_operator, share
 
 GPU_LABELS = ('gpu', 'process_gpu')
 # Groovy, evaluated per task in the generated config: does this task want a GPU?
@@ -172,7 +173,9 @@ def run():
     if args.lint:
         return lint(workflow, root, site, parser)
     import_sha256 = {}
-    if kind != 'smoke':
+    # An exploratory iteration runs without a frozen plan; it never unseals anything (below).
+    exploratory = kind == 'iteration' and attempts.tier(iteration) == 'exploratory'
+    if kind != 'smoke' and not exploratory:
         predeclared = iteration / 'PREDECLARATION.sha256'
         if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(plan):
             parser.error(f'{kind} must have an unchanged frozen pre-declaration')
@@ -202,7 +205,7 @@ def run():
               + '. Report it as a deviation; the run receipt records it.', file=sys.stderr)
     sealed = freeze.sealed_inputs(root)
     # A valid freeze releases only the sealed groups it names; every other sealed path stays hidden.
-    readable = freeze.unsealed(root, iteration) if sealed and kind != 'smoke' else []
+    readable = freeze.unsealed(root, iteration) if sealed and kind != 'smoke' and not exploratory else []
     hidden = [p for p in sealed if p not in readable]
     unsealed = bool(readable)
     if hidden and kind != 'smoke':
@@ -509,6 +512,7 @@ def run():
               + (f'; stopped by {record["signal"]}' if received else ''), file=sys.stderr)
         if returncode:
             print('\n'.join((attempt / 'console.log').read_text().splitlines()[-20:]), file=sys.stderr)
+            notify_operator(root, 'run-failed', iteration.name[9:], f'run {name} exited {returncode} ({attempt})')
         return returncode
     finally:
         release(lock)

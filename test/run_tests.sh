@@ -59,7 +59,7 @@ printf '\n# init\n'
 check "arh init creates a project"          0 arh init "$PROJ"
 if [ -n "${ARH_TEST_SITE:-}" ]; then cp "$ARH_TEST_SITE" "$PROJ/.arh/config/site.md"; fi
 check "arh init refuses to re-init"         1 arh init "$PROJ"
-for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md .arh/config/generators.md \
+for p in .arh/config/site.md .arh/config/project.md .arh/config/harnesses.md \
          PROGRESS.md AGENTS.md GOTCHAS.md DIRECTIVES.md rules/null-is-upper-bound.md .arh/registry.tsv; do
   [ -e "$PROJ/$p" ] && ok "created $p" || no "created $p"
 done
@@ -350,37 +350,6 @@ grep_ok "unsupported scheduler falls back to local" '^scheduler +=  *local' "$WO
 arh site detect --scheduler local > "$WORK/site-local.txt" 2>&1
 grep_ok "local proposal has no queue keys" '^container_runtime' "$WORK/site-local.txt"
 
-# --- 12. arms -------------------------------------------------------------
-printf '\n# arms\n'
-check "arh arm list on an iteration with none" 0 arh arm list -n 1
-check "arh arm new refuses before pre-declaration" 1 arh arm new -n 2 -a A -t "too early"
-check "arh arm new scaffolds"                  0 arh arm new -n 1 -a A -t "the primary route"
-check "arh arm new refuses a duplicate"        1 arh arm new -n 1 -a A
-check "arh arm new rejects a path segment"     1 arh arm new -n 1 -a ../escape
-check "arm gate rejects an unfilled template" 1 arh arm gate -n 1 -a A
-cat > iterations/iteration1/arms/A/README.md <<'EOF'
-# Iteration 1 · Arm A — the primary route
-
-## 1. What this arm tests
-Whether the difference survives when draws are matched by index.
-
-## 2. Acceptance criteria
-100 matched pairs retained; no index collisions; counts reconcile.
-
-## 3. Negative control
-Index-shuffled pairing, expected null.
-
-## 4. Fate
-PLANNED
-EOF
-check "arm gate accepts a complete arm"       0 arh arm gate -n 1 -a A
-grep_ok "arm shows as frozen" "^A[[:space:]]+frozen" <(arh arm list -n 1 2>&1)
-check "arh arm fate rejects an invalid fate"   1 arh arm fate -n 1 -a A -f MADE_UP
-check "arh arm fate records KILLED_BY_CONTROL" 0 arh arm fate -n 1 -a A -f KILLED_BY_CONTROL
-grep_ok "fate is listed" "KILLED_BY_CONTROL" <(arh arm list -n 1 2>&1)
-grep_ok "a killed arm is called a reportable result" "REPORTABLE" \
-  <(arh arm fate -n 1 -a A -f INFEASIBLE 2>&1)
-
 # --- 13. discovery DAG ----------------------------------------------------
 printf '\n# discovery DAG\n'
 check "arh dag init scaffolds"              0 arh dag init -n 1
@@ -506,9 +475,8 @@ import json,sys
 d=json.load(open('$WORK/st.json'))
 assert 'iterations' in d and d['iterations'], 'no iterations in json'
 i=d['iterations'][0]
-for k in ('iteration','predeclaration','results','crosschecks','dag','arms'): assert k in i, k
+for k in ('iteration','predeclaration','results','crosschecks','dag'): assert k in i, k
 assert i['dag']=='frozen', i['dag']
-assert i['arms']==1, i['arms']
 " && ok "status --json is valid and complete" || no "status --json is valid and complete"
 
 check "arh wait returns at once when nothing runs" 0 arh wait -n 1 --timeout 5
@@ -587,6 +555,23 @@ The rerun must return 41 elements.
 A different count would indicate non-determinism in the pipeline.
 EOF
 check "verify gate rejects a count-only success criterion" 1 arh verify gate counts_only
+
+# --- 16b. exploratory iterations ------------------------------------------
+printf '\n# exploratory iterations\n'
+e=$(arh claim --explore -t "tune the threshold" 2>/dev/null)
+check "arh new scaffolds an exploratory plan"         0 arh new -n "$e"
+grep_ok "the exploratory plan carries a journal" "^## Journal" "iterations/iteration$e/README.md"
+check "arh freeze refuses an exploratory iteration"   1 arh freeze -n "$e" "iterations/iteration$e/README.md"
+check "the results gate refuses an empty journal"     1 arh gate results -n "$e"
+printf '| a1 |  | - | ok | 0.8 | first draft |\n' >> "iterations/iteration$e/README.md"
+mkdir -p "iterations/iteration$e/results/report"
+printf '# Exploratory summary\nNothing here is a finding.\n' > "iterations/iteration$e/results/report/iteration${e}_report.md"
+check "the results gate concludes an exploratory iteration" 0 arh gate results -n "$e"
+check "a promotion needs an exploratory iteration"    1 arh claim --promotes 1 -t "not exploratory"
+p=$(arh claim --promotes "$e" -t "confirm the threshold" 2>/dev/null)
+check "arh new scaffolds the promotion"               0 arh new -n "$p"
+grep_ok "the promotion states the size of the search" "1 attempt" "iterations/iteration$p/README.md"
+grep_ok "the ledger counts the exploratory attempts" "exploratory, 1 tries" <(arh ledger render >/dev/null 2>&1; cat PROGRESS.md)
 
 # --- 17. harness install -------------------------------------------------
 printf '\n# harness install\n'

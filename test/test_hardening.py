@@ -662,6 +662,35 @@ else:
         self.assertIn('stale', self.call('memory', 'list', '--all').stdout)
         self.assertEqual(json.loads(self.call('context', '-n', '1').stdout)['memory']['findings'], [])
 
+    def test_the_operator_signs_a_concluded_finding_and_an_agent_cannot(self):
+        self.assertIn('not concluded', self.call('sign', '-n', '1', good=False).stderr)
+        self.ask(); self.gate()
+        agent = dict(self.env, ARH_DISPATCH='1')
+        refused = subprocess.run([str(ROOT / 'bin/arh'), 'sign', '-n', '1'], env=agent, cwd=self.root,
+                                 capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(refused.returncode, 0); self.assertIn("operator's", refused.stderr)
+        self.assertIn('signed iteration1', self.call('sign', '-n', '1', '--note', 'read it').stdout)
+        self.assertIn('iteration1: signed', self.call('sign', 'list').stdout)
+        self.report.write_text(self.report.read_text() + 'Edited after the sign-off.\n')
+        self.assertIn('iteration1: unsigned', self.call('sign', 'list').stdout)
+
+    def test_the_harness_session_id_is_recorded_without_configuration(self):
+        env = {k: v for k, v in self.env.items() if k != 'CLAUDE_CODE_SESSION_ID'}
+        env['CODEX_SESSION_ID'] = '0199-test-session'
+        subprocess.run([str(ROOT / 'bin/arh'), 'note', '-n', '1', 'ran by hand'], env=env, cwd=self.root,
+                       check=True, capture_output=True)
+        last = json.loads((self.it / 'metadata/activity.jsonl').read_text().splitlines()[-1])
+        self.assertEqual(last['harness_session'], 'CODEX_SESSION_ID=0199-test-session')
+        self.assertIn('harness session 0199-test-session', self.call('sessions', '-n', '1').stdout)
+
+    def test_a_harness_is_known_by_its_program_past_env_and_chaperone(self):
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import lease
+        for cmd, program in (('env -u CLAUDE_CONFIG_DIR claude -p {prompt}', 'claude'),
+                             ('chaperone -p proja -- codex exec {prompt}', 'codex'),
+                             ('/usr/bin/env X=1 opencode run', 'opencode')):
+            self.assertEqual(lease.program_of(cmd), program)
+
     def test_a_later_finding_supersedes_an_earlier_one(self):
         self.ask(); self.gate()
         self.call('memory', 'add', '-n', '1', 'The first estimate is 0.0184 raw units, from the fixture.')
@@ -884,84 +913,6 @@ else:
         self.assertLess(len(first.encode()),8000)
         self.assertEqual(json.loads(first)['predeclaration'],'frozen')
 
-    def configure_generator(self, body=None):
-        generator = self.root / 'generator.py'
-        generator.write_text(body or '''import pathlib,sys
-request,output,phase,iteration = pathlib.Path(sys.argv[1]),pathlib.Path(sys.argv[2]),sys.argv[3],sys.argv[4]
-(output/'proposal.txt').write_text(f'{phase}:{iteration}\\n')
-print('PROPOSAL: '+request.read_text().splitlines()[0])
-''')
-        cfg = self.root / '.arh/config/generators.md'
-        text = cfg.read_text()
-        text = text.replace('generator_biomni_enabled = false', 'generator_biomni_enabled = true')
-        text = text.replace(
-            'generator_biomni_cmd =',
-            f'generator_biomni_cmd = python3 "{generator}" {{request}} {{output}} {{phase}} {{iteration}}',
-        )
-        text = text.replace(
-            'generator_biomni_version_cmd =',
-            'generator_biomni_version_cmd = python3 --version',
-        )
-        cfg.write_text(text)
-        return cfg
-
-    def test_generator_registry_is_disabled_by_default(self):
-        result = self.call('evoke', 'list')
-        for name in ('biomni', 'ai-scientist-v2', 'agent-laboratory'):
-            self.assertIn(name, result.stdout)
-        self.assertEqual(result.stdout.count('disabled'), 3)
-        self.call('evoke', 'unknown', '-n', '1', '--phase', 'plan', good=False)
-
-    def test_evocation_requires_explicit_external_acknowledgement(self):
-        self.configure_generator()
-        self.call('evoke', 'biomni', '-n', '1', '--phase', 'plan', good=False)
-        self.assertFalse((self.it / 'metadata/evocations').exists())
-
-    def test_evocation_dry_run_sends_nothing_and_records_nothing(self):
-        self.configure_generator()
-        marker = self.root / 'should-not-exist'
-        result = self.call(
-            'evoke', 'biomni', '-n', '1', '--phase', 'plan',
-            '--note', f'literal $(touch {marker})', '--dry-run',
-        )
-        self.assertIn('# command (not run)', result.stdout)
-        self.assertIn('literal $(touch', result.stdout)
-        self.assertFalse(marker.exists())
-        self.assertFalse((self.it / 'metadata/evocations').exists())
-
-    def test_evocation_is_hash_bound_and_advisory(self):
-        cfg = self.configure_generator()
-        result = self.call(
-            'evoke', 'biomni', '-n', '1', '--phase', 'plan',
-            '--note', 'propose one bounded analysis', '--allow-external',
-        )
-        self.assertIn('response:', result.stdout)
-        runs = list((self.it / 'metadata/evocations').iterdir())
-        self.assertEqual(len(runs), 1)
-        run = runs[0]
-        record = json.loads((run / 'run.json').read_text())
-        self.assertEqual(record['schema'], 'arh-evocation-v1')
-        self.assertEqual(record['tool'], 'biomni')
-        self.assertEqual(record['phase'], 'plan')
-        self.assertEqual(record['exit_code'], 0)
-        self.assertEqual(record['config_sha256'], hashlib.sha256(cfg.read_bytes()).hexdigest())
-        self.assertEqual(record['request_sha256'], hashlib.sha256((run/'request.md').read_bytes()).hexdigest())
-        self.assertEqual((run/'artifacts/proposal.txt').read_text(), 'plan:1\n')
-        self.assertIn('PROPOSAL:', (run/'response.md').read_text())
-        self.assertFalse((self.it / 'results').joinpath('evocations').exists())
-
-    def test_failed_evocation_retains_receipt(self):
-        self.configure_generator("import sys; print('partial'); raise SystemExit(9)\n")
-        result = self.call(
-            'evoke', 'biomni', '-n', '1', '--phase', 'plan',
-            '--allow-external', good=False,
-        )
-        self.assertIn('record retained', result.stderr)
-        run = next((self.it/'metadata/evocations').iterdir())
-        self.assertEqual(json.loads((run/'run.json').read_text())['exit_code'], 9)
-        self.assertIn('partial', (run/'response.md').read_text())
-
-    @needs_site
     def test_named_launch_lock(self):
         lock=self.it/'metadata/nextflow/busy/.launch-lock'; lock.mkdir(parents=True)
         script=self.it/'scripts/it1_01_busy.nf'; script.write_text('workflow {}')
@@ -1049,7 +1000,6 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertIn(f'protocol = {protocol}', (old / '.arh/VERSION').read_text())
         self.assertTrue((old / 'AGENTS.md').read_text().startswith('# AutoResearch HPC'))
         self.assertTrue((old / 'skills/iterate/SKILL.md').is_file())
-        self.assertTrue((old / '.arh/config/generators.md').is_file())
         self.assertEqual((old / 'iterations/iteration1/README.md').read_bytes(), readme)
         self.assertTrue(list((old / '.arh').glob('migration-backup-*.tgz')))
         subprocess.run([str(ROOT / 'bin/arh'), 'ledger', 'render'], env=env, cwd=old, check=True, capture_output=True)

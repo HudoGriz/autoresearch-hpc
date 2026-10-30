@@ -17,10 +17,23 @@ is **on by default**, and each can be switched off in `.arh/config/harnesses.md`
 | Restart after a reboot (`arh dispatch tick`) | when cron runs it | cron or `scrontab` | ARH | do not schedule it |
 | `arh ask --wait-on-limit` | per call | — | ARH | leave the flag out |
 | Secret scan of everything sent to a provider | on | — | ARH | `secret_scan = off` (with a recorded reason) |
-| External research generators (`arh evoke`: Biomni, AI Scientist v2, Agent Laboratory) | **off** | each tool's own install and API keys | the site ([external-generators.md](external-generators.md)) | — (`generator_<tool>_enabled = true` and `--allow-external` per call turn one on) |
+| [abtop](https://github.com/graykode/abtop) 0.5.5: tokens, context and status of the live Claude Code, Codex and OpenCode sessions linked to an iteration, in `arh sessions -n N` | on | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | — |
+| [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28 research skills: `arh skill`, `arh ask --skill NAME` | on | — | `scripts/setup-tools.sh` (release archive, sha256-checked) | — |
+| Notify the operator (failed run, controller ended, UNSOUND or maintained review) | off | a command | site.md `notify =` (`ARH_EVENT`, `ARH_ITERATION`, `ARH_MESSAGE`) | leave it empty |
+| [Chaperone](https://github.com/HudoGriz/hpc-chaperone): each agent as its own Unix user | off | Chaperone on the cluster | prefix `harness_<name>_cmd` with `chaperone` | — |
 
-The generators stay off: each needs its own model keys and a multi-gigabyte environment, runs its
-own code and sends project content to its provider.
+External research generators (AI Scientist v2, Biomni, Agent Laboratory) are not wrapped; ARH's
+`arh evoke` was removed on 2026-10-30. Run one yourself and record it with `arh note`.
+
+### Access control is Chaperone's
+
+ARH writes deny rules into the harness configurations it knows (Claude Code, OpenCode, Codex), and
+covers sealed inputs with empty mounts in task containers. That does not hold for a harness it
+cannot configure, nor against an agent that runs as you. [Chaperone](https://github.com/HudoGriz/hpc-chaperone)
+runs a harness as `<you>-<profile>`, a real Unix user with your groups minus banned ones: keep
+sealed and restricted data in a group the persona does not hold, and give it access when a freeze
+releases a group. With `harness_<name>_cmd = chaperone claude -p {prompt} ...`, `arh doctor` checks
+that the persona cannot read any sealed input, and arh still knows the harness as `claude`.
 
 ### Installing
 
@@ -97,7 +110,7 @@ paths and data excerpts, so check them before you publish a repository.
 ## gitleaks: credential rules ARH does not maintain
 
 `secret_scanner = auto` applies gitleaks's rules on top of the built-in patterns, for `arh ask`,
-`arh delegate`, `arh evoke`, dispatch briefs and session logs, and `arh memory add`. **Both are
+`arh delegate`, dispatch briefs and session logs, and `arh memory add`. **Both are
 needed.** On 2026-10-30, gitleaks 8.30.1 missed Anthropic, OpenAI, AWS, Google and Hugging Face key
 shapes, assigned passwords and a lone private-key header that the built-in patterns catch, while it
 alone caught a Slack webhook URL. `secret_scanner = gitleaks` refuses to run without gitleaks;

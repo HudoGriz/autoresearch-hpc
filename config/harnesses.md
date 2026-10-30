@@ -22,8 +22,9 @@ composed prompt; `{cwd}` with the working directory.
 ## Roles
 
 `arh ask --role <role>` composes a prompt from
-`skills/cross-check/roles/<role>.md`. Shipped roles are `adversary`,
-`reimplementer`, `estimand-auditor` and `gotcha-scanner`.
+`skills/cross-check/roles/<role>.md`. Shipped roles are `adversary` and
+`reimplementer` (from the frozen DAG). Other checklists come from the research
+skills: `arh ask --skill NAME` (`arh skill` lists them).
 
 ```arh-config
 # Each iteration is bound to this file as it stood when the iteration was claimed. Changing it
@@ -102,8 +103,10 @@ dispatch_env = CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1
 # Every arh command on an iteration records, in metadata/activity.jsonl, the agent process it ran
 # under: the nearest ancestor whose program is one of the harness commands above, for any harness
 # (arh sessions -n N). Optionally also a session id a harness reports in an environment variable,
-# which links to that harness's own transcript; Claude Code's is CLAUDE_CODE_SESSION_ID.
-session_env = CLAUDE_CODE_SESSION_ID
+# which links to that harness's own transcript: Claude Code's CLAUDE_CODE_SESSION_ID, Codex's
+# CODEX_SESSION_ID (the default when unset). A controller started by arh dispatch drops these and
+# the other session markers it would inherit (dispatch_env_unset replaces that list).
+session_env = CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
 
 verifier   = codex
 # Whether a cross-check must come from a different model family than the producer. Keep this
@@ -116,7 +119,7 @@ require_foreign_family = true
 # deny for a blinded study, where a producer must not look published results up:
 # harness/install.sh then turns each harness's web tools off, and arh doctor checks them.
 web_access = allow
-# arh ask, arh delegate and arh evoke refuse to send a plan, report or task that carries something
+# arh ask and arh delegate refuse to send a plan, report or task that carries something
 # shaped like a credential (an API key, a token, a private key). off only for a recorded reason.
 secret_scan = on
 # How arh memory search finds recorded findings: basic-memory (the default, in the tools

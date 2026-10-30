@@ -26,7 +26,7 @@ if [[ " $* " == *" --wait-on-limit "* ]]; then
   done
 fi
 
-role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""; terms_reason=""; rebuttal=0
+role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""; terms_reason=""; rebuttal=0; skill=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --role)         role="$2"; shift 2 ;;
@@ -37,7 +37,9 @@ while [ $# -gt 0 ]; do
     --note)         extra="$2"; shift 2 ;;
     --terms-changed) terms_reason="$2"; shift 2 ;;
     --rebuttal)     rebuttal=1; shift ;;
-    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer|estimand-auditor|gotcha-scanner} -n N [--harness H] [--same-family] [--dry-run] [--note TEXT] [--terms-changed REASON]
+    --skill)        skill="$2"; shift 2 ;;
+    -h|--help) echo 'usage: arh ask --role {adversary|reimplementer} -n N [--harness H] [--same-family] [--dry-run] [--note TEXT] [--skill NAME] [--terms-changed REASON]
+--skill NAME: add a research skill (arh skill lists them) to the reviewer'"'"'s instructions, e.g. paper-claim-audit.
        arh ask --rebuttal -n N [--harness H] [--dry-run] [--note TEXT] [--terms-changed REASON]
 --rebuttal: put the producer'"'"'s rebuttal of an UNSOUND review to a reviewer (by default the one who said
 UNSOUND), who answers ADJUDICATION: WITHDRAWN or MAINTAINED. At most ask_max_adjudications per review.
@@ -50,6 +52,16 @@ content. Neither spends a review round, and each tries verifier_fallback.'; exit
 done
 case "$n" in ""|*[!0-9]*) arh_die "iteration must be numeric" ;; esac
 case "$role:$harness" in *..*|*/*) arh_die "invalid role or harness" ;; esac
+# A research skill is a checklist the reviewer applies; arh ask stays the review, so the skill's own
+# reviewer calls, MCP tools and web steps are skipped.
+if [ -n "$skill" ]; then
+  skill_file=$("$ARH_HOME/bin/arh-skill" "$skill") || exit 1
+  extra="${extra:+$extra
+
+}Also apply this checklist (research skill '$skill'). You are the reviewer: skip any step that calls another reviewer, an MCP tool or the web, and give your verdict in the format above.
+
+$(cat "$skill_file")"
+fi
 [ -n "$n" ] || arh_die "which iteration? arh ask --role $role -n N"
 
 arh_load_project
@@ -62,8 +74,11 @@ case "$strict_family" in true|false) ;; *) arh_die "require_foreign_family must 
 [ "$strict_family" = true ] && strict_arg=1 || strict_arg=0
 dir="$ARH_ITERS/iteration$n"
 [ -d "$dir" ] || arh_die "no iteration $n"
-[ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"
-[ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md")" ] || arh_die "pre-declaration altered"
+# An exploratory iteration has no frozen plan; a review of it is advice, never required.
+if [ "$(arh_tier "$dir")" != exploratory ]; then
+  [ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"
+  [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md")" ] || arh_die "pre-declaration altered"
+fi
 # The review terms were bound to the iteration when it was claimed. Refuse before any model call:
 # a review under changed terms counts only with the reason on record.
 if [ "$(arh_harness_config_state "$dir")" = changed ] && [ -z "${terms_reason//[[:space:]]/}" ]; then
@@ -365,4 +380,9 @@ if [ "$kind" = adjudication ]; then
   [ "$(printf '%s\n' "$pending" | grep -c .)" -le 1 ] || printf 'another rebutted UNSOUND review waits: arh ask --rebuttal -n %s\n' "$n"
 else
   grep -m1 '^VERDICT:' "$out"
+fi
+if grep -q -m1 '^VERDICT: UNSOUND\|^ADJUDICATION: MAINTAINED' "$out"; then
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import project
+project.notify(sys.argv[2], "review-unsound", sys.argv[3], sys.argv[4])' "$ARH_HOME/lib" "$ARH_ROOT" "$n" \
+    "iteration $n: $(grep -m1 '^VERDICT:\|^ADJUDICATION:' "$out") from $h (${out#"$ARH_ROOT"/})" || true
 fi

@@ -18,7 +18,7 @@
   },
   "runtime_image": "docker://mambaorg/micromamba:2.8.1",
   "tools": {
-    "_comment": "Integrations on by default (scripts/setup-tools.sh, docs/integrations.md): single release binaries checked by sha256, and basic-memory installed by uv. No conda solve.",
+    "_comment": "Integrations on by default (scripts/setup-tools.sh, docs/integrations.md): single release binaries checked by sha256, basic-memory installed by uv, and the ARIS research skills as a pinned source archive. No conda solve.",
     "uv": {
       "version": "0.13.1",
       "url": "https://github.com/astral-sh/uv/releases/download/{version}/uv-{triple}.tar.gz",
@@ -43,9 +43,22 @@
         "linux-aarch64": "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
       }
     },
+    "abtop": {
+      "version": "0.5.5",
+      "url": "https://github.com/graykode/abtop/releases/download/v{version}/abtop-{arch}-unknown-linux-gnu.tar.xz",
+      "sha256": {
+        "linux-64": "ae2f264561c11751748b4a6fb254a1648d5951fb541cf6d8e074f2cf75bdedf8",
+        "linux-aarch64": "4820294003933717ec5e906d9bbc475f2f751c03ed079d25eda1ebcd9e2ab58c"
+      }
+    },
     "python": "3.12",
     "pip": {
       "basic-memory": "0.23.2"
+    },
+    "aris": {
+      "version": "0.4.28",
+      "url": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep/archive/refs/tags/v{version}.tar.gz",
+      "sha256": "f13fe3b2d52c170d53cdb5b45eb53b955498187f98b550e65e668c7e8a434a76"
     }
   }
 }

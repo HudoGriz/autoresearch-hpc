@@ -61,7 +61,6 @@ arh_load_project() {
   ARH_SITE="$ARH_CONF/site.md"
   ARH_PROJ="$ARH_CONF/project.md"
   ARH_HARN="$ARH_CONF/harnesses.md"
-  ARH_GENS="$ARH_CONF/generators.md"
   ARH_ITERS="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" iterations_dir iterations)"
   ARH_VERIFY="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" verification_dir verification)"
   ARH_LEDGER="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" ledger PROGRESS.md)"
@@ -69,10 +68,12 @@ arh_load_project() {
   # The operator's directives file; a study that kept them in VALIDATION_PROTOCOL.md names it (#47).
   ARH_DIRECTIVES="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" directives DIRECTIVES.md)"
   # Which environment variables carry the harness's own session id (harnesses.md session_env).
-  ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "")
+  # Unset, the variables Claude Code and Codex set (feedback #129); every harness is also identified
+  # by its process (agent_process), so a harness without such a variable is still linked.
+  ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID")
   # auto: gitleaks's maintained rules on top of the built-in patterns when gitleaks is installed.
   ARH_SECRET_SCANNER=$(arh_config_get "$ARH_HARN" secret_scanner auto)
-  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_GENS ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
+  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
     ARH_SESSION_ENV ARH_SECRET_SCANNER
 }
 
@@ -178,6 +179,11 @@ arh_harness_config_state() {
 # The value of a review-policy key (require_crosscheck, review_response, unsound_review) that iteration
 # DIR is judged by: the one recorded when it was claimed, else project.md's (claims older than the
 # record). A later edit of project.md is named on stderr and does not apply.
+# arh_tier DIR — exploratory or confirmatory (the default, and every iteration claimed before tiers).
+arh_tier() {
+  if grep -q '"tier": *"exploratory"' "$1/CLAIM.json" 2>/dev/null; then echo exploratory; else echo confirmatory; fi
+}
+
 arh_review_policy() {
   local dir="$1" key="$2" default="$3" current claimed
   current=$(arh_config_get "$ARH_PROJ" "$key" "$default")
@@ -237,7 +243,7 @@ arh_has_sealed() {
 }
 
 # arh_secret_scan NOTE FILE...: succeed unless the files, or the note text, carry something shaped like
-# a credential; the findings go to stderr, redacted. Run on what arh ask, arh delegate and arh evoke
+# a credential; the findings go to stderr, redacted. Run on what arh ask and arh delegate
 # are about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
 arh_secret_scan() {
   local note="$1" tmp="" rc=0 hits; shift

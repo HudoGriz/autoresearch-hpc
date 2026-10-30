@@ -74,7 +74,7 @@ the matrix on every push with a local site and keeps `conformance.json` as an ar
 The network-dependent regression (`test_env_create_locks_and_is_immutable`)
 solves real packages and needs `ARH_TEST_NETWORK=1`; CI runs it with network
 enabled. Without a configured site and network, the boundary suite skips eight
-integration cases while retaining all generator-evocation checks.
+integration cases.
 
 Six core checks — `arh doctor` on a fresh project, the three `arh submit`
 execution checks and the Singularity-runtime check — require a site whose

@@ -16,17 +16,14 @@ dir="$ARH_ITERS/iteration$n"; [ -d "$dir" ] || arh_die "no iteration $n"
 title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
 printf 'Iteration %s — %s\n' "$n" "${title:-(untitled)}"
 if [ ! -f "$dir/README.md" ]; then say "arh new -n $n"; why "scaffold the pre-declaration; nothing may run until it is complete"; exit 0; fi
+if [ "$(arh_tier "$dir")" = exploratory ]; then
+  if [ ! -f "$dir/results/report/iteration${n}_report.md" ]; then say "arh submit ... (one README journal row per attempt)"; why "exploratory: no freeze, no review; sealed inputs stay sealed"; exit 0; fi
+  say "arh gate results -n $n, then arh claim --promotes $n"; why "an exploratory choice becomes a finding only when re-measured in a confirmatory iteration"; exit 0
+fi
 if [ ! -f "$dir/PREDECLARATION.sha256" ]; then say "arh gate predeclare -n $n"; why "complete every section first; the gate freezes the design"; exit 0; fi
 if [ "$(head -1 "$dir/PREDECLARATION.sha256")" != "$(arh_sha256 "$dir/README.md")" ]; then printf '\n  \033[1mThe pre-declaration was edited after it was frozen.\033[0m\n'; why "restore it or claim a new iteration for the changed design"; exit 0; fi
 busy=$(python3 "$ARH_HOME/lib/locks.py" busy "$ARH_ITERS" "$n" 2>/dev/null || true)
 if [ -n "$busy" ]; then say "arh wait -n $n"; why "still running: $(printf '%s' "$busy" | paste -sd ';' -)"; exit 0; fi
-if [ -d "$dir/arms" ]; then
-  for a in "$dir/arms"/*/; do
-    [ -d "$a" ] || continue; id=$(basename "$a")
-    if [ ! -f "$a/PREDECLARATION.sha256" ]; then say "arh arm gate -n $n -a $id"; why "arm $id is not frozen yet"; exit 0; fi
-    if [ ! -f "$a/FATE" ] && [ -n "$(find "$a/results" -type f 2>/dev/null | head -1)" ]; then say "arh arm fate -n $n -a $id -f CONCLUDED|NULL|INFEASIBLE|KILLED_BY_CONTROL"; why "arm $id has results but no recorded fate"; exit 0; fi
-  done
-fi
 if [ -z "$(find "$dir/results" -type f 2>/dev/null | head -1)" ]; then say "write $dir/scripts/, then: arh submit ..."; why "check acceptance criteria before interpreting anything; a failed criterion is a result to report, not a reason to stop"; exit 0; fi
 report="$dir/results/report/iteration${n}_report.md"
 if [ ! -f "$report" ]; then say "write $report"; why "template: $ARH_HOME/templates/iteration/REPORT.md"; why "if an acceptance criterion failed, report that; a new iteration pre-declares how to handle it"; exit 0; fi

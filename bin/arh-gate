@@ -200,6 +200,25 @@ case "$sub" in
     printf 'gate: results, iteration %s\n' "$n"
     arh_lease_touch "$dir" "arh gate results"
 
+    # An exploratory iteration concludes on a complete journal and a report; nothing in it is a
+    # finding, so there is no frozen plan, no required review and no standing-rule check.
+    if [ "$(arh_tier "$dir")" = exploratory ]; then
+      tries=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import attempts
+print(len(attempts.journal(sys.argv[2])))' "$ARH_HOME/lib" "$dir")
+      if [ "$tries" -gt 0 ]; then arh_ok "journal: $tries attempt(s)"
+      else arh_fail "the README journal has no rows: record every attempt, failed ones too"; fails=$((fails+1)); fi
+      missing=$(python3 "$ARH_HOME/lib/attempts.py" unjournalled "$dir")
+      if [ -n "$missing" ]; then
+        arh_fail "runs missing from the journal: $(printf '%s\n' "$missing" | paste -sd' ' -)"; fails=$((fails+1))
+      fi
+      report="$dir/results/report/iteration${n}_report.md"
+      [ -f "$report" ] && arh_ok "report present" || { arh_fail "no report at ${report#"$ARH_ROOT"/}"; fails=$((fails+1)); }
+      [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s).\n' "$fails" >&2; exit 1; }
+      python3 "$ARH_HOME/lib/attempts.py" conclude "$dir"
+      printf '\ngate PASSED. Exploratory iteration %s is concluded. Its numbers are not findings: promote a choice with arh claim --promotes %s.\n' "$n" "$n"
+      exit 0
+    fi
+
     if [ ! -f "$frozen" ]; then
       arh_fail "no frozen pre-declaration — results were produced outside the protocol"
       fails=$((fails+1))

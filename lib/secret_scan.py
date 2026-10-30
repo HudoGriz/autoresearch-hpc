@@ -1,6 +1,6 @@
 """Refuse to send text that looks like a credential to an external model service (stdlib only).
 
-`arh ask`, `arh delegate` and `arh evoke` send a pre-declaration, a report or a task to a provider.
+`arh ask` and `arh delegate` send a pre-declaration, a report or a task to a provider.
 A credential pasted into any of them leaves the site with it, and a provider may log or retain the
 request. A 2026 measurement of agents on a production cluster counted 127 exposed API keys in three
 weeks. The patterns are high-precision token shapes; a false positive is cleared by removing the

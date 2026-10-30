@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 
 
@@ -20,6 +21,19 @@ def config(path):
             key, value = (part.strip() for part in line.split('=', 1))
             values.setdefault(key, value)
     return values
+
+
+def notify(root, event, iteration, message):
+    """Tell the operator: run site.md's notify command (mail, ntfy, a chat webhook) with ARH_EVENT,
+    ARH_ITERATION and ARH_MESSAGE set. Best effort: a failing command never fails the caller."""
+    cmd = config(Path(root) / '.arh/config/site.md').get('notify', '')
+    if not cmd:
+        return
+    env = dict(os.environ, ARH_EVENT=event, ARH_ITERATION=str(iteration), ARH_MESSAGE=message, ARH_ROOT=str(root))
+    try:
+        subprocess.run(cmd, shell=True, env=env, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def guard(path, root, immutable=()):
