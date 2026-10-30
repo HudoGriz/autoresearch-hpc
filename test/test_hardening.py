@@ -218,11 +218,6 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         self.configure("import sys; assert '{cwd}' in sys.argv[1] and '{prompt}' in sys.argv[1]; print('VERDICT: SOUND')")
         self.call('ask', '-n', '1', '--note', 'Keep literal {cwd} and {prompt} in this source sample.')
 
-    def test_local_digest_shaped_filename_is_hashed(self):
-        image=self.root/('image@sha256:'+'a'*64); image.write_bytes(b'fixture')
-        (self.root/'.arh/config/site.md').write_text(f'```arh-config\ncontainer_runtime = apptainer\nimage_test = {image}\n```\n')
-        self.call('run', 'test', '--', 'true', good=False)
-
     JUDGE = ("import sys\n"
              "if 'ADJUDICATION:' in sys.argv[1]:\n    print('ADJUDICATION: {answer}')\n"
              "else:\n    print('VERDICT: UNSOUND')")
@@ -289,12 +284,6 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         response.write_text(self.REBUTTAL + 'Also the reviewer misread the table.\n')
         self.assertIn('no reviewer has judged the rebuttal', self.gate(good=False).stdout)
 
-    def test_require_rebuttal_accepts_an_unjudged_rebuttal(self):
-        self.bind_policy(unsound_review='require-rebuttal')
-        self.configure("print('VERDICT: UNSOUND')")
-        self.ask(); (self.it / 'REVIEW_RESPONSE.md').write_text(self.REBUTTAL)
-        self.assertIn('not put to a reviewer', self.gate().stdout)
-
     def test_a_rebuttal_is_judged_under_the_family_rule(self):
         self.configure(self.JUDGE.format(answer='WITHDRAWN'),
                        extra_config=f'harness_twin_family = openai\nharness_twin_cmd = python3 "{self.mock}" {{prompt}}\n')
@@ -308,11 +297,6 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         out = self.call('ask', '--rebuttal', '-n', '1', '--dry-run').stdout
         self.assertIn('ADJUDICATION: WITHDRAWN | MAINTAINED', out); self.assertIn('changes no reported value', out)
         self.assertFalse(list(self.it.glob('REBUTTAL_*')))
-
-    def test_unsound_verdict_is_only_reported_when_the_project_allows_it(self):
-        self.bind_policy(unsound_review='allow')
-        self.configure("print('VERDICT: UNSOUND')")
-        self.ask(); self.assertIn('WARN', self.gate().stdout)
 
     def test_the_review_policy_is_read_from_the_claim(self):
         self.assertEqual(json.loads((self.it / 'CLAIM.json').read_text())['review_policy'],
@@ -378,85 +362,6 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         attempt = {i['iteration']: i['attempt'] for i in status['iterations']}
         self.assertEqual(attempt[int(tries[1])], {'question': 'q1', 'state': 'concluded', 'attempt': 3, 'of': 3})
         self.assertEqual(attempt[1]['state'], 'open')
-
-    DAG = """# Discovery DAG — iteration 1
-
-## 1. Inputs
-| id | what | identity |
-|---|---|---|
-| I1 | 100 paired draws | sha256:aa11 |
-
-## 2. The graph, as it ran
-```mermaid
-flowchart TD
-    I1 --> N1
-    N1 --> C1
-```
-
-## 3. Nodes
-| id | operation | parameters | decision? | output |
-|---|---|---|---|---|
-| N1 | mean difference | none | no | diff |
-| C1 | the claim | none | no | diff |
-
-## 4. Branch count
-One path; the denominator is 1.
-
-## 5. What falls out of the graph
-Nothing.
-
-## 6. Terminal claim
-The mean difference is 0.0184 raw units.
-"""
-    REPLICATOR = ("import os, sys\nfrom pathlib import Path\nh = Path(os.environ['HOME'])\n"
-                  "print('VERDICT: SOUND')\n"
-                  "print('memory_visible', (h / '.claude-mem/memory.db').exists() or (h / '.codex/memories_1.sqlite').exists())\n"
-                  "c = h / '.claude/.credentials.json'\n"
-                  "print('login_visible', c.is_file() and c.read_text() == 'token')\n"
-                  "print('config_dir_set', 'CLAUDE_CONFIG_DIR' in os.environ)\n")
-
-    def replication_fixture(self, mode):
-        operator = Path(self.temp.name) / 'operator-home'
-        for path, text in (('.claude-mem/memory.db', 'the original code'), ('.codex/memories_1.sqlite', 'results'),
-                           ('.claude/.credentials.json', 'token')):
-            (operator / path).parent.mkdir(parents=True, exist_ok=True); (operator / path).write_text(text)
-        self.env.update(HOME=str(operator), CLAUDE_CONFIG_DIR=str(operator / '.claude'))
-        self.mock.write_text(self.REPLICATOR)
-        self.config.write_text(f'''```arh-config
-producer = source
-verifier = reviewer
-harnesses = reviewer
-harness_source_family = openai
-harness_reviewer_family = anthropic
-harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}
-replicate_home = {mode}
-fresh_home_files = .claude/.credentials.json
-fresh_home_env_unset = CLAUDE_CONFIG_DIR
-```
-''')
-        self.bind_terms()
-        self.call('dag', 'init', '-n', '1')
-        (self.it / 'DAG.md').write_text(self.DAG)
-        self.call('dag', 'freeze', '-n', '1')
-        self.call('replicate', '-n', '1', '--agents', '1')
-        work = self.root / 'verification/replication_it1/agent1'
-        return (work / 'REPORT.md').read_text(), work, self.call('replicate', 'report', '-n', '1').stdout
-
-    def test_a_blind_replicator_cannot_see_the_operators_memory(self):
-        report, work, summary = self.replication_fixture('fresh')
-        self.assertIn('memory_visible False', report)
-        self.assertIn('login_visible True', report)
-        self.assertIn('config_dir_set False', report)
-        record = json.loads((work / 'HOME.json').read_text())
-        self.assertEqual(record['home'], 'fresh')
-        self.assertEqual(record['files'], [{'source': '.claude/.credentials.json', 'dest': '.claude/.credentials.json', 'linked': True}])
-        self.assertTrue((work / 'home/.claude/.credentials.json').is_symlink())
-        self.assertIn('Every agent ran with a fresh home directory', summary)
-
-    def test_an_inherited_home_is_named_in_the_replication_report(self):
-        report, _, summary = self.replication_fixture('inherit')
-        self.assertIn('memory_visible True', report)
-        self.assertIn('treat its blindness as unverified', summary)
 
     CONTROLLER = """import os, subprocess, sys, time
 from pathlib import Path
@@ -779,26 +684,6 @@ else:
         self.call('note', '-n', '1', 'not from inside an agent')
         self.assertIsNone(json.loads((self.it / 'metadata/activity.jsonl').read_text().splitlines()[-1])['agent_process'])
 
-    def test_a_fresh_home_records_the_template_it_ran(self):
-        _, work, summary = self.replication_fixture('fresh')
-        record = json.loads((work / 'HOME.json').read_text())
-        self.assertIn('{prompt}', record['command_template'])
-        self.assertIn('pinned model', record['note'])
-        self.assertIn('HOME.json records the template', summary)
-
-    def test_a_dispatched_controller_can_start_with_a_fresh_home(self):
-        operator = Path(self.temp.name) / 'operator-home'
-        (operator / '.claude-mem').mkdir(parents=True); (operator / '.claude-mem/memory.db').write_text('earlier iterations')
-        self.env['HOME'] = str(operator)
-        n, it, brief = self.dispatch_config('dispatch_home = fresh\nfresh_home_files =\n')
-        controller = self.root / 'controller.py'
-        controller.write_text("import os\nfrom pathlib import Path\n"
-                              "print('memory_visible', (Path(os.environ['HOME']) / '.claude-mem/memory.db').exists())\n")
-        self.call('dispatch', '-n', n, '--brief', str(brief), timeout=120)
-        record = it / 'metadata/dispatch/001'
-        self.assertIn('memory_visible False', (record / 'session.log').read_text())
-        self.assertEqual(json.loads((record / 'run.json').read_text())['home'], 'fresh')
-
     # Built from parts so the source never holds a webhook-shaped literal (GitHub push protection).
     HOOK = 'https://hooks.slack.com/services/' + '/'.join(('T01ABCDEF12', 'B01ABCDEF34', 'abcdefghijklmnopqrstuvwx'))
 
@@ -864,21 +749,6 @@ else:
         out = self.call('memory', 'search', 'empty', 'sample').stdout
         self.assertIn("'empty sample', '--in', '" + str(self.root / 'knowledge') + "'", out)
 
-    def test_a_finding_reformatted_by_a_markdown_tool_still_reads(self):
-        # The front matter as basic-memory 0.23.2 rewrote it (2026-10-16): no quotes, a block list,
-        # a datetime and a permalink.
-        self.ask(); self.gate()
-        self.call('memory', 'add', '-n', '1', 'The fixture passes its one check under a SOUND review.')
-        path = self.root / 'knowledge/F1.1.md'
-        meta = dict(re.findall(r'(?m)^(report_sha256|predeclaration_sha256): (\S+)$', path.read_text()))
-        path.write_text('---\nid: F1.1\niteration: 1\nquestion: q1\ntitle: validation\n'
-                        'recorded: 2026-10-16 10:39:16+00:00\nverdicts: SOUND\n'
-                        f"predeclaration_sha256: {meta['predeclaration_sha256']}\nreport_sha256: {meta['report_sha256']}\n"
-                        'reviews:\n- CROSSCHECK_adversary_reviewer_x.md\npermalink: knowledge/f1.1\n---\n\n'
-                        'The fixture passes its one check under a SOUND review.\n')
-        self.assertIn('F1.1', self.call('memory', 'list').stdout)
-        self.assertEqual(json.loads(self.call('context', '-n', '1').stdout)['memory']['findings'][0]['id'], 'F1.1')
-
     def test_a_milder_second_review_does_not_answer_an_unsound_one(self):
         self.configure("print('VERDICT: UNSOUND')")
         self.ask()
@@ -929,18 +799,6 @@ else:
         receipt.write_text('{"exit_code": 0}\n')
         self.assertIn('1 run receipt(s)', self.call('gate', 'predeclare', '-n', n, good=False).stdout)
 
-    def test_journal_is_a_hash_chain(self):
-        self.ask()
-        self.declare('second', (self.it / 'README.md').read_text())
-        self.call('gate', 'predeclare', '-n', '2')
-        journal = self.root / '.arh/freezes.tsv'
-        rows = journal.read_text().splitlines()
-        self.assertEqual([r.split('\t')[0] for r in rows[1:]], ['1', '2'])
-        self.call('ledger', 'render')
-        self.call('ledger', 'check')
-        journal.write_text('\n'.join([rows[0], rows[2]]) + '\n')     # iteration 1's row removed
-        self.assertIn('does not chain', self.call('ledger', 'check', good=False).stdout)
-
     def test_ledger_check_reads_the_claim_registry(self):
         self.declare('to be deleted', 'x')
         self.call('ledger', 'render'); self.call('ledger', 'check', good=None)
@@ -948,18 +806,6 @@ else:
         self.call('ledger', 'render')
         self.assertIn('iteration 2 — in the claim registry, but its directory is gone',
                       self.call('ledger', 'check', good=False).stdout)
-
-    def test_freeze_anchor_is_journalled_and_a_failing_anchor_freezes_nothing(self):
-        cfg = self.root / '.arh/config/project.md'
-        cfg.write_text(cfg.read_text().replace('freeze_anchor     =', 'freeze_anchor     = echo anchored {iteration} {sha256}'))
-        n, it = self.declare('anchored', (self.it / 'README.md').read_text())
-        self.call('gate', 'predeclare', '-n', n)
-        row = (self.root / '.arh/freezes.tsv').read_text().splitlines()[-1].split('\t')
-        self.assertEqual(row[3], f'anchored {n} {row[1]}')
-        cfg.write_text(cfg.read_text().replace('echo anchored {iteration} {sha256}', 'false'))
-        n, it = self.declare('unanchored', (self.it / 'README.md').read_text())
-        self.assertIn('freeze_anchor failed', self.call('gate', 'predeclare', '-n', n, good=False).stderr)
-        self.assertFalse((it / 'PREDECLARATION.sha256').exists())
 
     def test_scripts_edited_after_a_completed_run_are_named(self):
         for i, (digest, code) in enumerate([('a', 0), ('b', 0)]):
@@ -971,21 +817,6 @@ else:
         result = self.gate()
         self.assertIn('2 attempt(s) of 1 named workflow(s), 2 completed', result.stdout)
         self.assertIn('1 file(s) a completed run used were edited and run again: s.py', result.stdout)
-
-    def test_migrate_backfills_the_journal_but_never_a_journalled_iteration(self):
-        journal = self.root / '.arh/freezes.tsv'
-        claim = json.loads((self.it / 'CLAIM.json').read_text())
-        claim.pop('freeze_journal'); (self.it / 'CLAIM.json').write_text(json.dumps(claim))
-        journal.unlink()                # a study frozen before the journal existed
-        self.ask()
-        self.assertIn('no freeze journal', self.gate().stdout)
-        self.assertIn('backfilled for 1', self.call('migrate', str(self.root), '--apply').stdout)
-        self.assertIn('backfilled by arh migrate', journal.read_text())
-        self.gate()
-        n, it = self.declare('journalled', (self.it / 'README.md').read_text())
-        self.call('gate', 'predeclare', '-n', n)
-        journal.write_text(''.join(journal.read_text().splitlines(True)[:2]))   # its row removed
-        self.assertNotIn('backfilled', self.call('migrate', str(self.root)).stdout)
 
     def test_unchanged_review_reused(self):
         self.ask(); result=self.ask()
@@ -1225,21 +1056,6 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         ledger.write_text(ledger.read_text().replace('| frozen |', '| draft |'))
         self.assertIn('stale', self.call('ledger', 'check', good=False).stdout)
         self.call('ledger', 'render'); self.call('ledger', 'check')
-
-    def test_rule_scope_paragraph(self):
-        # One qualifier anywhere used to excuse every use of a forbidden term (2026-09-11).
-        rule = self.root / 'rules/recall-scoped.md'
-        body = 'id = recall-scoped\nseverity = error\napplies = report\nforbid = recall\nrequires = end.to.end\n'
-        rule.write_text(f'```arh-config\n{body}scope = paragraph\n```\n')
-        project = self.root / '.arh/config/project.md'
-        project.write_text(re.sub(r'(?m)^(rules\s*=.*)$', r'\1 recall-scoped', project.read_text()))
-        doc = self.root / 'doc.md'
-        base = 'Negative controls did not fire. Detection limit: one event.\n\nEnd-to-end recall is 50%.\n\n'
-        doc.write_text(base + 'Recall rose.\n')
-        self.assertIn('a paragraph uses', self.call('gate', 'rules', str(doc), good=False).stdout)
-        doc.write_text(base + 'End-to-end recall rose.\n'); self.call('gate', 'rules', str(doc))
-        rule.write_text(f'```arh-config\n{body}```\n')             # default scope: document, as before
-        doc.write_text(base + 'Recall rose.\n'); self.call('gate', 'rules', str(doc))
 
     def test_review_records_verifier_version(self):
         # The record named the verifier's family but not the build that answered (2026-09-11).
@@ -1574,6 +1390,12 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         del oc['webfetch']
         (self.root / 'opencode.json').write_text(json.dumps({'permission': oc}))
         self.assertIn('opencode.json leaves webfetch on', self.call('doctor', good=None).stdout)
+        # A harness is known by the program its command runs, not by its name (field feedback #112).
+        self.set_config('harnesses.md', harnesses='claude_alt gemini',
+                        harness_claude_alt_cmd='env X=1 /usr/bin/claude -p {prompt}', harness_gemini_cmd='gemini -p {prompt}')
+        out = self.call('doctor', good=None)
+        self.assertIn('cannot check that harness gemini', out.stdout + out.stderr)
+        self.assertNotIn('harness claude_alt', out.stdout + out.stderr)
 
     def test_review_records_usage(self):
         # "Bounded model calls" bounded bytes, but nothing counted tokens (2026-09-14).
@@ -1794,8 +1616,6 @@ elif args[0] == 'list':
         (self.root / 'DIRECTIVES.md').unlink()
         err = self.call('doctor', good=None).stderr
         self.assertIn('DIRECTIVES.md is missing', err)
-        self.assertIn('1 GOTCHAS.md entr(ies) state no check', err)                # #53: G17 and G18 state theirs
-        self.assertIn('         a mode with no check', err)
         self.call('migrate', str(self.root), '--apply')
         self.assertTrue((self.root / 'DIRECTIVES.md').is_file())
         self.assertIn('a mode with no check', gotchas.read_text())          # an existing file is never replaced
@@ -2466,28 +2286,6 @@ elif args[0] == 'list':
         self.call('submit', str(wf), '-n', 'flaky2', timeout=600)
         record = json.loads(next((self.it / 'logs/nextflow/flaky2').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['task_retries'], 1)
-
-    def test_number_check_reads_named_summaries_before_bulk_tables(self):
-        # A 64 MB budget went on 89 MB of per-sample tables in path order, and the summary holding every
-        # reported number was never read (field feedback #70).
-        bulk = self.it / 'results/emit'
-        bulk.mkdir(parents=True)
-        for i in range(6):
-            (bulk / f'sample{i}.tsv').write_text('1.0\n' * (3 * 1024 * 1024))
-        (self.it / 'results/gather').mkdir()
-        (self.it / 'results/gather/results.json').write_text('{"f1": 0.80828}\n')
-        self.report.write_text(self.report.read_text() + '\nF1 0.8083.\n')
-
-        def check(*globs):
-            return subprocess.run([sys.executable, str(ROOT / 'lib/report_numbers.py'), 'check', str(self.it),
-                                   str(self.report), *globs], capture_output=True, text=True, check=True)
-        done = check()                      # smallest first: the summary is read before the tables
-        self.assertEqual(done.stdout, '')
-        self.assertIn('stopped at', done.stderr)
-        big = self.it / 'results/gather/results.json'
-        big.write_text('{"pad": [' + '1.5,' * (4 * 1024 * 1024) + '0.80828]}\n')
-        self.assertIn('0.8083', check().stdout)    # now the largest file: the budget runs out first
-        self.assertEqual(check('gather/*.json').stdout, '')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

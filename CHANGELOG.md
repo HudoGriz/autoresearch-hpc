@@ -41,6 +41,14 @@ of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studi
 - `arh wait` exits 3 when a run failed or its driver died, a deliberate `arh stop` excepted;
   `arh context` names the coding skill (`coding_skill`, Ponytail); the suite runs in parallel
   (`test/parallel.py`, about 2 min on 40 cores with a site).
+- **Tests no longer pin optional machinery** (operator, 2026-10-30): removed the tests that held the
+  hash-chained freeze journal and its external anchor, fresh-home sandboxes for replicators and
+  controllers, the `unsound_review = allow` and `require-rebuttal` modes, paragraph-scoped rules,
+  the number check's read order, tolerance for a front matter basic-memory may no longer rewrite,
+  a digest-shaped image filename, and the "gotcha states no check" keyword match. The behaviour
+  is still there but free to be simplified or removed. `arh replicate` is now untested.
+- `arh doctor`'s access check knows a harness by the program its command runs (`claude_ana` runs
+  `claude`), so harness variants are no longer reported as unverifiable.
 
 ### Changed (token use, 2026-10-27; plan in design-notes/token-plan.md, reviewed by Codex)
 - **Sessions start from `arh context`, not from whole files.** The contract sent every session to

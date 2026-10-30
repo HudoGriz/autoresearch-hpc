@@ -210,12 +210,12 @@ def listing(root, iterations, only=None):
 
 
 def reads_text(rows, path):
-    """'named by a run of iteration(s) 55; released to 73; read before the seal by 9, 27' or 'never released'.
-    A row without the named/released column predates it: whether that run named the path is not known."""
+    """'named by a run of iteration(s) 55; released to iteration(s) 73 (no run names it); read before the
+    seal by iteration(s) 9, 27' or 'never released'. Rows older than the named column count as released."""
     rows = [r for r in rows if r[4] == str(path)]
     its = lambda keep: sorted({r[1] for r in rows if keep(r)}, key=int)
-    named = its(lambda r: r[2] != PRESEAL and len(r) > 6 and r[6] == 'named')
-    released = its(lambda r: r[2] != PRESEAL and r[1] not in named and not (len(r) > 6 and r[6] == 'named'))
+    named = its(lambda r: r[2] != PRESEAL and r[6:7] == ['named'])
+    released = [i for i in its(lambda r: r[2] != PRESEAL) if i not in named]
     before = its(lambda r: r[2] == PRESEAL)
     parts = ([f"named by a run of iteration(s) {', '.join(named)}"] if named else []) + (
         [f"released to iteration(s) {', '.join(released)} (no run names it)"] if released else []) + (
