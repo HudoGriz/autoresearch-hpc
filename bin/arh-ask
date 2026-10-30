@@ -53,14 +53,13 @@ done
 case "$n" in ""|*[!0-9]*) arh_die "iteration must be numeric" ;; esac
 case "$role:$harness" in *..*|*/*) arh_die "invalid role or harness" ;; esac
 # A research skill is a checklist the reviewer applies; arh ask stays the review, so the skill's own
-# reviewer calls, MCP tools and web steps are skipped.
+# reviewer calls, MCP tools and web steps are skipped. Named by path and hash: its text (15-25 KB)
+# would take most of ask_max_input_bytes.
 if [ -n "$skill" ]; then
   skill_file=$("$ARH_HOME/bin/arh-skill" "$skill") || exit 1
   extra="${extra:+$extra
 
-}Also apply this checklist (research skill '$skill'). You are the reviewer: skip any step that calls another reviewer, an MCP tool or the web, and give your verdict in the format above.
-
-$(cat "$skill_file")"
+}Also read and apply the checklist in $skill_file (research skill '$skill', sha256 $(arh_sha256 "$skill_file")). You are the reviewer: skip any step that calls another reviewer, an MCP tool or the web, and give your verdict in the format above."
 fi
 [ -n "$n" ] || arh_die "which iteration? arh ask --role $role -n N"
 
@@ -96,7 +95,8 @@ roledoc="$ARH_HOME/skills/cross-check/roles/$role.md"
 # that fails them then has to be edited, which invalidates the hash-bound review and costs a
 # round. Check first, while fixing the report is still free.
 report_file="$dir/results/report/iteration${n}_report.md"
-if [ "$rebuttal" = 0 ] && [ "$role" != reimplementer ] && [ -f "$report_file" ]; then
+# An exploratory report states no finding, so the standing rules do not bind it (protocol 6b).
+if [ "$rebuttal" = 0 ] && [ "$role" != reimplementer ] && [ -f "$report_file" ] && [ "$(arh_tier "$dir")" != exploratory ]; then
   if ! rule_out=$("$ARH_HOME/bin/arh" gate rules "$report_file" 2>&1); then
     printf '%s\n' "$rule_out" | grep -E 'FAIL' >&2 || true
     arh_die "the report fails the standing rules; fix it before review (arh gate rules ${report_file#"$ARH_ROOT"/}).
