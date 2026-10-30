@@ -30,17 +30,26 @@ entire=$(command -v entire || true)
 if [ "$(arh_config_get "$ARH_HARN" entire on)" = on ] && [ -z "$entire" ]; then
   arh_warn 'entire = on, but Entire CLI is not installed yet: run scripts/setup-tools.sh, then this script again'
 elif [ "$(arh_config_get "$ARH_HARN" entire on)" = on ]; then
-  # Every configured harness that Entire knows (harness_<h>_entire_agent in harnesses.md).
-  # ARH_ENTIRE_AGENTS names them instead, e.g. for a study whose harnesses.md predates the key and
-  # must not change under open iterations (its hash binds their review terms).
-  agents=${ARH_ENTIRE_AGENTS:-$(for h in $(arh_config_get "$ARH_HARN" harnesses ""); do arh_config_get "$ARH_HARN" "harness_${h}_entire_agent" ""; echo; done | sort -u | xargs)}
+  # The Entire agent of each configured harness: harness_<h>_entire_agent, else the one for the
+  # program its command runs (claude_ana runs claude). ARH_ENTIRE_AGENTS names them instead.
+  entire_agent() {
+    local a prog
+    a=$(arh_config_get "$ARH_HARN" "harness_${1}_entire_agent" "")
+    [ -n "$a" ] && { echo "$a"; return; }
+    prog=$(arh_config_get "$ARH_HARN" "harness_${1}_cmd" "$1" | tr ' ' '\n' | grep -v -e '^env$' -e = | head -1)
+    case "${prog##*/}" in claude) echo claude-code ;; codex) echo codex ;; opencode) echo opencode ;; esac
+  }
+  agents=${ARH_ENTIRE_AGENTS:-$(for h in $(arh_config_get "$ARH_HARN" harnesses ""); do entire_agent "$h"; done | sort -u | xargs)}
+  # Entire is a convenience: when it cannot enable (no git identity, no login on a CI runner), the
+  # record goes on without it.
   first=1
   for a in $agents; do
     if [ "$first" = 1 ]; then
-      "$entire" enable --agent "$a" --telemetry=false --skip-push-sessions --absolute-git-hook-path >/dev/null
+      "$entire" enable --agent "$a" --telemetry=false --skip-push-sessions --absolute-git-hook-path >/dev/null 2>&1 \
+        || { arh_warn "Entire could not be enabled (it needs a git identity: git config user.email); the record goes on without session records"; agents=""; break; }
       first=0
     else
-      "$entire" agent add "$a" >/dev/null
+      "$entire" agent add "$a" >/dev/null 2>&1 || arh_warn "Entire could not add agent $a"
     fi
   done
   # Agent hooks call `entire` by name, and an agent's PATH need not hold the pinned tools

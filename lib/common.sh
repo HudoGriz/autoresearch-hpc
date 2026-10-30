@@ -277,8 +277,11 @@ arh_lease_touch() {
 # history is a second, independent trail of who changed what and when, and it is what Entire CLI
 # hangs agent sessions on (Entire-Checkpoint trailers; docs/integrations.md). Never fatal: a failed
 # commit warns and leaves the change in the working tree for the next one.
+# arh_git_record MESSAGE [N[,N...]]: commit the files outside the iteration and verification
+# directories, those of each N named, and any iteration or verification not yet in the record (a claim).
 arh_git_record() {
-  local msg=$1 max big sealed
+  local msg=$1 scope=${2-} max big sealed iters verif s
+  local -a paths
   [ "$(arh_config_get "$ARH_HARN" git_record on)" = on ] || return 0
   [ -d "$ARH_ROOT/.git" ] || return 0
   command -v git >/dev/null 2>&1 || return 0
@@ -292,8 +295,18 @@ arh_git_record() {
     { sed '/^# arh sealed inputs >>>$/,/^# <<< arh sealed inputs$/d' .git/info/exclude 2>/dev/null
       printf '# arh sealed inputs >>>\n%s\n# <<< arh sealed inputs\n' "$sealed"; } > .git/info/exclude.new \
       && mv .git/info/exclude.new .git/info/exclude
-    # A path sealed after it was committed leaves the index (its old commits stay: see docs/integrations.md).
-    git ls-files -z -c -i --exclude-standard | xargs -0 -r git rm -q --cached -- 2>/dev/null || true
+    iters=$(arh_config_get "$ARH_PROJ" iterations_dir iterations)
+    verif=$(arh_config_get "$ARH_PROJ" verification_dir verification)
+    paths=()
+    for s in ${scope//,/ }; do
+      case "$s" in
+        *[!0-9]*) [ -d "$verif/$s" ] && paths+=("$verif/$s") ;;
+        *) [ -d "$iters/iteration$s" ] && paths+=("$iters/iteration$s") ;;
+      esac
+    done
+    while IFS= read -r -d '' s; do
+      case "$s" in "$iters"/*/*/|"$verif"/*/*/) ;; "$iters"/|"$verif"/|"$iters"/*/|"$verif"/*/) paths+=("$s") ;; esac
+    done < <(git ls-files -z -o --directory --exclude-standard -- "$iters" "$verif" 2>/dev/null)
     # Data never enters the history, even when .gitignore misses it. Checked before `git add`, which
     # would otherwise compress every large file into .git/objects first (minutes on a shared filesystem).
     big=$(git ls-files -z -o -m --exclude-standard | xargs -0 -r stat -c '%s %n' 2>/dev/null \
@@ -302,7 +315,13 @@ arh_git_record() {
       printf '%s\n' "$big" | while IFS= read -r f; do git rm -q --cached --ignore-unmatch -- "$f"; printf '/%s\n' "$f" >> .git/info/exclude; done
       arh_warn "git record: left out files over $max bytes (added to .git/info/exclude): $(printf '%s ' $big)"
     fi
+    # Everything outside the iterations, then only the iterations named or new: another session's
+    # work in progress stays in the working tree for its own commit.
     git add -A . 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
+    git reset -q -- "$iters" "$verif" 2>/dev/null || true
+    [ ${#paths[@]} -eq 0 ] || git add -A -- "${paths[@]}" 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
+    # A path sealed after it was committed leaves the index (its old commits stay: see docs/integrations.md).
+    git ls-files -z -c -i --exclude-standard | xargs -0 -r git rm -q --cached -- 2>/dev/null || true
     git diff --cached --quiet && exit 0
     if git config user.email >/dev/null 2>&1; then git commit -q -m "$msg" >/dev/null 2>&1
     else git -c user.name="${USER:-arh}" -c user.email="${USER:-arh}@$(hostname)" commit -q -m "$msg" >/dev/null 2>&1; fi \

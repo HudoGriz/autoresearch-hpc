@@ -41,7 +41,10 @@ class Protocol(unittest.TestCase):
                         PATH=str(ROOT / 'bin') + os.pathsep + os.environ['PATH'])
         subprocess.run([str(ROOT / 'bin/arh'), 'init', str(self.root)], check=True, capture_output=True)
         if os.environ.get('ARH_TEST_SITE'):
-            (self.root / '.arh/config/site.md').write_text(Path(os.environ['ARH_TEST_SITE']).read_text())
+            # The site's runtime, not its integration tools: a test sees gitleaks or basic-memory only
+            # when it installs them (a bootstrapped CI site has them all).
+            site = Path(os.environ['ARH_TEST_SITE']).read_text()
+            (self.root / '.arh/config/site.md').write_text(re.sub(r'(?m)^tools_prefix\s*=.*\n?', '', site))
         self.call('claim', '-t', 'validation')
         self.call('new', '-n', '1')
         self.it = self.root / 'iterations/iteration1'
@@ -520,6 +523,15 @@ else:
         self.assertNotIn('iterations/iteration1/resources/truth.vcf', ls())    # left the index
         self.assertTrue(truth.is_file())
         self.assertIn('/iterations/iteration1/resources/truth.vcf', (self.root / '.git/info/exclude').read_text())
+
+    def test_a_commit_takes_only_the_iteration_its_command_names(self):
+        # One session's work went into another's commit, named after its command (field feedback #118).
+        ls = lambda: subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
+        (self.it / 'scripts/draft.py').write_text('x = 1\n')
+        self.call('ledger', 'render')
+        self.assertNotIn('iterations/iteration1/scripts/draft.py', ls())
+        self.call('note', '-n', '1', 'draft written')
+        self.assertIn('iterations/iteration1/scripts/draft.py', ls())
 
     def test_git_record_off_commits_nothing(self):
         self.configure(extra_config='git_record = off\n')
@@ -1042,7 +1054,7 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertTrue(list((old / '.arh').glob('migration-backup-*.tgz')))
         subprocess.run([str(ROOT / 'bin/arh'), 'ledger', 'render'], env=env, cwd=old, check=True, capture_output=True)
         self.assertEqual((old / 'PROGRESS.md').read_text().count('status:begin'), 1)
-        self.assertIn('nothing to do', run('--apply').stdout)
+        self.assertIn('to do: the study is already on the current layout', run('--apply').stdout)
 
     def test_ledger_render_refuses_a_foreign_status_block(self):
         ledger = self.root / 'PROGRESS.md'
@@ -1452,7 +1464,7 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         self.assertEqual(skill.read_text(), (ROOT / 'skills/iterate/SKILL.md').read_text())
         self.assertEqual(own.read_text(), 'project skill\n')
         self.assertTrue((self.root / 'CLAUDE.md').is_symlink())
-        self.assertIn('nothing to do', migrate().stdout)
+        self.assertIn('to do: the study is already on the current layout', migrate().stdout)
 
     def test_migrate_keeps_the_studys_own_contract_text_and_logs_the_upgrade(self):
         # Migrate replaced a study's AGENTS.md wholesale and dropped its project block (field feedback
@@ -1476,7 +1488,7 @@ print('PROPOSAL: '+request.read_text().splitlines()[0])
         after = agents.read_text()
         self.assertEqual(after, (ROOT / 'AGENTS.md').read_text().replace(
             '<!-- arh:project:begin -->\n', '<!-- arh:project:begin -->\nHG002 is held out.\n'))
-        self.assertIn('nothing to do', self.call('migrate', str(self.root)).stdout)
+        self.assertIn('to do: the study is already on the current layout', self.call('migrate', str(self.root)).stdout)
         self.assertNotIn("differ from the framework's", self.call('doctor', good=None).stderr)
 
     def test_env_cache_builds_once_for_many_projects(self):
