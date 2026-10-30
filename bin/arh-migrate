@@ -200,6 +200,17 @@ if state == 'migrated':
         changes.append('harness access: declared inputs, sealed-input denials and web tools refreshed for '
                        + ', '.join(installed))
 
+# Settings added to the framework since the study was made apply by their defaults. harnesses.md binds
+# open iterations' review terms, so migrate names them and never writes them (field feedback #119).
+if (cfg / 'harnesses.md').exists():
+    from freeze import config as config_keys  # noqa: E402
+    have = config_keys(cfg / 'harnesses.md')
+    new = {k: v for k, v in config_keys(home / 'config/harnesses.md').items()
+           if k not in have and not re.match(r'harness_\w+_', k)}
+    if new:
+        notes.append('harnesses.md predates these settings, which apply by their defaults (add any to change it, '
+                     'once no iteration is open):' + ''.join(f'\n        {k} = {v}' for k, v in sorted(new.items())))
+
 for note in notes:
     print('  note: ' + note)
 if not changes:

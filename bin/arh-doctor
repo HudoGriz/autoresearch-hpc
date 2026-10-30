@@ -338,4 +338,6 @@ fi
 printf '\n'
 arh_ok_summary
 [ "$warn" -gt 0 ] && { printf '%s setup problem(s) found. Fix the FAIL items above and rerun `arh doctor`.\n' "$warn"; exit 1; }
-printf 'Ready. Next: arh claim -t "your first question"\n'
+if ls -d "$ARH_ROOT/$(arh_config_get "$ARH_PROJ" iterations_dir iterations)"/iteration[0-9]* >/dev/null 2>&1; then
+  printf 'Ready. Next: arh context\n'
+else printf 'Ready. Next: arh claim -t "your first question"\n'; fi

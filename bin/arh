@@ -80,7 +80,11 @@ case "$cmd" in
   # Commands that change the record: with git_record = on, a successful one is committed.
   claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify)
     rc=0; "$ARH_HOME/bin/arh-$cmd" "$@" || rc=$?
-    [ "$rc" -ne 0 ] || [ -z "${ARH_ROOT:-}" ] || arh_git_record "arh $cmd $*"
+    # The commit takes the iteration or verification named by -n (and the shared files), never
+    # another session's work in progress (field feedback #118).
+    scope=""; prev=""
+    for a in "$@"; do [ "$prev" = -n ] && scope=$a; prev=$a; done
+    [ "$rc" -ne 0 ] || [ -z "${ARH_ROOT:-}" ] || arh_git_record "arh $cmd $*" "$scope"
     exit "$rc" ;;
   init|migrate|arm|evoke|delegate|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;

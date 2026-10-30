@@ -46,12 +46,18 @@ case "$sub" in
     cmd=$(arh_config_get "$ARH_HARN" memory_search_cmd basic-memory)
     [ "$cmd" != basic-memory ] || cmd='bm tool search-notes {query} --project arh-knowledge'
     export BASIC_MEMORY_CONFIG_DIR="${BASIC_MEMORY_CONFIG_DIR:-$ARH_STATE/basic-memory}"
+    # The model setup-tools.sh fetched: a search stays offline.
+    tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
+    [ -z "$tools" ] || [ ! -d "$(dirname "$tools")/fastembed" ] || export HF_HUB_OFFLINE=1
     command -v "${cmd%% *}" >/dev/null 2>&1 \
       || arh_die "memory search needs ${cmd%% *}: scripts/setup-tools.sh installs basic-memory, or set memory_search_cmd"
     exec python3 -c 'import os, re, shlex, subprocess, sys
 values = {"{query}": sys.argv[2], "{dir}": sys.argv[3]}
 argv = [re.sub(r"\{query\}|\{dir\}", lambda m: values[m.group()], a) for a in shlex.split(sys.argv[1])]
-sys.exit(subprocess.run(argv).returncode)' "$cmd" "$*" "$ARH_ROOT/knowledge" ;;
+r = subprocess.run(argv, stderr=subprocess.PIPE, text=True)
+if r.returncode:
+    sys.stderr.write(r.stderr)   # the tool'"'"'s progress bars and notices only when it failed
+sys.exit(r.returncode)' "$cmd" "$*" "$ARH_ROOT/knowledge" ;;
   -h|--help|help|"") usage ;;
   *) arh_die "unknown: arh memory $sub (add, list, show)" ;;
 esac

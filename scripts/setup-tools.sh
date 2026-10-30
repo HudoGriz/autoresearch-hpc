@@ -75,6 +75,11 @@ if [ -n "${ARH_ENV_CACHE:-}" ]; then arh_build_once "$prefix" build || { echo "f
 elif [ ! -x "$prefix/bin/bm" ]; then build; fi
 
 VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip freeze -q > "$state/tools-pip.lock"
+# basic-memory's embedding model, fetched now so that a search never reaches the network (the
+# directory enable-record.sh names in basic-memory's configuration).
+[ -d "$dir/fastembed" ] || "$prefix/venv/bin/python" -c 'import sys; from fastembed import TextEmbedding
+TextEmbedding("BAAI/bge-small-en-v1.5", cache_dir=sys.argv[1])' "$dir/fastembed" >/dev/null 2>&1 \
+  || echo "warning: basic-memory's embedding model was not fetched; the first arh memory search will fetch it" >&2
 python3 - "$state/config/site.md" "$prefix" <<'PY'
 from pathlib import Path
 import re, sys
