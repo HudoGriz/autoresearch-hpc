@@ -41,7 +41,10 @@ class Protocol(unittest.TestCase):
                         PATH=str(ROOT / 'bin') + os.pathsep + os.environ['PATH'])
         subprocess.run([str(ROOT / 'bin/arh'), 'init', str(self.root)], check=True, capture_output=True)
         if os.environ.get('ARH_TEST_SITE'):
-            (self.root / '.arh/config/site.md').write_text(Path(os.environ['ARH_TEST_SITE']).read_text())
+            # The site's runtime, not its integration tools: a test sees gitleaks or basic-memory only
+            # when it installs them (a bootstrapped CI site has them all).
+            site = Path(os.environ['ARH_TEST_SITE']).read_text()
+            (self.root / '.arh/config/site.md').write_text(re.sub(r'(?m)^tools_prefix\s*=.*\n?', '', site))
         self.call('claim', '-t', 'validation')
         self.call('new', '-n', '1')
         self.it = self.root / 'iterations/iteration1'
