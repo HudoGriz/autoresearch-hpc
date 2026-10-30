@@ -46,3 +46,7 @@
 !/verification/*/*.md
 !/verification/*/*.json
 !/verification/*/scripts/
+
+# Interpreter caches, wherever a script ran.
+__pycache__/
+*.pyc
