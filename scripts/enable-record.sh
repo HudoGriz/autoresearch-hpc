@@ -54,6 +54,12 @@ if [ "$(arh_config_get "$ARH_HARN" memory_search_cmd basic-memory)" = basic-memo
   mkdir -p "$BASIC_MEMORY_CONFIG_DIR" "$ARH_ROOT/knowledge"
   [ -f "$BASIC_MEMORY_CONFIG_DIR/config.json" ] \
     || printf '{"disable_permalinks": true, "ensure_frontmatter_on_sync": false}\n' > "$BASIC_MEMORY_CONFIG_DIR/config.json"
+  # The embedding model (~70 MB) sits beside the tools, shared and on their disk, not in each project.
+  [ -z "$tools" ] || python3 - "$BASIC_MEMORY_CONFIG_DIR/config.json" "$(dirname "$tools")/fastembed" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1])); c['semantic_embedding_cache_dir'] = sys.argv[2]
+json.dump(c, open(sys.argv[1], 'w'), indent=2)
+PY
   bm project list 2>/dev/null | grep -q arh-knowledge || bm project add arh-knowledge "$ARH_ROOT/knowledge" >/dev/null
   timeout 600 bm reindex --project arh-knowledge >/dev/null 2>&1 || arh_warn 'basic-memory reindex failed'
 fi
