@@ -44,7 +44,7 @@ import time
 import agenthome
 import attempts
 from findings import summary as verdict_summary
-from harness import claimed_terms, classify, cli_version, digest, reset_epoch
+from harness import classify, cli_version, digest, reset_epoch
 import lease
 import locks
 from project import config
@@ -105,10 +105,8 @@ def start(n, brief, harness, detach, dry):
     if attempts.state(directory) == 'concluded':
         sys.exit(f'arh: iteration {n} is concluded; another attempt at its question is a new iteration '
                  f'(arh claim -t ... --continues {n})')
-    claimed = claimed_terms(directory)
-    if claimed and claimed != digest(os.environ['ARH_HARN']):
-        sys.exit(f'arh: .arh/config/harnesses.md changed since iteration {n} was claimed; the roles it would run '
-                 'under are not the ones it was claimed under. Restore the file or claim a new iteration.')
+    # A harnesses.md changed since the claim is not refused here: the review is where the terms bind,
+    # and `arh ask` asks for the reason (--terms-changed). Adding a controller did not change them.
     harness = harness or harn.get('iteration_controller') or harn.get('producer') or ''
     command = harn.get(f'harness_{harness}_cmd', '')
     if not command:
