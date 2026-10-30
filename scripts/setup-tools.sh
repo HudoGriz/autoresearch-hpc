@@ -13,7 +13,10 @@ project=$(cd "$1" && pwd)
 state="$project/.arh"
 [ -d "$state" ] || { echo 'run arh init first' >&2; exit 1; }
 micromamba=$(sed -n 's/^binary=//p' "$state/micromamba.lock" 2>/dev/null || true)
-[ -x "$micromamba" ] || { echo "no pinned micromamba: run scripts/setup-nextflow.sh $project first" >&2; exit 1; }
+if [ ! -x "$micromamba" ]; then
+  ARH_MICROMAMBA_ONLY=1 "$home/scripts/setup-nextflow.sh" "$project" >/dev/null
+  micromamba=$(sed -n 's/^binary=//p' "$state/micromamba.lock")
+fi
 
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64|Linux-amd64) platform=linux-64; gl_arch=linux_x64 ;;
