@@ -9,6 +9,23 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
+# --wait-on-limit: when no verifier is available (exit 75), probe again every ask_limit_backoff
+# seconds, up to ask_limit_max_wait in all. A provider's stated reset is an upper bound, not a
+# schedule (one named five days, and a probe 44 minutes later succeeded), so this probes instead
+# of sleeping until then. A probe that fails spends no review round.
+if [[ " $* " == *" --wait-on-limit "* ]]; then
+  args=(); for a in "$@"; do [ "$a" = --wait-on-limit ] || args+=("$a"); done
+  arh_load_project
+  step=$(arh_config_get "$ARH_HARN" ask_limit_backoff 1800); max=$(arh_config_get "$ARH_HARN" ask_limit_max_wait 21600)
+  waited=0
+  while :; do
+    rc=0; "$0" "${args[@]}" || rc=$?
+    [ "$rc" -eq 75 ] && [ "$waited" -lt "$max" ] || exit "$rc"
+    arh_warn "no verifier available; probing again in $step s ($waited of $max s waited)"
+    sleep "$step"; waited=$((waited + step))
+  done
+fi
+
 role=adversary; n=""; harness=""; same_family=0; dry=0; extra=""; terms_reason=""; rebuttal=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -25,6 +42,7 @@ while [ $# -gt 0 ]; do
 --rebuttal: put the producer'"'"'s rebuttal of an UNSOUND review to a reviewer (by default the one who said
 UNSOUND), who answers ADJUDICATION: WITHDRAWN or MAINTAINED. At most ask_max_adjudications per review.
 --terms-changed: required when .arh/config/harnesses.md changed since iteration N was claimed; the reason is kept in the review record.
+--wait-on-limit: on exit 75, probe again every ask_limit_backoff s (1800) up to ask_limit_max_wait s (21600).
 exit 75: provider usage/rate limit, authentication (also an expired key) or a timeout; 77: provider refused the
 content. Neither spends a review round, and each tries verifier_fallback.'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
@@ -71,7 +89,8 @@ if [ "$rebuttal" = 0 ] && [ "$role" != reimplementer ] && [ -f "$report_file" ];
   fi
 fi
 
-producer=$(arh_config_get "$ARH_HARN" producer claude)
+producer=$(arh_config_get "$ARH_HARN" producer "")
+[ -n "$producer" ] || arh_die "producer is not set in .arh/config/harnesses.md: name the harness that produced the work"
 # With per-iteration controllers, the iteration's producing agent is the controller it was
 # dispatched to, and an executor may have written the analysis: the verifier must differ from both.
 executor=""; efam=""
@@ -135,7 +154,8 @@ fi
 if [ -n "$harness" ]; then candidates=$harness
 elif [ "$kind" = adjudication ] && [ -n "$review_h" ]; then
   candidates="$review_h $(arh_config_get "$ARH_HARN" verifier_fallback "")"
-else candidates="$(arh_config_get "$ARH_HARN" verifier codex) $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
+else candidates="$(arh_config_get "$ARH_HARN" verifier "") $(arh_config_get "$ARH_HARN" verifier_fallback "")"; fi
+[ -n "${candidates// /}" ] || arh_die "verifier is not set in .arh/config/harnesses.md: name the reviewing harness, or pass --harness"
 primary=${candidates%% *}
 why=$(ineligible "$primary")
 [ -z "$why" ] || arh_die "$why"

@@ -98,6 +98,11 @@ def main(root, iterations, limit):
         parts.append(f'## Gotchas index ({gotchas.name}: open every entry about a tool, input or step your task '
                      'uses)\n\n' + '\n'.join(headings(body, '##', ('Assertion', 'Symptom'))))
 
+    # The coding skill (coding_skill in harnesses.md; Ponytail by default, `off` for none).
+    skill = config(root / '.arh/config/harnesses.md').get('coding_skill', 'ponytail') or 'off'
+    if skill != 'off' and (root / 'skills' / skill / 'SKILL.md').is_file():
+        parts.append(f'## Writing or debugging code: follow skills/{skill}/SKILL.md')
+
     out = '\n\n'.join(parts) + '\n'
     if len(out.encode()) > limit:          # never inside the current directives: they come before the indexes
         cut = out.encode()[:limit].decode(errors='ignore')

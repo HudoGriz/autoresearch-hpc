@@ -125,6 +125,18 @@ if [ "$source_kind" != provided ] && [ "$actual_version" != "$mm_version" ]; the
   exit 1
 fi
 
+write_micromamba_lock() {
+  mm_digest=$(sha256_file "$micromamba") || exit 1
+  cat > "$state/micromamba.lock" <<EOF_LOCK
+version=$actual_version
+expected_release=$mm_release
+platform=$platform
+sha256=$mm_digest
+source=$source_kind
+binary=$micromamba
+EOF_LOCK
+}
+
 create_env() {
   "$micromamba" create -y -p "$prefix" -c conda-forge -c bioconda \
     "nextflow=$nextflow_version" "python=$python_version"
@@ -150,15 +162,7 @@ fi
 # `list --explicit` output starts with a header and cannot be replayed.
 { echo '@EXPLICIT'; "$micromamba" list -p "$prefix" --explicit --md5 | grep -E '^https?://'; } \
   > "$state/nextflow-host-explicit.lock"
-mm_digest=$(sha256_file "$micromamba") || exit 1
-cat > "$state/micromamba.lock" <<EOF_LOCK
-version=$actual_version
-expected_release=$mm_release
-platform=$platform
-sha256=$mm_digest
-source=$source_kind
-binary=$micromamba
-EOF_LOCK
+write_micromamba_lock
 
 # setup-runtime.sh rewrites the same file; serialise so concurrent setups cannot drop keys.
 lock="$state/config/.site.lock"; i=0

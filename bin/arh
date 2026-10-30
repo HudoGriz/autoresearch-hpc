@@ -19,6 +19,10 @@ if [ "${1-}" != init ]; then
       export PATH="$driver_prefix/bin:$PATH"
       export JAVA_HOME="$driver_prefix"
     fi
+    # The integrations environment (scripts/setup-tools.sh) goes last, so a site's own copy of a
+    # tool on PATH wins over the pinned one.
+    tools_prefix=$(arh_config_get "$ARH_SITE" tools_prefix "")
+    [ -z "$tools_prefix" ] || export PATH="$PATH:$tools_prefix/bin"
   fi
 fi
 
@@ -73,7 +77,12 @@ case "$cmd" in
       "$(cat "$ARH_HOME/VERSION" 2>/dev/null || echo unknown)" \
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
-  init|migrate|claim|new|arm|gate|freeze|ask|evoke|delegate|dispatch|dag|replicate|verify|run|submit|note|wait|inputs|lease|sessions|memory|env|guard|ledger|status|doctor|site|next|context|stop)
+  # Commands that change the record: with git_record = on, a successful one is committed.
+  claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify)
+    rc=0; "$ARH_HOME/bin/arh-$cmd" "$@" || rc=$?
+    [ "$rc" -ne 0 ] || [ -z "${ARH_ROOT:-}" ] || arh_git_record "arh $cmd $*"
+    exit "$rc" ;;
+  init|migrate|arm|evoke|delegate|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

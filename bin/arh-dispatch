@@ -13,19 +13,25 @@ usage:
   arh dispatch -n N --brief FILE [--harness H] [--detach] [--dry-run]
   arh dispatch status [-n N]
   arh dispatch report -n N --outcome concluded|unconcluded|blocked --summary TEXT
+  arh dispatch tick
 
 Needs orchestration = per-iteration in .arh/config/harnesses.md. The controller is the
 iteration_controller harness (or --harness), started through its command template, optionally under
 dispatch_launcher. It holds the iteration until it exits: other sessions cannot change the iteration
 through arh meanwhile. --detach returns at once; arh wait -n N waits for the controller.
 `report` is run by the controller itself, last, to hand back a summary the main controller reads.
+
+A controller stopped by its provider's usage limit is continued (dispatch_on_limit in harnesses.md):
+on iteration_controller_fallback at once, or on the same harness when the limit lifts. `tick`
+restarts any supervisor that died, e.g. in a reboot; it calls no model, so run it from cron:
+  */15 * * * * ARH_PROJECT=<study> <arh>/bin/arh dispatch tick >/dev/null 2>&1
 USAGE
 }
 
 sub=start
 case "${1-}" in
   -h|--help|help) usage; exit 0 ;;
-  status|report) sub=$1; shift ;;
+  status|report|tick) sub=$1; shift ;;
 esac
 n=""; brief=""; harness=""; detach=0; dry=0; outcome=""; summary=""
 while [ $# -gt 0 ]; do
@@ -48,6 +54,7 @@ ARH_LEASE_AGENT=$(arh_agent_name); export ARH_LEASE_AGENT
 
 case "$sub" in
   status) exec python3 "$ARH_HOME/lib/dispatch.py" status "$n" ;;
+  tick) exec python3 "$ARH_HOME/lib/dispatch.py" tick ;;
   report)
     [ -n "$n" ] || arh_die "which iteration? arh dispatch report -n N --outcome ... --summary ..."
     exec python3 "$ARH_HOME/lib/dispatch.py" report "$n" "$outcome" "$summary" ;;

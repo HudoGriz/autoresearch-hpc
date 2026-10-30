@@ -13,11 +13,9 @@ conclusion (the evidence changed) is shown as stale.
   memory.py list ROOT ITERS [all]              index: current findings (all: superseded and stale too)
   memory.py show ROOT ID                       one finding in full
   memory.py index ROOT ITERS LIMIT             JSON index for arh context
-  memory.py search ROOT ITERS QUERY            current findings containing every word of QUERY
 
-Searching is not ARH's job beyond that: `memory_search_cmd` in harnesses.md can name a Markdown
-knowledge tool instead (basic-memory: `bm tool search-notes {query} --project <name>`, with
-disable_permalinks and ensure_frontmatter_on_sync = false so it never rewrites a finding).
+Searching is not ARH's job: `arh memory search` hands the query to basic-memory (the default) or to
+the Markdown knowledge tool named in `memory_search_cmd`.
 """
 from datetime import datetime, timezone
 import json
@@ -152,18 +150,6 @@ def index(root, iterations, limit):
                 details='arh memory show ID' if current else None)
 
 
-def search(root, iterations, query):
-    words = [w.lower() for w in query.split()]
-    found = entries(root)
-    replaced = superseding(found)
-    hits = [e for e in found if status(root, iterations, e, replaced) == 'current'
-            and all(w in (e['text'] + ' ' + str(e.get('title', ''))).lower() for w in words)]
-    for e in hits:
-        print(f"{e['id']:<8} it.{e['iteration']:<4} {e['text'].splitlines()[0][:110]}")
-    if not hits:
-        print('no current finding contains all of: ' + ' '.join(words))
-
-
 if __name__ == '__main__':
     cmd = sys.argv[1]
     if cmd == 'add':
@@ -172,8 +158,6 @@ if __name__ == '__main__':
         listing(sys.argv[2], sys.argv[3], len(sys.argv) > 4 and sys.argv[4] == 'all')
     elif cmd == 'show':
         show(sys.argv[2], sys.argv[3])
-    elif cmd == 'search':
-        search(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == 'index':
         print(json.dumps(index(sys.argv[2], sys.argv[3], int(sys.argv[4]))))
     else:

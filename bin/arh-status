@@ -63,8 +63,8 @@ printf '%s\n' "$ARH_ROOT"
 printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
   "$(arh_config_get "$ARH_SITE" scheduler local)" \
   "$(arh_config_get "$ARH_SITE" container_runtime none)" \
-  "$(arh_config_get "$ARH_HARN" producer claude)" \
-  "$(arh_config_get "$ARH_HARN" verifier codex)"
+  "$(arh_config_get "$ARH_HARN" producer "(unset)")" \
+  "$(arh_config_get "$ARH_HARN" verifier "(unset)")"
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
@@ -104,6 +104,6 @@ if [ -n "$vrows" ]; then
 fi
 if arh_has_sealed || compgen -G "$ARH_ITERS/iteration*/FREEZE.json" >/dev/null; then
   printf '\nfreezes and sealed inputs (arh freeze list):\n'
-  python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" | sed 's/^/  /'
+  python3 "$ARH_HOME/lib/freeze.py" list "$ARH_ROOT" "$ARH_ITERS" "$only" | sed 's/^/  /'
 fi
 exit 0

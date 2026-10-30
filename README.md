@@ -34,21 +34,40 @@ It is **not** a scheduler, a workflow engine or an autonomous research daemon. I
 
 ## Setup
 
-You need a login node with a scheduler (Slurm, PBS, or neither for local runs) and Apptainer or Singularity. Nothing else — no pre-installed Conda or micromamba, and nothing is written to your shell configuration.
+You need a login node with a scheduler (Slurm, PBS, or neither for local runs), Apptainer or Singularity, and git. Nothing else — no pre-installed Conda or micromamba, and nothing is written to your shell configuration.
 
 ```bash
 git clone https://github.com/HudoGriz/autoresearch-hpc.git
 export PATH="$PWD/autoresearch-hpc/bin:$PATH"
 
-arh init /shared/my-study --bootstrap   # detect the scheduler, build the pinned Nextflow environment
+arh init /shared/my-study --bootstrap   # detect the scheduler, build the pinned Nextflow and tools environments
 cd /shared/my-study
 arh site detect                         # list your queues and their limits, propose site.md values
 arh doctor                              # what is still missing, if anything
 ```
 
-`arh init` detects Slurm/PBS and the available Singularity/Apptainer command; `--bootstrap` also prepares the pinned host-side Nextflow/Python environment. `arh site detect` fills the gap `arh init` cannot — which queue to use and what it permits. It prints a block for you to paste and never writes `site.md` itself, because choosing a queue is a policy decision. Run inside a project it also checks existing settings against the machine, catching a missing queue or an oversized request before a job is rejected.
+`arh init` detects Slurm/PBS and the available Singularity/Apptainer command; `--bootstrap` also prepares the pinned host-side Nextflow/Python environment and a separate pinned tools environment (Entire CLI, gitleaks, basic-memory), and makes the project a git repository of its record. `arh site detect` fills the gap `arh init` cannot — which queue to use and what it permits. It prints a block for you to paste and never writes `site.md` itself, because choosing a queue is a policy decision. Run inside a project it also checks existing settings against the machine, catching a missing queue or an oversized request before a job is rejected.
 
 When `arh doctor` prints `Ready`, [run your first iteration](#run-one-declared-experiment).
+
+### On by default, and how to switch each off
+
+Every switch is a line in `.arh/config/harnesses.md`; [Integrations](docs/integrations.md) has the details.
+
+| Feature | Default | Needs | Switch off |
+|---|---|---|---|
+| Git record: every command that changes the record is committed; data stays out (`templates/gitignore`) | on | git | `git_record = off` |
+| Entire CLI: agent, model, tokens and transcript of each session | on | git record; tools environment | `entire = off` |
+| gitleaks rules on top of the built-in credential patterns | on | tools environment | `secret_scanner = builtin` |
+| Secret scan of everything sent to a model provider | on | — | `secret_scan = off` |
+| basic-memory search over recorded findings | on | tools environment | `memory_search_cmd = <other tool>` |
+| Ponytail coding guidance, named by `arh context` | on | — | `coding_skill = off` |
+| Foreign-family review | on | a second harness | `require_foreign_family = false` |
+| Continue a dispatched iteration after a usage limit (fallback harness, then wait) | `fallback` | `orchestration = per-iteration` | `dispatch_on_limit = stop` |
+| Restart dispatches after a reboot | when scheduled | cron: `arh dispatch tick` | do not schedule it |
+| External research generators (`arh evoke`) | **off** | each tool's install and API keys | — (opt in per tool) |
+
+For an existing project: `scripts/setup-tools.sh <study> && scripts/enable-record.sh <study>`.
 
 **Or hand the setup to your coding agent.** Give Claude Code, Codex, OpenCode, Cursor or Copilot this repository and ask:
 
@@ -226,7 +245,7 @@ AutoResearch HPC is **experimental and pre-1.0**. On 2026-10-15 at commit `8aa75
 # nextflow_prefix populated — the template in config/ leaves them empty.
 export ARH_TEST_SITE=/absolute/path/to/configured/local/site.md
 test/run_tests.sh
-python3 test/test_hardening.py
+python3 test/parallel.py        # all tests, in parallel (~90 s on 40 cores); -k NAME for a subset
 python3 test/conformance.py --site "$ARH_TEST_SITE"   # E1-E13; writes conformance.json
 bash examples/mean-shift/check.sh
 ```
@@ -245,7 +264,7 @@ This is a cooperative research-integrity system, not a hostile-code sandbox or a
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
 | **External generators** | [Select, configure and safely evoke specialist research systems](docs/external-generators.md) |
 | **Unattended agents** | [Running producer and reviewer sessions headless](docs/headless.md) |
-| **Integrations** | [Entire, gitleaks, basic-memory and Omnigent: what ARH uses them for, checked versions](docs/integrations.md) |
+| **Integrations** | [Git record, Entire, gitleaks, basic-memory, Ponytail and resume after usage limits: what is on by default, what it needs, how to switch it off](docs/integrations.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
 | **Related work** | [What this composes with, and what it is not](docs/related-work.md) |
 | **Migration / hardening** | [`arh migrate` for 0.1 studies, and implementation notes](docs/migration-hardening.md) |

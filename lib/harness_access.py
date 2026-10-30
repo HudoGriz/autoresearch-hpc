@@ -114,6 +114,12 @@ def check(root, web, inputs):
     cx = root / '.codex/config.toml'
     if web == 'deny' and cx.is_file() and re.search(r'web_search\w*\s*=\s*(true|"(live|cached)")', cx.read_text()):
         out.append('FAIL|.codex/config.toml turns web search on although web_access = deny')
+    # Only these three harnesses' configurations are known here; say so for any other, never pass it.
+    from freeze import config
+    for h in config(root / '.arh/config/harnesses.md').get('harnesses', '').split():
+        if h not in ('claude', 'codex', 'opencode') and (held or web == 'deny'):
+            out.append(f'WARN|cannot check that harness {h} denies the sealed inputs or web tools: '
+                       'arh knows only the claude, codex and opencode configurations; check it by hand')
     if web == 'deny' and not (oc.is_file() or (root / '.claude').is_dir() or cx.is_file()):
         out.append('WARN|web_access = deny, but no harness configuration is installed to check')
     return out

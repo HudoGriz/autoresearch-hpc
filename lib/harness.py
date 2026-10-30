@@ -19,10 +19,45 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _artifact_cache(directory):
+    for parent in directory.parents:
+        if (parent / '.arh').is_dir():
+            key = hashlib.sha256(str(directory).encode()).hexdigest()[:16]
+            return parent / '.arh/cache/artifacts' / f'{directory.name}-{key}.json'
+    return None
+
+
 def result_artifacts(directory):
-    directory = Path(directory)
-    return {str(p.relative_to(directory)): digest(p)
-            for p in sorted((directory / 'results').rglob('*')) if p.is_file()}
+    """SHA-256 of every file under results/. Re-reading every tree on each render, status, ask and gate
+    took minutes on CephFS (one iteration holds 26 GB; field feedback #102), so each hash is kept in
+    .arh/cache/artifacts with the file's size, mtime, ctime and inode, and reused only while all four
+    match. ctime cannot be set by a user (even `touch` moves it), so any write is hashed again.
+    ARH_NO_HASH_CACHE=1 hashes everything afresh."""
+    directory = Path(directory).resolve()
+    cache_file = None if os.environ.get('ARH_NO_HASH_CACHE') else _artifact_cache(directory)
+    try:
+        cached = json.loads(cache_file.read_text()) if cache_file else {}
+    except (OSError, ValueError):
+        cached = {}
+    out, fresh = {}, {}
+    for p in sorted((directory / 'results').rglob('*')):
+        if not p.is_file():
+            continue
+        st = p.stat()
+        rel = str(p.relative_to(directory))
+        sig = [st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino]
+        hit = cached.get(rel)
+        out[rel] = hit[4] if isinstance(hit, list) and hit[:4] == sig else digest(p)
+        fresh[rel] = sig + [out[rel]]
+    if cache_file and fresh != cached:
+        try:                     # a lost race or an unwritable cache only costs a re-hash next time
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile('w', dir=cache_file.parent, delete=False) as tmp:
+                json.dump(fresh, tmp)
+            os.replace(tmp.name, cache_file)
+        except OSError:
+            pass
+    return out
 
 
 def claimed_terms(directory):
@@ -114,8 +149,11 @@ PROVIDER_ERRORS = (
         r"flagged for possible|violat\w* (our |the )?(usage|content|acceptable use) polic|"
         r"content (policy|filter|management)|safety (system|classifier|filter)|"
         r"unable to respond to this request|invalid_prompt", re.I)),
+    # Claude Code says "You've hit your 5-hour limit · resets 5:20pm (Europe/Ljubljana)"
+    # (2026-10-29): no "usage limit" in it (field feedback #109).
     ('limit', 75, re.compile(
         r"usage limit|session limit|rate.?limit|quota|too many requests|\b429\b|"
+        r"\b\d+-hour limit|weekly limit|hit your (\w+ )?limit|limit reached|"
         r"insufficient.?(credit|balance)|try again (at|in)|overloaded", re.I)),
     # An expired or revoked key is the same as no login: OpenCode said "This API key has expired.
     # Create a new API key in OpenCode Console" and exited 1, so the fallback was never tried
@@ -126,7 +164,42 @@ PROVIDER_ERRORS = (
         r"invalid (api.?key|token|credential)|create a new api.?key|(log ?in|sign ?in|re-?authenticate) again|"
         r"please (log ?in|sign ?in|re-?authenticate)", re.I)),
 )
-RETRY_HINT = re.compile(r"\b(?:try again (?:at|in)|resets?(?: at)?) [^.\n\u00b7(]*\d[^.\n\u00b7(]*", re.I)
+RETRY_HINT = re.compile(r"\b(?:try again (?:at|in)|resets?(?: at)?) [^.\n\u00b7(]*\d[^.\n\u00b7(]*(?:\([A-Za-z_]+/[A-Za-z_/]+\))?", re.I)
+
+
+def reset_epoch(hint, now=None):
+    """When a limit with this retry hint lifts, as epoch seconds, or None when it cannot be told.
+    Reads "resets 5:20pm (Europe/Ljubljana)", "try again at 12:20", "try again in 2 hours" and
+    the bare epoch Claude Code once printed ("Claude AI usage limit reached|1761840000")."""
+    from datetime import datetime, timedelta
+    now = now or datetime.now().astimezone()
+    if not hint:
+        return None
+    m = re.search(r'\|(\d{10})\b', hint)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'\bin (\d+) ?(second|sec|minute|min|hour|hr|h|m|s)\w*', hint, re.I)
+    if m:
+        unit = m.group(2).lower()[0]
+        return int(now.timestamp()) + int(m.group(1)) * {'s': 1, 'm': 60, 'h': 3600}[unit]
+    m = re.search(r'(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?(?:\s*\(([A-Za-z_]+/[A-Za-z_/]+)\))?', hint, re.I)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2) or 0)
+    if m.group(3):
+        hour = hour % 12 + (12 if m.group(3).lower().startswith('p') else 0)
+    zone = now.tzinfo
+    if m.group(4):
+        try:
+            from zoneinfo import ZoneInfo
+            zone = ZoneInfo(m.group(4))
+        except Exception:
+            pass
+    local = now.astimezone(zone)
+    at = local.replace(hour=hour % 24, minute=minute, second=0, microsecond=0)
+    if at <= local:
+        at += timedelta(days=1)
+    return int(at.timestamp())
 
 
 def classify(text, prompt=''):

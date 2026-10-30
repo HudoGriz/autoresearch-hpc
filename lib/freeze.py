@@ -171,9 +171,14 @@ def unseals(root):
     return [r for r in rows if len(r) >= 6]
 
 
-def listing(root, iterations):
+def listing(root, iterations, only=None):
+    """Every freeze and sealed input; with `only` (iteration numbers), those iterations' freezes and the
+    sealed inputs they read, then one count line: a one-iteration status printed hundreds of
+    'never read' lines for other iterations' inputs (field feedback #96)."""
     root, base = Path(root), Path(iterations)
     dirs = sorted((p for p in base.glob('iteration*') if p.name[9:].isdigit()), key=lambda p: int(p.name[9:]))
+    if only is not None:
+        dirs = [d for d in dirs if d.name[9:] in only]
     shown = False
     for d in dirs:
         st, digest, changed = state(root, d)
@@ -187,24 +192,35 @@ def listing(root, iterations):
         print(f"{d.name[9:]:<5} {data.get('frozen', '?'):<21} {len(data.get('files', {})):>4} file(s)  "
               f"{'frozen' if st == 'valid' else 'CHANGED: ' + ', '.join(changed[:3])}")
     if not shown:
-        print('(no freezes yet — arh freeze -n N FILE...)')
+        print('(no freezes yet — arh freeze -n N FILE...)' if only is None else '(none of these iterations is frozen)')
     groups = sealed_groups(root)
     if groups:
         print('\nsealed inputs:')
         rows = unseals(root)
+        total = 0
         for group, paths in groups.items():
             for s in paths:
+                total += 1
+                if only is not None and not any(r[4] == str(s) and r[1] in only for r in rows):
+                    continue
                 print(f"  {s}{'' if len(groups) == 1 else f' [{group}]'}  — {reads_text(rows, s)}")
+        if only is not None:
+            print(f"  ({total} sealed input(s) in all; those not released to iteration(s) {', '.join(sorted(only, key=int))} "
+                  "are not listed: arh freeze list)")
 
 
 def reads_text(rows, path):
-    """'read by iteration(s) 34, 55; before the seal by 9, 27' or 'never read'."""
+    """'named by a run of iteration(s) 55; released to 73; read before the seal by 9, 27' or 'never released'.
+    A row without the named/released column predates it: whether that run named the path is not known."""
     rows = [r for r in rows if r[4] == str(path)]
-    after = sorted({r[1] for r in rows if r[2] != PRESEAL}, key=int)
-    before = sorted({r[1] for r in rows if r[2] == PRESEAL}, key=int)
-    parts = ([f"read by iteration(s) {', '.join(after)}"] if after else []) + (
+    its = lambda keep: sorted({r[1] for r in rows if keep(r)}, key=int)
+    named = its(lambda r: r[2] != PRESEAL and len(r) > 6 and r[6] == 'named')
+    released = its(lambda r: r[2] != PRESEAL and r[1] not in named and not (len(r) > 6 and r[6] == 'named'))
+    before = its(lambda r: r[2] == PRESEAL)
+    parts = ([f"named by a run of iteration(s) {', '.join(named)}"] if named else []) + (
+        [f"released to iteration(s) {', '.join(released)} (no run names it)"] if released else []) + (
         [f"read before the seal by iteration(s) {', '.join(before)}"] if before else [])
-    return '; '.join(parts) or 'never read'
+    return '; '.join(parts) or 'never released'
 
 
 PRESEAL = 'pre-seal'
@@ -249,15 +265,19 @@ def references(root, files, only=None):
     return found
 
 
-def record_unseal(root, iteration, run, attempt, paths, freeze_sha):
-    """Append one row per sealed path a confirmation run is about to read."""
+def record_unseal(root, iteration, run, attempt, paths, freeze_sha, named=()):
+    """Append one row per sealed path released to a confirmation run. The last column says whether the
+    run's workflow, params or scripts name the path (`named`) or not (`released`): a run that only had
+    to unseal a group was listed as having read all of it (field feedback #114)."""
     log = Path(root) / '.arh/unseals.tsv'
     stamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    hits = {Path(os.path.realpath(n if Path(n).is_absolute() else Path(root) / n)) for _, n in named}
     with open(log, 'a') as handle:
         if handle.tell() == 0:
             handle.write('time\titeration\trun\tattempt\tpath\tfreeze_sha256\n')
         for path in paths:
-            handle.write(f'{stamp}\t{iteration}\t{run}\t{attempt}\t{path}\t{freeze_sha}\n')
+            how = 'named' if Path(path) in hits or any(within(Path(path), h) for h in hits) else 'released'
+            handle.write(f'{stamp}\t{iteration}\t{run}\t{attempt}\t{path}\t{freeze_sha}\t{how}\n')
 
 
 def masks(root, only=None):
@@ -317,9 +337,14 @@ if __name__ == '__main__':
             sys.exit(1)
         print(f'every frozen file matches FREEZE.json ({digest[:12]})')
     elif cmd == 'list':
-        listing(sys.argv[2], sys.argv[3])
+        listing(sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 and sys.argv[4] else None)
     elif cmd == 'sealed':
         print('\n'.join(map(str, sealed_inputs(sys.argv[2]))))
+    elif cmd == 'git-exclude':                   # git-exclude ROOT: sealed paths inside ROOT, as git patterns
+        root = Path(os.path.realpath(sys.argv[2]))
+        for path in sealed_inputs(root):
+            if within(path, root) and path != root:
+                print('/' + re.sub(r'([*?\[\\ !#])', r'\\\1', str(path.relative_to(root))))
     elif cmd == 'referenced':
         for f, name in references(sys.argv[2], sys.argv[3:]):
             print(f'{f}\t{name}')

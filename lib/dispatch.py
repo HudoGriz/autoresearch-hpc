@@ -5,7 +5,7 @@ With `orchestration = per-iteration` in harnesses.md, the operator talks to a ma
 plans questions and reads summaries, and each iteration gets a fresh controller session that
 pre-declares, calls executors (arh delegate) and validators (arh ask), and reports back. The
 controller is started through the configured harness command template, so any agent CLI (Claude
-Code, Codex, OpenCode, a meta-harness such as Omnigent) can be one; `dispatch_launcher` can put it
+Code, Codex, OpenCode or any other) can be one; `dispatch_launcher` can put it
 under the site scheduler. ARH keeps only what is protocol-specific:
 
 - one controller per iteration at a time (a lock), and the iteration's lease handed to it;
@@ -20,6 +20,13 @@ under the site scheduler. ARH keeps only what is protocol-specific:
   dispatch.py report N OUTCOME SUMMARY            the controller's hand-back
   dispatch.py status [N]                          dispatches and their outcomes
   dispatch.py controller DIR                      harness of the iteration's latest dispatch
+  dispatch.py tick                                restart supervisors that died (cron-safe, no model call)
+
+A controller that stops at its provider's usage limit is continued, not lost (dispatch_on_limit):
+on iteration_controller_fallback at once, or on the same harness once the limit lifts, as a fresh
+session briefed from the project's state, or, with harness_<h>_resume_cmd and a session id from
+Entire CLI, as the harness's own resumed conversation. The lease and the dispatch lock stay with
+the supervisor throughout, and every restart is in run.json and in the iteration's notes.
 """
 from datetime import datetime, timezone
 import hashlib
@@ -28,14 +35,16 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
+import time
 
 import agenthome
 import attempts
 from findings import summary as verdict_summary
-from harness import claimed_terms, cli_version, digest
+from harness import claimed_terms, classify, cli_version, digest, reset_epoch
 import lease
 import locks
 from project import config
@@ -166,14 +175,65 @@ def redact(path):
     return redact_file(path)
 
 
-def supervise(n, seq):
+RESUME = """## Resuming
+
+A controller session of this iteration stopped before it handed back ({why}, {when}). This is a new
+session; the project holds everything the earlier one recorded. Before anything else, run
+`arh status -n {n}` and `arh status --running`: plans already frozen, runs submitted or finished
+and reviews already taken stay as they are. Continue from the first step not yet recorded, and do
+not repeat a step whose record exists.
+
+"""
+
+
+def tail(*paths, limit=20000):
+    text = ''
+    for path in paths:
+        try:
+            with open(path, 'rb') as fh:
+                fh.seek(0, 2)
+                fh.seek(max(0, fh.tell() - limit))
+                text += fh.read().decode(errors='replace') + '\n'
+        except OSError:
+            pass
+    return text
+
+
+def entire_session(started, agent_hint):
+    """The one Entire session in this worktree that started after STARTED, or None (Entire missing,
+    or no or several candidates: then a fresh session is the safe way to continue)."""
+    exe = shutil.which('entire')
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, 'session', 'list', '--json'], cwd=os.environ['ARH_ROOT'],
+                             capture_output=True, text=True, timeout=60)
+        found = [x for x in json.loads(out.stdout or '[]')
+                 if Path(x.get('worktree_path') or '/').resolve() == Path(os.environ['ARH_ROOT']).resolve()
+                 and (x.get('started_at') or '')[:19] >= started.replace('Z', '')[:19]]
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    return found[0].get('session_id') if len(found) == 1 else None
+
+
+def run_controller(n, record, run, harness, k, preamble):
+    """Start one controller session; return its exit code and the paths of its logs."""
     harn = config(os.environ['ARH_HARN'])
-    directory = iteration(n)
-    record = directory / 'metadata/dispatch' / seq
-    run = load(record / 'run.json')
-    values = {'{prompt}': (record / 'prompt.md').read_text(), '{cwd}': os.environ['ARH_ROOT']}
+    suffix = '' if k == 0 else f'.{k}'
+    out_log, err_log = record / f'session{suffix}.log', record / f'stderr{suffix}.log'
+    template = harn.get(f'harness_{harness}_cmd', run['command_template']) if k else run['command_template']
+    text = (record / 'prompt.md').read_text()
+    session_id = None
+    if k:
+        text = preamble + prompt(n, record / 'brief.md')
+        (record / f'prompt{suffix}.md').write_text(text)
+        resume = harn.get(f'harness_{harness}_resume_cmd', '')
+        session_id = entire_session(run.get('attempt_started', run['started']), harness) if resume else None
+        if session_id:
+            template, text = resume, preamble
+    values = {'{prompt}': text, '{cwd}': os.environ['ARH_ROOT'], '{session_id}': session_id or ''}
     argv = shlex.split(harn.get('dispatch_launcher', '')) + [
-        re.sub(r'\{prompt\}|\{cwd\}', lambda m: values[m.group()], arg) for arg in shlex.split(run['command_template'])]
+        re.sub(r'\{prompt\}|\{cwd\}|\{session_id\}', lambda m: values[m.group()], arg) for arg in shlex.split(template)]
     # dispatch_home = fresh: the controller starts without the operator's agent memory and history, so
     # one iteration's session carries nothing into the next except what the project files say.
     fresh = harn.get('dispatch_home', 'inherit') == 'fresh'
@@ -185,9 +245,9 @@ def supervise(n, seq):
         if key:
             env[key] = value
     timeout = float(harn.get('dispatch_timeout') or 0)
-    on_stdin = '{prompt}' not in run['command_template']
-    with open(record / 'session.log', 'wb') as out, open(record / 'stderr.log', 'wb') as err, \
-            open(record / 'prompt.md', 'rb') if on_stdin else open(os.devnull, 'rb') as stdin:
+    on_stdin = '{prompt}' not in template
+    with open(out_log, 'wb') as out, open(err_log, 'wb') as err, \
+            open(record / f'prompt{suffix}.md', 'rb') if on_stdin else open(os.devnull, 'rb') as stdin:
         try:
             rc = subprocess.run(argv, cwd=os.environ['ARH_ROOT'], env=env, stdin=stdin, stdout=out, stderr=err,
                                 timeout=timeout or None).returncode
@@ -199,19 +259,124 @@ def supervise(n, seq):
             err.write(f'\narh: could not start the controller: {error}\n'.encode())
     if fresh:
         agenthome.restore(record / 'home', linked)
-    removed = redact(record / 'session.log') + redact(record / 'stderr.log')
+    return rc, out_log, err_log, 'native' if session_id else 'fresh'
+
+
+def next_harness(harn, primary, limited, clock):
+    """The controller harness to continue on, and when: (harness, epoch). With dispatch_on_limit =
+    fallback, the first of the primary and iteration_controller_fallback that is not at its limit
+    goes at once; when both are, the one whose limit lifts first goes then."""
+    fallback = harn.get('iteration_controller_fallback', '')
+    candidates = [primary] + ([fallback] if harn.get('dispatch_on_limit', 'fallback') == 'fallback'
+                              and fallback and fallback != primary else [])
+    margin = int(harn.get('dispatch_limit_margin') or 300)
+    return min(((h, limited.get(h, 0) + (margin if limited.get(h) else 0)) for h in candidates),
+               key=lambda c: max(c[1], clock))
+
+
+def supervise(n, seq):
+    harn = config(os.environ['ARH_HARN'])
+    directory = iteration(n)
+    record = directory / 'metadata/dispatch' / seq
+    run = load(record / 'run.json')
+    on_limit = harn.get('dispatch_on_limit', 'fallback')
+    budget = int(harn.get('dispatch_max_resumes') or 6)
+    restarts = run.setdefault('restarts', [])
+    limited = {}
+    harness = restarts[-1]['harness'] if restarts else run['harness']
+    preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n) if restarts else ''
+    k = len(restarts)
+    while True:
+        run['attempt_started'] = now()
+        save(record / 'run.json', run)
+        rc, out_log, err_log, mode = run_controller(n, record, run, harness, k, preamble)
+        if k:
+            restarts[-1].update(mode=mode, exit_code=rc, finished=now())
+        refusal = classify(tail(out_log, err_log)) if not load(record / 'summary.json') else None
+        if not refusal or refusal[0] != 'limit' or on_limit == 'stop' or len(restarts) >= budget:
+            break
+        line, hint = refusal[2], refusal[3]
+        # The stated reset is an upper bound, not a schedule (arh ask learned this): probe again
+        # after dispatch_limit_backoff at the latest. A probe that fails costs one short session.
+        probe = int(time.time()) + int(harn.get('dispatch_limit_backoff') or 1800)
+        lifts = reset_epoch(hint or line)
+        limited[harness] = min(lifts, probe) if lifts else probe
+        nxt, at = next_harness(harn, run['harness'], limited, int(time.time()))
+        wait_s = max(0, at - int(time.time()))
+        restarts.append(dict(time=now(), reason=f'{harness} stopped at its usage limit', provider_line=line,
+                             harness=nxt, waited_s=wait_s, resumes_at=datetime.fromtimestamp(time.time() + wait_s,
+                             timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')))
+        run.update(state='paused', paused_until=restarts[-1]['resumes_at'])
+        save(record / 'run.json', run)
+        print(f"iteration {n}: {harness} hit its limit ({line[:120]}); continuing on {nxt} in {wait_s} s",
+              file=sys.stderr)
+        note(n, f"dispatch {seq}: {harness} stopped at its usage limit ({line[:200]}); "
+                f"continuing on {nxt} at {restarts[-1]['resumes_at']} (restart {len(restarts)} of {budget})", run['session'])
+        time.sleep(wait_s)
+        harness, k = nxt, k + 1
+        preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n)
+        run['state'] = 'running'
+        run.pop('paused_until', None)
+    removed = sum(redact(p) for p in sorted(record.glob('session*.log')) + sorted(record.glob('stderr*.log')))
     summary = load(record / 'summary.json')
-    run.update(finished=now(), state='finished', exit_code=rc, redactions=removed, home='fresh' if fresh else 'inherit',
+    run.update(finished=now(), state='finished', exit_code=rc, redactions=removed, home=harn.get('dispatch_home', 'inherit'),
                session_log_sha256=digest(record / 'session.log'), session_log_bytes=(record / 'session.log').stat().st_size,
-               stderr_sha256=digest(record / 'stderr.log'), outcome=summary.get('outcome'))
+               stderr_sha256=digest(record / 'stderr.log'), outcome=summary.get('outcome'),
+               session_logs={p.name: digest(p) for p in sorted(record.glob('session*.log'))})
+    run.pop('paused_until', None)
     save(record / 'run.json', run)
     try:
         locks.release(directory / '.dispatch-lock')
     except OSError:
         pass
     print(f"iteration {n}: controller exited {rc}; outcome {summary.get('outcome') or 'not reported'}"
-          f" (metadata/dispatch/{seq})", file=sys.stderr)
+          f"{f', after {len(restarts)} restart(s)' if restarts else ''} (metadata/dispatch/{seq})", file=sys.stderr)
     return rc
+
+
+def note(n, text, session):
+    """Record a restart with arh note, as the dispatch's own session (it holds the lease)."""
+    subprocess.run([str(Path(os.environ['ARH_HOME']) / 'bin/arh'), 'note', '-n', str(n), text],
+                   env=dict(os.environ, ARH_PROJECT=os.environ['ARH_ROOT'], ARH_SESSION=session, ARH_DISPATCH=str(n)),
+                   capture_output=True, timeout=120)
+
+
+def tick():
+    """Restart the supervisor of every dispatch whose supervisor died (a reboot, a killed login
+    session) before its controller handed back. Calls no model; safe to run from cron."""
+    restarted = 0
+    for directory in sorted(Path(os.environ['ARH_ITERS']).glob('iteration*')):
+        runs = records(directory)
+        if not runs:
+            continue
+        record = runs[-1]
+        run = load(record / 'run.json')
+        lock = directory / '.dispatch-lock'
+        if run.get('state') not in ('running', 'paused') or load(record / 'summary.json'):
+            continue
+        if lock.is_dir() and locks.state(lock) != 'stale':
+            continue
+        n = directory.name[len('iteration'):]
+        try:
+            locks.acquire(lock, os.getpid(), 'dispatch lock')
+        except locks.Held:
+            continue
+        run.setdefault('restarts', []).append(dict(time=now(), reason='its supervisor died (reboot or killed session)',
+                                                   harness=(run['restarts'][-1]['harness'] if run.get('restarts')
+                                                            else run['harness']), waited_s=0))
+        save(record / 'run.json', run)
+        with open(record / 'supervisor.log', 'a') as log:
+            child = subprocess.Popen([sys.executable, __file__, 'supervise', n, record.name], start_new_session=True,
+                                     stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+        owner = locks.owner(lock)
+        owner.update(pid=child.pid, session=run['session'], harness=run['harness'], dispatch=record.name)
+        (lock / 'owner.json').write_text(json.dumps(owner) + '\n')
+        note(n, f'dispatch {record.name}: supervisor had died; restarted by arh dispatch tick', run['session'])
+        print(f'iteration {n}: restarted the supervisor of dispatch {record.name}')
+        restarted += 1
+    if not restarted:
+        print('arh dispatch tick: nothing to restart')
+    return 0
 
 
 def report(n, outcome, text):
@@ -246,8 +411,10 @@ def status(number=None):
         for record in records(directory):
             run, summary = load(record / 'run.json'), load(record / 'summary.json')
             running = live is not None and live.get('dispatch') == record.name
-            state = 'running' if running else (f"exited {run.get('exit_code')}" if run.get('state') == 'finished'
-                                               else 'interrupted')
+            state = ('paused' if running and run.get('state') == 'paused' else 'running') if running else (
+                f"exited {run.get('exit_code')}" if run.get('state') == 'finished' else 'interrupted')
+            if running and run.get('paused_until'):
+                state += f" until {run['paused_until']}"
             print(f"{directory.name[9:]:<5} {record.name}  {run.get('harness', '?'):<12} {state:<11} "
                   f"{summary.get('outcome') or '-':<12} {(summary.get('summary') or '')[:100]}")
             shown = True
@@ -265,6 +432,8 @@ if __name__ == '__main__':
         report(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == 'status':
         status(sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None)
+    elif cmd == 'tick':
+        sys.exit(tick())
     elif cmd == 'controller':
         print(controller(sys.argv[2]))
     else:

@@ -16,7 +16,8 @@ while [ $# -gt 0 ]; do
     --interval)     interval="$2"; shift 2 ;;
     -h|--help) echo 'usage: arh wait [-n N] [--timeout SECONDS] [--interval SECONDS]
 Blocks while a submission or review of iteration N (default: every iteration) is running.
-Exit 0 when none is; 124 after --timeout (default 21600, 0 = no limit). Polls every --interval (30).'; exit 0 ;;
+Exit 0 when none is; 3 when a submission it saw ended badly (failed or died; the resume command is
+printed); 124 after --timeout (default 21600, 0 = no limit). Polls every --interval (30).'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
 done

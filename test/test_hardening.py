@@ -493,6 +493,139 @@ arh('dispatch', 'report', '-n', n, '--outcome', 'concluded', '--summary', 'The f
         n = self.call('claim', '-t', 'dispatched iteration').stdout.split()[0]
         return n, self.root / f'iterations/iteration{n}', brief
 
+    LIMITED = """import os, sys
+from pathlib import Path
+mark = Path(os.environ['ARH_PROJECT']) / 'limited-once'
+if os.environ.get('LIMIT_ONCE') and mark.exists():
+    exec(open(os.environ['CONTROLLER']).read())
+    sys.exit(0)
+mark.write_text('x')
+print("You've hit your 5-hour limit \u00b7 resets 5:20pm (Europe/Ljubljana)")
+sys.exit(1)
+"""
+
+    def limited_config(self, extra):
+        controller = self.root / 'controller.py'; controller.write_text(self.CONTROLLER)
+        limited = self.root / 'limited.py'; limited.write_text(self.LIMITED)
+        self.env['CONTROLLER'] = str(controller)
+        self.configure(extra_config=f'orchestration = per-iteration\niteration_controller = ctl\n'
+                                    f'harness_ctl_family = openai\nharness_ctl_cmd = python3 "{limited}" {{prompt}}\n'
+                                    f'harness_ctl2_family = openai\nharness_ctl2_cmd = python3 "{controller}" {{prompt}}\n'
+                                    'dispatch_env = FIXTURE=1\ndispatch_limit_margin = 0\n' + extra)
+        brief = self.root / 'brief.md'; brief.write_text('Find out whether the fixture passes its one check.\n')
+        n = self.call('claim', '-t', 'dispatched iteration').stdout.split()[0]
+        return n, self.root / f'iterations/iteration{n}', brief
+
+    def test_claude_code_limit_message_is_a_limit_with_a_reset_time(self):
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import harness
+        kind, code, line, hint = harness.classify("You've hit your 5-hour limit \u00b7 resets 5:20pm (Europe/Ljubljana)")
+        self.assertEqual((kind, code), ('limit', 75))
+        at = harness.reset_epoch(hint)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        local = datetime.fromtimestamp(at, ZoneInfo('Europe/Ljubljana'))
+        self.assertEqual((local.hour, local.minute), (17, 20))
+        self.assertLess(at - time.time(), 86400 + 60)
+        self.assertEqual(harness.reset_epoch('Claude AI usage limit reached|1761840000'), 1761840000)
+        self.assertAlmostEqual(harness.reset_epoch('try again in 30 minutes'), time.time() + 1800, delta=5)
+
+    def test_a_controller_at_its_limit_continues_on_the_fallback(self):
+        n, it, brief = self.limited_config('iteration_controller_fallback = ctl2\n')
+        self.call('dispatch', '-n', n, '--brief', str(brief), timeout=240)
+        record = it / 'metadata/dispatch/001'
+        run = json.loads((record / 'run.json').read_text())
+        self.assertEqual((run['state'], run['exit_code'], len(run['restarts'])), ('finished', 0, 1))
+        self.assertEqual((run['restarts'][0]['harness'], run['restarts'][0]['mode'], run['restarts'][0]['waited_s']), ('ctl2', 'fresh', 0))
+        self.assertIn('5-hour limit', run['restarts'][0]['provider_line'])
+        self.assertIn('## Resuming', (record / 'prompt.1.md').read_text())
+        self.assertEqual(json.loads((record / 'summary.json').read_text())['outcome'], 'concluded')
+        self.assertIn('usage limit', (it / 'metadata/notes.jsonl').read_text())
+
+    def test_a_controller_at_its_limit_waits_and_continues_on_the_same_harness(self):
+        n, it, brief = self.limited_config('dispatch_on_limit = wait\ndispatch_limit_backoff = 1\n')
+        self.env['LIMIT_ONCE'] = '1'
+        self.call('dispatch', '-n', n, '--brief', str(brief), timeout=240)
+        run = json.loads((it / 'metadata/dispatch/001/run.json').read_text())
+        self.assertEqual((run['exit_code'], [r['harness'] for r in run['restarts']]), (0, ['ctl']))
+        self.assertLessEqual(run['restarts'][0]['waited_s'], 2)
+
+    def test_dispatch_on_limit_stop_ends_the_dispatch(self):
+        n, it, brief = self.limited_config('dispatch_on_limit = stop\niteration_controller_fallback = ctl2\n')
+        self.call('dispatch', '-n', n, '--brief', str(brief), good=False, timeout=120)
+        run = json.loads((it / 'metadata/dispatch/001/run.json').read_text())
+        self.assertEqual((run['exit_code'], run['restarts']), (1, []))
+
+    def test_tick_restarts_a_dispatch_whose_supervisor_died(self):
+        n, it, brief = self.dispatch_config()
+        release = self.root / 'release'
+        self.env['WAIT_FOR'] = str(release)
+        self.call('dispatch', '-n', n, '--brief', str(brief), '--detach')
+        owner = json.loads((it / '.dispatch-lock/owner.json').read_text())
+        time.sleep(1)
+        os.killpg(owner['pid'], signal.SIGKILL)       # the supervisor and its controller, as in a reboot
+        time.sleep(0.5)
+        del self.env['WAIT_FOR']                       # the restarted controller runs the iteration
+        self.assertIn('restarted the supervisor', self.call('dispatch', 'tick').stdout)
+        self.assertIn('nothing to restart', self.call('dispatch', 'tick').stdout)
+        self.call('wait', '-n', n, timeout=240)
+        run = json.loads((it / 'metadata/dispatch/001/run.json').read_text())
+        self.assertEqual((run['state'], run['exit_code']), ('finished', 0))
+        self.assertIn('supervisor died', run['restarts'][0]['reason'])
+        self.assertEqual(json.loads((it / 'metadata/dispatch/001/summary.json').read_text())['outcome'], 'concluded')
+
+    def test_ask_wait_on_limit_probes_until_a_verifier_answers(self):
+        mark = self.root / 'limited-once'
+        self.configure(body=f"""from pathlib import Path
+m = Path({str(mark)!r})
+if not m.exists():
+    m.write_text('x'); print("You've hit your 5-hour limit \u00b7 resets 5:20pm (Europe/Ljubljana)")
+else:
+    print('VERDICT: SOUND')""", extra_config='ask_limit_backoff = 1\n')
+        self.assertEqual(self.call('ask', '-n', '1', good=False).returncode, 75)
+        mark.unlink()
+        out = self.call('ask', '-n', '1', '--wait-on-limit', timeout=120)
+        self.assertIn('VERDICT: SOUND', out.stdout)
+        self.assertIn('probing again in 1 s', out.stderr)
+
+    def test_the_project_is_a_git_record_without_its_data(self):
+        self.assertTrue((self.root / '.git').is_dir())
+        tracked = subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
+        self.assertIn('iterations/iteration1/README.md', tracked)
+        self.assertIn('iterations/iteration1/PREDECLARATION.sha256', tracked)
+        (self.it / 'results/big.tsv').write_text('x' * 10)
+        (self.it / 'resources/huge.bin').write_bytes(b'0' * 2_100_000)
+        self.call('note', '-n', '1', 'a note')
+        tracked = subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
+        self.assertIn('iterations/iteration1/metadata/notes.jsonl', tracked)
+        self.assertNotIn('iterations/iteration1/results/big.tsv', tracked)
+        self.assertNotIn('iterations/iteration1/resources/huge.bin', tracked)
+        log = subprocess.run(['git', 'log', '--format=%s'], cwd=self.root, capture_output=True, text=True).stdout
+        self.assertIn('arh note -n 1 a note', log)
+
+    def test_a_sealed_input_inside_the_project_never_enters_the_git_record(self):
+        truth = self.it / 'resources/truth.vcf'; truth.write_text('truth\n')
+        self.call('note', '-n', '1', 'before the seal')
+        ls = lambda: subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
+        self.assertIn('iterations/iteration1/resources/truth.vcf', ls())
+        self.set_config('project.md', sealed_inputs=str(truth))
+        self.call('note', '-n', '1', 'after the seal')
+        self.assertNotIn('iterations/iteration1/resources/truth.vcf', ls())    # left the index
+        self.assertTrue(truth.is_file())
+        self.assertIn('/iterations/iteration1/resources/truth.vcf', (self.root / '.git/info/exclude').read_text())
+
+    def test_git_record_off_commits_nothing(self):
+        self.configure(extra_config='git_record = off\n')
+        before = subprocess.run(['git', 'rev-list', '--count', 'HEAD'], cwd=self.root, capture_output=True, text=True).stdout
+        self.call('note', '-n', '1', 'a note')
+        after = subprocess.run(['git', 'rev-list', '--count', 'HEAD'], cwd=self.root, capture_output=True, text=True).stdout
+        self.assertEqual(before, after)
+
+    def test_arh_context_names_the_coding_skill(self):
+        self.assertIn('skills/ponytail/SKILL.md', self.call('context').stdout)
+        self.configure(extra_config='coding_skill = off\n')
+        self.assertNotIn('ponytail', self.call('context').stdout)
+
     def test_dispatch_needs_per_iteration_mode(self):
         brief = self.root / 'brief.md'; brief.write_text('anything\n')
         self.assertIn('orchestration = per-iteration', self.call('dispatch', '-n', '1', '--brief', str(brief), good=False).stderr)
@@ -569,7 +702,8 @@ arh('dispatch', 'report', '-n', n, '--outcome', 'concluded', '--summary', 'The f
         self.assertEqual((last['command'], last['harness_session']), ('arh note', 'CLAUDE_CODE_SESSION_ID=sess-abc'))
         shown = self.call('sessions', '-n', '1').stdout
         self.assertIn('CLAUDE_CODE_SESSION_ID=sess-abc', shown)
-        self.assertIn('not in use (the project is not a git repository)', shown)
+        # A project is a git record by default; its commits carry no Entire trailer without Entire.
+        self.assertIn('Entire checkpoints: none', shown)
         self.set_config('harnesses.md', session_env='NO_SUCH_VARIABLE')
         self.call('note', '-n', '1', 'another note')
         last = json.loads((self.it / 'metadata/activity.jsonl').read_text().splitlines()[-1])
@@ -717,11 +851,11 @@ arh('dispatch', 'report', '-n', n, '--outcome', 'concluded', '--summary', 'The f
         receipt = json.loads((self.it / 'metadata/conclusions.jsonl').read_text().splitlines()[-1])
         self.assertEqual(receipt['entire_sessions']['01JFIXTURECHECKPOINT0000AB'][0]['model'], 'claude-opus-5-5')
 
-    def test_memory_search_uses_a_configured_tool_or_a_word_match(self):
+    def test_memory_search_uses_basic_memory_or_a_configured_tool(self):
         self.ask(); self.gate()
         self.call('memory', 'add', '-n', '1', 'No sample is empty; every sample has reads in at least 10,000 genes.')
-        self.assertIn('F1.1', self.call('memory', 'search', 'empty', 'sample').stdout)
-        self.assertIn('no current finding', self.call('memory', 'search', 'nothing', 'like', 'this').stdout)
+        if not shutil.which('bm'):
+            self.assertIn('setup-tools.sh installs basic-memory', self.call('memory', 'search', 'empty', good=False).stderr)
         stub = self.root / 'search.py'
         stub.write_text('import sys\nprint("searched", sys.argv[1:])\n')
         self.configure(extra_config=f'memory_search_cmd = python3 {stub} {{query}} --in {{dir}}\n')
@@ -1563,7 +1697,7 @@ elif args[0] == 'list':
         for prefix in prefixes[0]:
             self.assertTrue(prefix.startswith(str(cache)), prefix)
             self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once
+        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once (tools use uv)
 
     @needs_site
     def test_nextflow_reports_setting(self):
@@ -1735,7 +1869,14 @@ elif args[0] == 'list':
         self.assertEqual(record['freeze_sha256'], hashlib.sha256((self.it / 'FREEZE.json').read_bytes()).hexdigest())
         log = (self.root / '.arh/unseals.tsv').read_text().splitlines()
         self.assertEqual((len(log), log[1].split('\t')[1:3]), (2, ['1', 'confirm']))
-        self.assertIn('read by iteration(s) 1', self.call('freeze', 'list').stdout)
+        # The script never names the sealed path, so the run is recorded as released to, not as read (#114).
+        self.assertEqual(log[1].split('\t')[6], 'released')
+        self.assertIn('released to iteration(s) 1 (no run names it)', self.call('freeze', 'list').stdout)
+        self.assertIn('not named by its workflow', self.call('gate', 'results', '-n', '1', good=None).stdout)
+        named = self.it / 'scripts/it1_02_named.sh'; named.write_text(f'cat "{held}/truth.txt" > /dev/null\n')
+        self.call('submit', str(named), '-n', 'named')
+        listed = self.call('freeze', 'list').stdout
+        self.assertIn('named by a run of iteration(s) 1', listed); self.assertNotIn('no run names it', listed)
 
     @needs_site
     def test_a_freeze_unseals_only_the_groups_it_names(self):
@@ -1758,8 +1899,8 @@ elif args[0] == 'list':
         record = json.loads(next((self.it / 'logs/nextflow/gate_only').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['sealed_inputs'], {'read': [str(gate)], 'masked': [str(held)]})
         listed = self.call('freeze', 'list').stdout
-        self.assertIn(f'{gate} [gate]  — read by iteration(s) 1', listed)
-        self.assertIn(f'{held} [default]  — never read', listed)
+        self.assertIn(f'{gate} [gate]  — released to iteration(s) 1 (no run names it)', listed)
+        self.assertIn(f'{held} [default]  — never released', listed)
         named = self.it / 'scripts/it1_02_named.sh'
         named.write_text(f'cat {held}/truth.txt\n')
         self.assertIn('unseals its group', self.call('submit', str(named), '-n', 'named', good=False).stderr)
@@ -2277,7 +2418,11 @@ elif args[0] == 'list':
         self.set_config('site.md', on_exit=f'bash {hook}')
         script = self.it / 'scripts/it1_01_bad.sh'; script.write_text('exit 3\n')
         out = self.call('submit', str(script), '-n', 'bad', '--detach', timeout=300)
-        self.call('wait', '-n', '1', '--timeout', '600', timeout=700)
+        # arh wait says the run it waited on ended badly, with the command that resumes it (#97).
+        waited = self.call('wait', '-n', '1', '--timeout', '600', timeout=700, good=None)
+        self.assertEqual(waited.returncode, 3, waited.stdout + waited.stderr)
+        self.assertIn('submission bad FAILED', waited.stdout + waited.stderr)
+        self.assertIn('--resume --detach', waited.stdout + waited.stderr)
         log = Path(out.stdout.strip().splitlines()[-1])
         self.assertIn('live log', log.read_text())
         self.assertEqual((self.root / 'notified.txt').read_text().split()[:3], ['bad', '1', 'iterations/iteration1'])

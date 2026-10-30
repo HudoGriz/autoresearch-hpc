@@ -10,6 +10,38 @@ Singularity with two producer accounts and two verifier families, and from an ex
 of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studies need
 `arh migrate --apply`, which starts the freeze journal.
 
+### Changed (integrations on by default, resume after limits, field feedback #97–#116, 2026-10-29/30)
+- **Integrations are on by default** and each can be switched off in `harnesses.md`
+  (`docs/integrations.md`): the project is a local git repository of its record, committed after
+  every command that changes it; Entire CLI records the agent sessions behind those commits;
+  gitleaks adds maintained credential rules to the built-in scan; basic-memory serves
+  `arh memory search`. External generators stay off.
+- **The git record never holds data or sealed inputs.** `templates/gitignore` takes the record
+  only, and from `metadata/` only the files arh writes. Sealed inputs inside the project go to
+  `.git/info/exclude` and leave the index before every commit, and files over
+  `git_max_file_bytes` are left out before `git add` hashes them. On a 1.9 TB field study: 1,745
+  files and 216 MB, `git status` 0.03 s.
+- **The tools install in seconds, without conda.** `scripts/setup-tools.sh` fetches Entire,
+  gitleaks and uv as sha256-pinned release binaries and installs basic-memory with uv, replaying
+  `.arh/tools-pip.lock`. `tools_dir` in `site.md` puts them on a node-local disk: 22 s cold
+  against over 25 min with micromamba on CephFS.
+- **Dispatches resume after a usage limit** (`dispatch_on_limit = fallback`): the supervisor
+  classifies the limit, moves to `iteration_controller_fallback` or waits for the reset (a stated
+  reset is an upper bound, so it probes after `dispatch_limit_backoff`), and `arh dispatch tick`
+  from cron restarts a supervisor a reboot killed. `arh ask --wait-on-limit` waits instead of
+  returning 75; `arh delegate` returns 75 on a limit. Claude Code's current limit messages are
+  recognised (#108, #109, #111).
+- **No silent harness defaults** (#112): `arh ask` and `arh replicate` stop when `producer`,
+  `verifier` or `harnesses` is unset, and the access check says it cannot verify a harness other
+  than Claude, Codex or OpenCode.
+- **One refusal for an edited frozen file** (#113): `arh submit` checks `FREEZE.json` before the
+  `frozen_scripts` warning, so it no longer first calls the edit a deviation to report.
+- **Released is not read** (#114): `.arh/unseals.tsv` records whether a run's workflow, params or
+  scripts name each released sealed path, and listings say "released to" or "named by".
+- `arh wait` exits 3 when a run failed or its driver died, a deliberate `arh stop` excepted;
+  `arh context` names the coding skill (`coding_skill`, Ponytail); the suite runs in parallel
+  (`test/parallel.py`, about 2 min on 40 cores with a site).
+
 ### Changed (token use, 2026-10-27; plan in design-notes/token-plan.md, reviewed by Codex)
 - **Sessions start from `arh context`, not from whole files.** The contract sent every session to
   `PROGRESS.md`, `DIRECTIVES.md` and `GOTCHAS.md` in full: 329 kB in a 63-iteration field study,

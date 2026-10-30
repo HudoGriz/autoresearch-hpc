@@ -101,6 +101,22 @@ else
   warn=$((warn+1))
 fi
 
+# Integrations on by default (docs/integrations.md): name each one that is on but missing.
+tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
+[ -z "$tools" ] || PATH="$PATH:$tools/bin"
+missing=""
+[ "$(arh_config_get "$ARH_HARN" git_record on)" = on ] && [ ! -d "$ARH_ROOT/.git" ] && missing="$missing git-record"
+[ "$(arh_config_get "$ARH_HARN" entire on)" = on ] && ! command -v entire >/dev/null 2>&1 && missing="$missing entire"
+[ "$(arh_config_get "$ARH_HARN" secret_scanner auto)" != builtin ] && ! command -v gitleaks >/dev/null 2>&1 && missing="$missing gitleaks"
+[ "$(arh_config_get "$ARH_HARN" memory_search_cmd basic-memory)" = basic-memory ] && ! command -v bm >/dev/null 2>&1 && missing="$missing basic-memory"
+if [ -z "$missing" ]; then
+  arh_ok "integrations: git record, Entire, gitleaks, basic-memory"
+else
+  arh_warn "integrations on but missing:$missing"
+  arh_info "fix: $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT && $ARH_HOME/scripts/enable-record.sh $ARH_ROOT"
+  arh_info "     or switch each off in .arh/config/harnesses.md (docs/integrations.md)"
+fi
+
 image=$(arh_config_get "$ARH_SITE" runtime_image "")
 if [ -n "$image" ] && [ -f "$image" ]; then
   expected=$(arh_config_get "$ARH_SITE" runtime_sha256 "")

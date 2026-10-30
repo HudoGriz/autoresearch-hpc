@@ -3,6 +3,7 @@ scheduler jobs (security plan S8: a stop switch). Only processes on this host ar
 
   stop.py ITERATIONS VERIFICATIONS SCHEDULER JOBS(0|1) [OWNER_DIR]
 """
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -55,6 +56,10 @@ def main(iterations, verifications, scheduler, jobs, only=None):
         label = f'iteration {d.name[9:]}' if d.name.startswith('iteration') else f'verification {d.name}'
         for lock in sorted(d.glob('metadata/nextflow/*/.launch-lock')):
             said = signal_lock(lock, f'{label}: submission {lock.parent.name}')
+            if said and 'sent SIGTERM' in said:
+                # Deliberate: arh wait reports a run that ended badly, not one the operator stopped.
+                (lock.parent / 'stopped.json').write_text(json.dumps({'time': datetime.now(timezone.utc).strftime(
+                    '%Y-%m-%dT%H:%M:%SZ')}) + '\n')
             if said:
                 done.append(said)
         if (d / '.dispatch-lock').is_dir():
