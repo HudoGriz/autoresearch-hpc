@@ -294,14 +294,15 @@ arh_git_record() {
       && mv .git/info/exclude.new .git/info/exclude
     # A path sealed after it was committed leaves the index (its old commits stay: see docs/integrations.md).
     git ls-files -z -c -i --exclude-standard | xargs -0 -r git rm -q --cached -- 2>/dev/null || true
-    git add -A . 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
-    # Data never enters the history, even when .gitignore misses it.
-    big=$(git diff --cached --name-only --diff-filter=d -z | xargs -0 -r stat -c '%s %n' 2>/dev/null \
+    # Data never enters the history, even when .gitignore misses it. Checked before `git add`, which
+    # would otherwise compress every large file into .git/objects first (minutes on a shared filesystem).
+    big=$(git ls-files -z -o -m --exclude-standard | xargs -0 -r stat -c '%s %n' 2>/dev/null \
           | awk -v m="$max" '$1 > m {sub(/^[0-9]+ /, ""); print}' || true)
     if [ -n "$big" ]; then
-      printf '%s\n' "$big" | while IFS= read -r f; do git reset -q -- "$f"; printf '/%s\n' "$f" >> .git/info/exclude; done
+      printf '%s\n' "$big" | while IFS= read -r f; do git rm -q --cached --ignore-unmatch -- "$f"; printf '/%s\n' "$f" >> .git/info/exclude; done
       arh_warn "git record: left out files over $max bytes (added to .git/info/exclude): $(printf '%s ' $big)"
     fi
+    git add -A . 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
     git diff --cached --quiet && exit 0
     if git config user.email >/dev/null 2>&1; then git commit -q -m "$msg" >/dev/null 2>&1
     else git -c user.name="${USER:-arh}" -c user.email="${USER:-arh}@$(hostname)" commit -q -m "$msg" >/dev/null 2>&1; fi \
