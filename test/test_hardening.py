@@ -590,6 +590,8 @@ else:
 
     def test_the_project_is_a_git_record_without_its_data(self):
         self.assertTrue((self.root / '.git').is_dir())
+        shared = subprocess.run(['git', 'config', 'core.sharedRepository'], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(shared.stdout.strip(), 'group')         # every member of a shared study can commit
         tracked = subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
         self.assertIn('iterations/iteration1/README.md', tracked)
         self.assertIn('iterations/iteration1/PREDECLARATION.sha256', tracked)

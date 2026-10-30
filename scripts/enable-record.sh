@@ -18,6 +18,8 @@ tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
 command -v git >/dev/null 2>&1 || arh_die 'git_record = on needs git on PATH'
 cd "$ARH_ROOT"
 [ -d .git ] || git init -q
+# A study shared with a group (another account, an agent persona) commits from every member's arh.
+git config core.sharedRepository group
 if [ ! -f .gitignore ]; then
   iters=$(arh_config_get "$ARH_PROJ" iterations_dir iterations)
   verif=$(arh_config_get "$ARH_PROJ" verification_dir verification)
@@ -46,6 +48,19 @@ elif [ "$(arh_config_get "$ARH_HARN" entire on)" = on ]; then
   for f in .claude/settings.json .codex/hooks.json .opencode/plugins/entire.ts; do
     [ -f "$f" ] && sed -i -e "s|command -v entire |command -v $entire |g" -e "s|exec entire |exec $entire |g" "$f"
   done
+  # Entire may have just created a harness's project configuration: give it arh's access entries
+  # (sealed-input denials, declared inputs, web tools), as harness/install.sh would, and let the
+  # project's group read it. Entire writes it owner-only, so another member's sessions would run
+  # without the sealed-input denials and their hooks would fail.
+  reach=$(arh_config_get "$ARH_PROJ" immutable_inputs "")
+  gotchas=$(arh_config_get "$ARH_SITE" site_gotchas "")
+  [ -z "$gotchas" ] || reach="$reach $(dirname "$gotchas")"
+  web=$(arh_config_get "$ARH_HARN" web_access allow)
+  # shellcheck disable=SC2086
+  [ ! -d .claude ] || python3 "$ARH_HOME/lib/harness_access.py" write "$ARH_ROOT" claude "$web" $reach
+  # shellcheck disable=SC2086
+  [ ! -f opencode.json ] || python3 "$ARH_HOME/lib/harness_access.py" write "$ARH_ROOT" opencode "$web" $reach
+  chmod -R g+rX .claude .codex .opencode .entire 2>/dev/null || true
 fi
 # basic-memory, the default memory search: its configuration and index stay in the project, and it
 # must never rewrite a finding's front matter.
