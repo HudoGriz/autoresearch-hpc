@@ -31,7 +31,12 @@
 !/iterations/*/scripts/
 !/iterations/*/resources/
 !/iterations/*/metadata/
-/iterations/*/metadata/nextflow/
+# Only the files arh writes: data an agent keeps in a metadata subdirectory stays out, and git
+# never walks it (a walk of a large tree on a shared filesystem takes minutes).
+/iterations/*/metadata/*/
+!/iterations/*/metadata/dispatch/
+!/iterations/*/metadata/delegations/
+!/iterations/*/metadata/evocations/
 !/iterations/*/results/
 /iterations/*/results/*
 !/iterations/*/results/report/

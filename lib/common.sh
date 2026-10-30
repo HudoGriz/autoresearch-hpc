@@ -278,7 +278,7 @@ arh_lease_touch() {
 # hangs agent sessions on (Entire-Checkpoint trailers; docs/integrations.md). Never fatal: a failed
 # commit warns and leaves the change in the working tree for the next one.
 arh_git_record() {
-  local msg=$1 max big
+  local msg=$1 max big sealed
   [ "$(arh_config_get "$ARH_HARN" git_record on)" = on ] || return 0
   [ -d "$ARH_ROOT/.git" ] || return 0
   command -v git >/dev/null 2>&1 || return 0
@@ -287,6 +287,13 @@ arh_git_record() {
   (
     flock -w 300 9 || { arh_warn "git record: lock busy; left for the next commit"; exit 0; }
     cd "$ARH_ROOT" || exit 0
+    # Sealed inputs inside the project never enter the history: a commit would be a readable copy.
+    sealed=$(python3 "$ARH_HOME/lib/freeze.py" git-exclude "$ARH_ROOT") || { arh_warn "git record: sealed inputs unknown; skipped"; exit 0; }
+    { sed '/^# arh sealed inputs >>>$/,/^# <<< arh sealed inputs$/d' .git/info/exclude 2>/dev/null
+      printf '# arh sealed inputs >>>\n%s\n# <<< arh sealed inputs\n' "$sealed"; } > .git/info/exclude.new \
+      && mv .git/info/exclude.new .git/info/exclude
+    # A path sealed after it was committed leaves the index (its old commits stay: see docs/integrations.md).
+    git ls-files -z -c -i --exclude-standard | xargs -0 -r git rm -q --cached -- 2>/dev/null || true
     git add -A . 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
     # Data never enters the history, even when .gitignore misses it.
     big=$(git diff --cached --name-only --diff-filter=d -z | xargs -0 -r stat -c '%s %n' 2>/dev/null \

@@ -62,9 +62,13 @@ the tools yourself or switch them off.
 
 `templates/gitignore` ignores everything except the record: the Markdown files, `rules/`,
 `skills/`, `knowledge/`, `.arh/config/` and the locks, and in each iteration the pre-declaration,
-claims, freezes, reviews, scripts, resources, metadata (not Nextflow work) and the report. Results,
+claims, freezes, reviews, scripts, resources, the files `arh` writes in `metadata/` (not its
+subdirectories, except `dispatch/`, `delegations/` and `evocations/`) and the report. Results,
 work directories, environments, images and caches stay out. Any single file over
-`git_max_file_bytes` (2 MB) is left out too, and named in `.git/info/exclude`.
+`git_max_file_bytes` (2 MB) is left out too, and named in `.git/info/exclude`. Sealed inputs inside the
+project never enter it: before each commit `arh` lists them in `.git/info/exclude` and drops any
+that were tracked from the index. Commits made before a path was sealed keep it; a study that
+seals a tracked file should rewrite its history (`git filter-repo --path <file> --invert-paths`).
 
 After every successful `claim`, `new`, `gate`, `freeze`, `ask`, `memory`, `ledger`, `note`,
 `dispatch` and `verify`, `arh` commits the changes under a lock, so concurrent sessions do not race.

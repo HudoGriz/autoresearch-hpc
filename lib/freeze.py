@@ -332,6 +332,11 @@ if __name__ == '__main__':
         listing(sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 and sys.argv[4] else None)
     elif cmd == 'sealed':
         print('\n'.join(map(str, sealed_inputs(sys.argv[2]))))
+    elif cmd == 'git-exclude':                   # git-exclude ROOT: sealed paths inside ROOT, as git patterns
+        root = Path(os.path.realpath(sys.argv[2]))
+        for path in sealed_inputs(root):
+            if within(path, root) and path != root:
+                print('/' + re.sub(r'([*?\[\\ !#])', r'\\\1', str(path.relative_to(root))))
     elif cmd == 'referenced':
         for f, name in references(sys.argv[2], sys.argv[3:]):
             print(f'{f}\t{name}')

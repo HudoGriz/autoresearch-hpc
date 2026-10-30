@@ -603,6 +603,17 @@ else:
         log = subprocess.run(['git', 'log', '--format=%s'], cwd=self.root, capture_output=True, text=True).stdout
         self.assertIn('arh note -n 1 a note', log)
 
+    def test_a_sealed_input_inside_the_project_never_enters_the_git_record(self):
+        truth = self.it / 'resources/truth.vcf'; truth.write_text('truth\n')
+        self.call('note', '-n', '1', 'before the seal')
+        ls = lambda: subprocess.run(['git', 'ls-files'], cwd=self.root, capture_output=True, text=True).stdout.split()
+        self.assertIn('iterations/iteration1/resources/truth.vcf', ls())
+        self.set_config('project.md', sealed_inputs=str(truth))
+        self.call('note', '-n', '1', 'after the seal')
+        self.assertNotIn('iterations/iteration1/resources/truth.vcf', ls())    # left the index
+        self.assertTrue(truth.is_file())
+        self.assertIn('/iterations/iteration1/resources/truth.vcf', (self.root / '.git/info/exclude').read_text())
+
     def test_git_record_off_commits_nothing(self):
         self.configure(extra_config='git_record = off\n')
         before = subprocess.run(['git', 'rev-list', '--count', 'HEAD'], cwd=self.root, capture_output=True, text=True).stdout
