@@ -9,9 +9,9 @@ is **on by default**, and each can be switched off in `.arh/config/harnesses.md`
 | Feature | Default | Needs | Installed by | Switch off |
 |---|---|---|---|---|
 | Git record: the project is a git repository of its record, and every command that changes the record is committed | on | git | the system | `git_record = off` |
-| [Entire CLI](https://github.com/entireio/cli) 0.11.6: agent, model, tokens and transcript of each session behind those commits | on | git record | `scripts/setup-tools.sh` (conda-forge) | `entire = off` |
+| [Entire CLI](https://github.com/entireio/cli) 0.11.6: agent, model, tokens and transcript of each session behind those commits | on | git record | `scripts/setup-tools.sh` (release binary, sha256-checked) | `entire = off` |
 | [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1: maintained credential rules on top of ARH's built-in patterns | on (`auto`) | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | `secret_scanner = builtin` |
-| [basic-memory](https://github.com/basicmachines-co/basic-memory) 0.23.2: `arh memory search` over `knowledge/` | on | — | `scripts/setup-tools.sh` (PyPI) | `memory_search_cmd = <another tool's command>` |
+| [basic-memory](https://github.com/basicmachines-co/basic-memory) 0.23.2: `arh memory search` over `knowledge/` | on | — | `scripts/setup-tools.sh` (PyPI, with uv) | `memory_search_cmd = <another tool's command>` |
 | [Ponytail](https://github.com/DietrichGebert/ponytail): coding guidance, named by `arh context` | on | — | vendored in `skills/ponytail/` | `coding_skill = off` |
 | Resume after a usage limit (`arh dispatch`) | `fallback` | `orchestration = per-iteration` | ARH | `dispatch_on_limit = stop` |
 | Restart after a reboot (`arh dispatch tick`) | when cron runs it | cron or `scrontab` | ARH | do not schedule it |
@@ -33,17 +33,30 @@ arh init /shared/my-study --bootstrap
 For an existing project:
 
 ```bash
-scripts/setup-tools.sh <study>        # Entire, gitleaks, basic-memory: .arh/envs/tools/<key>, locked
+scripts/setup-tools.sh <study>        # Entire, gitleaks, uv, basic-memory: <tools_dir>/<key>, locked
 scripts/enable-record.sh <study>      # git init + templates/gitignore, Entire hooks, basic-memory index
 ```
 
-The tools environment is separate from the host Nextflow one, so adding or upgrading a tool never
-touches the environment that runs workflows. Its pins are in `config/dependencies.json`; the
-build writes `.arh/tools-explicit.lock` and `.arh/tools-pip.lock`, and `tools_prefix` in
-`site.md`. `arh` puts it **last** on PATH, so a site's own copy of a tool wins. With
-`ARH_ENV_CACHE` set it is built once and shared between projects, like the other environments.
-On a platform with no pinned gitleaks build (not Linux x86-64 or arm64), install gitleaks yourself
-or set `secret_scanner = builtin`.
+The tools are separate from the host Nextflow environment, so adding or upgrading one never
+touches the environment that runs workflows. There is no conda solve: Entire, gitleaks and
+[uv](https://github.com/astral-sh/uv) are single release binaries checked against the sha256 in
+`config/dependencies.json`, and uv installs basic-memory into a virtual environment with a
+uv-managed Python. The build writes `.arh/tools-pip.lock` (`uv pip freeze`) and later builds
+install exactly that lock; it also writes `tools_prefix` in `site.md`. `arh` puts the tools
+**last** on PATH, so a site's own copy of a tool wins.
+
+Where they go: `tools_dir` in `site.md`, else `$ARH_ENV_CACHE/tools` (built once and shared
+between projects), else `.arh/envs/tools`. The tools run where `arh` runs, never in a job, so on a
+slow shared filesystem (CephFS, NFS) point `tools_dir` at a node-local disk:
+
+```text
+tools_dir = /var/tmp/arh-tools-$USER
+```
+
+A cold build there takes about 15 s (about 6 min on CephFS; the earlier micromamba build took over
+25 min). If the tools are missing (a new login node, a cleaned `/var/tmp`), `arh doctor` says so; rerun
+`scripts/setup-tools.sh`. On a platform with no pinned builds (not Linux x86-64 or arm64), install
+the tools yourself or switch them off.
 
 ## Git record
 

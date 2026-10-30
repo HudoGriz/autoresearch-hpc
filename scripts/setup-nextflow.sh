@@ -136,9 +136,6 @@ source=$source_kind
 binary=$micromamba
 EOF_LOCK
 }
-# ARH_MICROMAMBA_ONLY=1: only fetch and record the pinned micromamba (scripts/setup-tools.sh uses it
-# for a project whose host environment predates micromamba.lock); the Nextflow environment is left as is.
-if [ -n "${ARH_MICROMAMBA_ONLY:-}" ]; then write_micromamba_lock; printf 'Micromamba: %s (%s)\n' "$micromamba" "$source_kind"; exit 0; fi
 
 create_env() {
   "$micromamba" create -y -p "$prefix" -c conda-forge -c bioconda \

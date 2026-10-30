@@ -31,7 +31,7 @@ elif [ "$(arh_config_get "$ARH_HARN" entire on)" = on ]; then
   # Every configured harness that Entire knows (harness_<h>_entire_agent in harnesses.md).
   # ARH_ENTIRE_AGENTS names them instead, e.g. for a study whose harnesses.md predates the key and
   # must not change under open iterations (its hash binds their review terms).
-  agents=${ARH_ENTIRE_AGENTS:-$(for h in $(arh_config_get "$ARH_HARN" harnesses ""); do arh_config_get "$ARH_HARN" "harness_${h}_entire_agent" ""; done | sort -u)}
+  agents=${ARH_ENTIRE_AGENTS:-$(for h in $(arh_config_get "$ARH_HARN" harnesses ""); do arh_config_get "$ARH_HARN" "harness_${h}_entire_agent" ""; echo; done | sort -u | xargs)}
   first=1
   for a in $agents; do
     if [ "$first" = 1 ]; then

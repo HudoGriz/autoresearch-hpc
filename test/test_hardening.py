@@ -1686,7 +1686,7 @@ elif args[0] == 'list':
         for prefix in prefixes[0]:
             self.assertTrue(prefix.startswith(str(cache)), prefix)
             self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        self.assertEqual(len(log.read_text().splitlines()), 3)       # host, task and tools environment, each built once
+        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once (tools use uv)
 
     @needs_site
     def test_nextflow_reports_setting(self):

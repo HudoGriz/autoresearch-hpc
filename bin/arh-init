@@ -116,6 +116,6 @@ if [ "$bootstrap" = 0 ]; then
   printf '\nTo prepare the pinned host Nextflow environment automatically:\n'
   printf '  %s/scripts/setup-nextflow.sh %q\n' "$ARH_HOME" "$target"
   printf '  (a pinned standalone micromamba is cached under .arh/tools if needed)\n'
-  printf '  %s/scripts/setup-tools.sh %q && %s/scripts/enable-record.sh %q   # Entire, gitleaks, basic-memory\n' \
+  printf '  %s/scripts/setup-tools.sh %q && %s/scripts/enable-record.sh %q   # Entire, gitleaks, basic-memory (uv; ~15 s)\n' \
     "$ARH_HOME" "$target" "$ARH_HOME" "$target"
 fi

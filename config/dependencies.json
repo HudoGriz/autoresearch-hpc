@@ -18,21 +18,34 @@
   },
   "runtime_image": "docker://mambaorg/micromamba:2.8.1",
   "tools": {
-    "_comment": "Integrations ARH turns on by default (scripts/setup-tools.sh, docs/integrations.md). Each can be switched off in harnesses.md.",
-    "conda": {
-      "entire": "0.11.6",
-      "python": "3.12",
-      "pip": "25.2"
+    "_comment": "Integrations on by default (scripts/setup-tools.sh, docs/integrations.md): single release binaries checked by sha256, and basic-memory installed by uv. No conda solve.",
+    "uv": {
+      "version": "0.13.1",
+      "url": "https://github.com/astral-sh/uv/releases/download/{version}/uv-{triple}.tar.gz",
+      "sha256": {
+        "linux-64": "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220",
+        "linux-aarch64": "9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14"
+      }
     },
-    "pip": {
-      "basic-memory": "0.23.2"
+    "entire": {
+      "version": "0.11.6",
+      "url": "https://github.com/entireio/cli/releases/download/v{version}/entire_linux_{goarch}.tar.gz",
+      "sha256": {
+        "linux-64": "1272cf16a81d30678dd9cf2597e9298dbf6481ada9b81215dc746afb0e79cab0",
+        "linux-aarch64": "2f70f50dc9a0f519c3e5a8080218caf035d9c6442c9502bde971734373952e11"
+      }
     },
     "gitleaks": {
       "version": "8.30.1",
+      "url": "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_linux_{glarch}.tar.gz",
       "sha256": {
         "linux-64": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
         "linux-aarch64": "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
       }
+    },
+    "python": "3.12",
+    "pip": {
+      "basic-memory": "0.23.2"
     }
   }
 }
