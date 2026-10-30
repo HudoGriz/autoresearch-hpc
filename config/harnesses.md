@@ -33,10 +33,13 @@ harnesses = claude codex opencode
 harness_claude_cmd      = claude -p {prompt}
 harness_claude_family   = anthropic
 harness_claude_version_cmd = claude --version
+# The agent name Entire CLI knows the harness by (entire enable --agent); empty: Entire skips it.
+harness_claude_entire_agent = claude-code
 
 harness_codex_cmd       = codex exec --skip-git-repo-check {prompt}
 harness_codex_family    = openai
 harness_codex_version_cmd = codex --version
+harness_codex_entire_agent = codex
 
 # OpenCode routes to several providers, so it has no model family until one is pinned.
 # Left as `mixed` it cannot produce or verify an eligible review; pin the model and
@@ -46,6 +49,7 @@ harness_codex_version_cmd = codex --version
 harness_opencode_cmd    = opencode run {prompt}
 harness_opencode_family = mixed
 harness_opencode_version_cmd = opencode --version
+harness_opencode_entire_agent = opencode
 
 harness_gemini_cmd      = gemini -p {prompt}
 harness_gemini_family   = google
@@ -66,8 +70,22 @@ executor     =
 # then differ in model family from both the iteration controller and the executor.
 orchestration = single
 # The harness each dispatched iteration runs in (default: producer). Any CLI with a command
-# template above can be one, including a meta-harness such as Omnigent.
+# template above can be one.
 iteration_controller =
+# When a controller stops at its provider's usage limit (arh dispatch keeps the lease meanwhile):
+#   fallback  continue at once on iteration_controller_fallback (another account, or another
+#             family), and wait only when that one is out too;
+#   wait      sleep until the reset the provider names (plus dispatch_limit_margin seconds), or
+#             dispatch_limit_backoff seconds when it names none, then continue;
+#   stop      end the dispatch, as before.
+# Continuing starts a fresh session of the controller harness from the project's state (arh
+# context), so it works for any harness; with harness_<name>_resume_cmd (placeholders {prompt},
+# {session_id}) and a session id from Entire, the harness resumes its own conversation instead.
+dispatch_on_limit = fallback
+iteration_controller_fallback =
+dispatch_limit_margin = 300
+dispatch_limit_backoff = 1800
+dispatch_max_resumes = 6
 max_parallel_iterations = 2
 # A prefix for the controller's command, e.g. `srun -t 08:00:00 --mem 8G` to run it as a job
 # (the compute node then needs to reach the model provider). Empty runs it here.
@@ -101,16 +119,26 @@ web_access = allow
 # arh ask, arh delegate and arh evoke refuse to send a plan, report or task that carries something
 # shaped like a credential (an API key, a token, a private key). off only for a recorded reason.
 secret_scan = on
-# How arh memory search finds recorded findings. Empty: a word match over knowledge/. Or a
-# Markdown knowledge tool, with {query} and {dir} (the knowledge/ directory) substituted, e.g.
-# basic-memory: `bm tool search-notes {query} --project arh-knowledge` after `bm project add
-# arh-knowledge <project>/knowledge`, with disable_permalinks = true and
-# ensure_frontmatter_on_sync = false in its config so it never rewrites a finding.
-memory_search_cmd =
-# auto: when gitleaks (https://github.com/gitleaks/gitleaks) is on PATH, its maintained rules are
-# applied on top of ARH's built-in patterns, which cover only common token shapes. gitleaks: require
-# it. builtin: never call it.
+# How arh memory search finds recorded findings: basic-memory (the default, in the tools
+# environment; its index lives in .arh/basic-memory and never rewrites a finding), or any Markdown
+# knowledge tool's command with {query} and {dir} (the knowledge/ directory) substituted.
+memory_search_cmd = basic-memory
+# auto (the default): gitleaks's maintained rules on top of ARH's built-in patterns. Both are
+# needed: gitleaks 8.30 misses several shapes the built-in patterns catch (Anthropic, OpenAI, AWS,
+# Google and Hugging Face keys, assigned passwords, a lone private-key header; tested 2026-10-30),
+# and the built-in patterns know no rule set beyond common shapes. gitleaks: refuse when it is
+# missing. builtin: never call it.
 secret_scanner = auto
+
+# Integrations on by default (docs/integrations.md; scripts/setup-tools.sh installs them).
+# git_record: the project is a git repository of its record (templates/gitignore keeps data out),
+# and every command that changes the record is committed. entire: Entire CLI records each agent
+# session behind those commits (agent, model, tokens, transcript), kept local. off switches one off.
+git_record = on
+git_max_file_bytes = 2000000
+entire = on
+# The coding guidance arh context points every session to when it writes code (skills/<name>/).
+coding_skill = ponytail
 # Tried in order when the verifier cannot review: it refuses the content (arh ask exit 77), or is
 # out of quota, logged out, holds an expired key or gives no answer within its timeout (exit 75).
 # Each needs a concrete model family other than the producer's, e.g.:

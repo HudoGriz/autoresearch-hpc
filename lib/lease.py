@@ -154,6 +154,19 @@ GENERIC = {'python', 'python3', 'bash', 'sh', 'zsh', 'env', 'node', 'npx', 'uv',
 
 
 def ps(pid, field):
+    """One ps field of PID. On Linux, args, comm and ppid come from /proc without starting a
+    process: the ancestry walk asks for three per ancestor, and `ps` for each made every arh
+    command on an iteration ~0.4 s slower."""
+    proc = Path(f'/proc/{pid}')
+    try:
+        if field == 'args':
+            return (proc / 'cmdline').read_bytes().replace(b'\0', b' ').decode(errors='replace').strip()
+        if field == 'comm':
+            return (proc / 'comm').read_text().strip()
+        if field == 'ppid':
+            return (proc / 'stat').read_text().rsplit(')', 1)[1].split()[1]
+    except (OSError, IndexError):
+        pass
     try:
         out = subprocess.run(['ps', '-o', f'{field}=', '-p', str(pid)], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):

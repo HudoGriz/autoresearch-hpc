@@ -16,7 +16,7 @@ Follow [HPC setup](docs/hpc-execution.md) to configure a local test site first.
 ```bash
 export ARH_TEST_SITE=/absolute/path/to/local/site.md
 test/run_tests.sh
-python3 test/test_hardening.py
+python3 test/parallel.py        # all tests, in parallel (~90 s on 40 cores); -k NAME for a subset
 python3 test/conformance.py --site "$ARH_TEST_SITE"
 KEEP=1 test/run_tests.sh
 ```

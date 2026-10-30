@@ -101,6 +101,12 @@ if [ "$bootstrap" = 1 ]; then
   fi
 fi
 if [ -n "$runtime" ]; then "$ARH_HOME/scripts/setup-runtime.sh" "$target" "$runtime"; fi
+# The integrations ARH turns on by default (docs/integrations.md), then the git record and Entire.
+# A failed tools build (offline, no PyPI) leaves the project usable; arh doctor names what is missing.
+if [ "$bootstrap" = 1 ] && ! "$ARH_HOME/scripts/setup-tools.sh" "$target"; then
+  arh_warn "the tools environment (Entire, gitleaks, basic-memory) was not built; rerun $ARH_HOME/scripts/setup-tools.sh $target"
+fi
+ARH_PROJECT="$target" "$ARH_HOME/scripts/enable-record.sh" "$target"
 
 printf 'Initialised AutoResearch HPC project at %s\n' "$target"
 printf '  detected scheduler: %s\n' "$scheduler"
@@ -110,4 +116,6 @@ if [ "$bootstrap" = 0 ]; then
   printf '\nTo prepare the pinned host Nextflow environment automatically:\n'
   printf '  %s/scripts/setup-nextflow.sh %q\n' "$ARH_HOME" "$target"
   printf '  (a pinned standalone micromamba is cached under .arh/tools if needed)\n'
+  printf '  %s/scripts/setup-tools.sh %q && %s/scripts/enable-record.sh %q   # Entire, gitleaks, basic-memory\n' \
+    "$ARH_HOME" "$target" "$ARH_HOME" "$target"
 fi

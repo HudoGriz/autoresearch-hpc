@@ -186,6 +186,16 @@ def main():
         rc, observed = 127, 0
         (run_dir / "response.md").write_text("")
         (run_dir / "stderr.log").write_text(f"arh: cannot start generator: {exc}\n")
+    # A delegated harness at its usage limit is unavailable, not failed: exit 75, as arh ask does,
+    # so a caller waits or falls back instead of reading the refusal as the task's answer.
+    if kind == "delegation" and rc not in (124, 65):
+        from harness import classify
+        tail = b"".join(p.read_bytes()[-20000:] for p in (run_dir / "response.md", run_dir / "stderr.log")
+                        if p.exists()).decode(errors="replace")
+        refusal = classify(tail, request.read_text(errors="replace"))
+        if refusal and refusal[0] == "limit":
+            rc = 75
+            record.update(provider_error="limit", provider_message=refusal[2], retry_hint=refusal[3])
     record.update(
         finished=utc_now(),
         exit_code=rc,

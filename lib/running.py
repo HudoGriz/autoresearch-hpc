@@ -98,6 +98,13 @@ def ended_badly(root, label, run_dir):
     data = receipt(attempts[-1])
     if not data or data.get('exit_code') == 0:
         return None
+    # Stopped on purpose (arh stop, after this attempt started): not a run that ended badly.
+    try:
+        stopped = json.loads((run_dir.parents[2] / 'metadata/nextflow' / run_dir.name / 'stopped.json').read_text())
+        if stopped.get('time', '') >= (data.get('started') or '~')[:20]:
+            return None
+    except (OSError, ValueError, IndexError):
+        pass
     where = os.path.relpath(attempts[-1], root)
     resume = (f"; resume: arh submit {data['workflow']} -n {run_dir.name} --resume --detach"
               if data.get('workflow') else '')

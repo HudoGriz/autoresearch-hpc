@@ -149,8 +149,11 @@ PROVIDER_ERRORS = (
         r"flagged for possible|violat\w* (our |the )?(usage|content|acceptable use) polic|"
         r"content (policy|filter|management)|safety (system|classifier|filter)|"
         r"unable to respond to this request|invalid_prompt", re.I)),
+    # Claude Code says "You've hit your 5-hour limit · resets 5:20pm (Europe/Ljubljana)"
+    # (2026-10-29): no "usage limit" in it (field feedback #109).
     ('limit', 75, re.compile(
         r"usage limit|session limit|rate.?limit|quota|too many requests|\b429\b|"
+        r"\b\d+-hour limit|weekly limit|hit your (\w+ )?limit|limit reached|"
         r"insufficient.?(credit|balance)|try again (at|in)|overloaded", re.I)),
     # An expired or revoked key is the same as no login: OpenCode said "This API key has expired.
     # Create a new API key in OpenCode Console" and exited 1, so the fallback was never tried
@@ -161,7 +164,42 @@ PROVIDER_ERRORS = (
         r"invalid (api.?key|token|credential)|create a new api.?key|(log ?in|sign ?in|re-?authenticate) again|"
         r"please (log ?in|sign ?in|re-?authenticate)", re.I)),
 )
-RETRY_HINT = re.compile(r"\b(?:try again (?:at|in)|resets?(?: at)?) [^.\n\u00b7(]*\d[^.\n\u00b7(]*", re.I)
+RETRY_HINT = re.compile(r"\b(?:try again (?:at|in)|resets?(?: at)?) [^.\n\u00b7(]*\d[^.\n\u00b7(]*(?:\([A-Za-z_]+/[A-Za-z_/]+\))?", re.I)
+
+
+def reset_epoch(hint, now=None):
+    """When a limit with this retry hint lifts, as epoch seconds, or None when it cannot be told.
+    Reads "resets 5:20pm (Europe/Ljubljana)", "try again at 12:20", "try again in 2 hours" and
+    the bare epoch Claude Code once printed ("Claude AI usage limit reached|1761840000")."""
+    from datetime import datetime, timedelta
+    now = now or datetime.now().astimezone()
+    if not hint:
+        return None
+    m = re.search(r'\|(\d{10})\b', hint)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'\bin (\d+) ?(second|sec|minute|min|hour|hr|h|m|s)\w*', hint, re.I)
+    if m:
+        unit = m.group(2).lower()[0]
+        return int(now.timestamp()) + int(m.group(1)) * {'s': 1, 'm': 60, 'h': 3600}[unit]
+    m = re.search(r'(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?(?:\s*\(([A-Za-z_]+/[A-Za-z_/]+)\))?', hint, re.I)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2) or 0)
+    if m.group(3):
+        hour = hour % 12 + (12 if m.group(3).lower().startswith('p') else 0)
+    zone = now.tzinfo
+    if m.group(4):
+        try:
+            from zoneinfo import ZoneInfo
+            zone = ZoneInfo(m.group(4))
+        except Exception:
+            pass
+    local = now.astimezone(zone)
+    at = local.replace(hour=hour % 24, minute=minute, second=0, microsecond=0)
+    if at <= local:
+        at += timedelta(days=1)
+    return int(at.timestamp())
 
 
 def classify(text, prompt=''):

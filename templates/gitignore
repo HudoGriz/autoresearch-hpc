@@ -1,0 +1,43 @@
+# AutoResearch HPC: the git history holds the record, never the data.
+# Everything is ignored unless listed here. Results, work directories, environments, images and
+# caches stay out; arh also refuses any single file over git_max_file_bytes (harnesses.md).
+/*
+!/.gitignore
+!/*.md
+!/rules/
+!/skills/
+!/knowledge/
+!/notes/
+!/final_report/
+!/.claude/
+!/.entire/
+!/.codex/
+!/opencode.json
+
+!/.arh/
+/.arh/*
+!/.arh/config/
+!/.arh/registry.tsv
+!/.arh/VERSION
+!/.arh/freezes.tsv
+!/.arh/*.lock
+
+!/iterations/
+/iterations/*/*
+!/iterations/*/*.md
+!/iterations/*/*.json
+!/iterations/*/*.sha256
+!/iterations/*/*.prompt
+!/iterations/*/scripts/
+!/iterations/*/resources/
+!/iterations/*/metadata/
+/iterations/*/metadata/nextflow/
+!/iterations/*/results/
+/iterations/*/results/*
+!/iterations/*/results/report/
+
+!/verification/
+/verification/*/*
+!/verification/*/*.md
+!/verification/*/*.json
+!/verification/*/scripts/

@@ -271,3 +271,34 @@ arh_lease_touch() {
   # 3: a dispatched controller holds the iteration (lease.py said so); any other failure only warns.
   [ "$rc" -ne 3 ] || exit 3
 }
+
+# git_record = on (the default): the project is a git repository holding the record, not the data
+# (templates/gitignore), and each successful command that changes the record is committed. The
+# history is a second, independent trail of who changed what and when, and it is what Entire CLI
+# hangs agent sessions on (Entire-Checkpoint trailers; docs/integrations.md). Never fatal: a failed
+# commit warns and leaves the change in the working tree for the next one.
+arh_git_record() {
+  local msg=$1 max big
+  [ "$(arh_config_get "$ARH_HARN" git_record on)" = on ] || return 0
+  [ -d "$ARH_ROOT/.git" ] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+  max=$(arh_config_get "$ARH_HARN" git_max_file_bytes 2000000)
+  mkdir -p "$ARH_STATE/tmp"
+  (
+    flock -w 300 9 || { arh_warn "git record: lock busy; left for the next commit"; exit 0; }
+    cd "$ARH_ROOT" || exit 0
+    git add -A . 2>/dev/null || { arh_warn "git record: git add failed"; exit 0; }
+    # Data never enters the history, even when .gitignore misses it.
+    big=$(git diff --cached --name-only --diff-filter=d -z | xargs -0 -r stat -c '%s %n' 2>/dev/null \
+          | awk -v m="$max" '$1 > m {sub(/^[0-9]+ /, ""); print}' || true)
+    if [ -n "$big" ]; then
+      printf '%s\n' "$big" | while IFS= read -r f; do git reset -q -- "$f"; printf '/%s\n' "$f" >> .git/info/exclude; done
+      arh_warn "git record: left out files over $max bytes (added to .git/info/exclude): $(printf '%s ' $big)"
+    fi
+    git diff --cached --quiet && exit 0
+    if git config user.email >/dev/null 2>&1; then git commit -q -m "$msg" >/dev/null 2>&1
+    else git -c user.name="${USER:-arh}" -c user.email="${USER:-arh}@$(hostname)" commit -q -m "$msg" >/dev/null 2>&1; fi \
+      || arh_warn "git record: commit failed; the change stays in the working tree"
+  ) 9>"$ARH_STATE/tmp/git.lock" || arh_warn "git record: skipped ($msg)"
+  return 0
+}

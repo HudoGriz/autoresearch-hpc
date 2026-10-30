@@ -1,81 +1,136 @@
 # Integrations
 
 AutoResearch HPC keeps its own code to what the protocol needs: binding records to hashes and
-refusing steps. Where a maintained tool already does a job, ARH calls it or links to it instead.
-Every integration is optional; without the tool, ARH falls back to a simpler built-in behaviour
-or leaves the job to the operator.
+refusing steps. Where a maintained tool already does a job, ARH calls it. Every integration below
+is **on by default**, and each can be switched off in `.arh/config/harnesses.md`.
 
-Each was checked on 2026-10-16 in a scratch home and a scratch, git-tracked ARH project on a
-RHEL 9 cluster login node.
+## What is on, what it needs, how to switch it off
 
-| Tool | Version checked | What ARH uses it for | Without it |
-|---|---|---|---|
-| [Entire CLI](https://github.com/entireio/cli) | 0.11.5 | transcripts, agent, model and tokens of the agent sessions behind an iteration | `arh sessions` lists ARH's own activity log only |
-| [gitleaks](https://github.com/gitleaks/gitleaks) | 8.30.1 | maintained credential rules for every request ARH sends and every log it keeps | ARH's built-in token patterns |
-| [basic-memory](https://github.com/basicmachines-co/basic-memory) | 0.23.2 | searching recorded findings (`knowledge/`) | a word match |
-| [Omnigent](https://github.com/omnigent-ai/omnigent) | 0.18.0 | an iteration controller command for `arh dispatch` | harness CLIs directly (the default) |
+| Feature | Default | Needs | Installed by | Switch off |
+|---|---|---|---|---|
+| Git record: the project is a git repository of its record, and every command that changes the record is committed | on | git | the system | `git_record = off` |
+| [Entire CLI](https://github.com/entireio/cli) 0.11.6: agent, model, tokens and transcript of each session behind those commits | on | git record | `scripts/setup-tools.sh` (conda-forge) | `entire = off` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1: maintained credential rules on top of ARH's built-in patterns | on (`auto`) | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | `secret_scanner = builtin` |
+| [basic-memory](https://github.com/basicmachines-co/basic-memory) 0.23.2: `arh memory search` over `knowledge/` | on | — | `scripts/setup-tools.sh` (PyPI) | `memory_search_cmd = <another tool's command>` |
+| [Ponytail](https://github.com/DietrichGebert/ponytail): coding guidance, named by `arh context` | on | — | vendored in `skills/ponytail/` | `coding_skill = off` |
+| Resume after a usage limit (`arh dispatch`) | `fallback` | `orchestration = per-iteration` | ARH | `dispatch_on_limit = stop` |
+| Restart after a reboot (`arh dispatch tick`) | when cron runs it | cron or `scrontab` | ARH | do not schedule it |
+| `arh ask --wait-on-limit` | per call | — | ARH | leave the flag out |
+| Secret scan of everything sent to a provider | on | — | ARH | `secret_scan = off` (with a recorded reason) |
+| External research generators (`arh evoke`: Biomni, AI Scientist v2, Agent Laboratory) | **off** | each tool's own install and API keys | the site ([external-generators.md](external-generators.md)) | — (`generator_<tool>_enabled = true` and `--allow-external` per call turn one on) |
+
+The generators stay off: each needs its own model keys and a multi-gigabyte environment, runs its
+own code and sends project content to its provider.
+
+### Installing
+
+`arh init --bootstrap` builds both pinned environments and enables the record:
+
+```bash
+arh init /shared/my-study --bootstrap
+```
+
+For an existing project:
+
+```bash
+scripts/setup-tools.sh <study>        # Entire, gitleaks, basic-memory: .arh/envs/tools/<key>, locked
+scripts/enable-record.sh <study>      # git init + templates/gitignore, Entire hooks, basic-memory index
+```
+
+The tools environment is separate from the host Nextflow one, so adding or upgrading a tool never
+touches the environment that runs workflows. Its pins are in `config/dependencies.json`; the
+build writes `.arh/tools-explicit.lock` and `.arh/tools-pip.lock`, and `tools_prefix` in
+`site.md`. `arh` puts it **last** on PATH, so a site's own copy of a tool wins. With
+`ARH_ENV_CACHE` set it is built once and shared between projects, like the other environments.
+On a platform with no pinned gitleaks build (not Linux x86-64 or arm64), install gitleaks yourself
+or set `secret_scanner = builtin`.
+
+## Git record
+
+`templates/gitignore` ignores everything except the record: the Markdown files, `rules/`,
+`skills/`, `knowledge/`, `.arh/config/` and the locks, and in each iteration the pre-declaration,
+claims, freezes, reviews, scripts, resources, metadata (not Nextflow work) and the report. Results,
+work directories, environments, images and caches stay out. Any single file over
+`git_max_file_bytes` (2 MB) is left out too, and named in `.git/info/exclude`.
+
+After every successful `claim`, `new`, `gate`, `freeze`, `ask`, `memory`, `ledger`, `note`,
+`dispatch` and `verify`, `arh` commits the changes under a lock, so concurrent sessions do not race.
+A failed commit only warns: the change stays in the working tree for the next one. The history is
+local; nothing is pushed.
 
 ## Entire CLI: agent sessions and transcripts
 
 Entire records each agent session and, at every commit, stores a checkpoint (transcript, prompts,
-tool calls, files, tokens) as a git ref and adds an `Entire-Checkpoint: <id>` trailer to the
-commit. ARH reads those trailers for the commits that touched an iteration, and with `entire` on
-PATH asks it for each checkpoint's agent, model, session and tokens.
+tool calls, files, tokens) as a git ref, and adds an `Entire-Checkpoint: <id>` trailer to the
+commit. `scripts/enable-record.sh` enables it for every configured harness Entire knows
+(`harness_<name>_entire_agent`: `claude-code`, `codex`, `opencode`), with telemetry off and
+session pushing off. Agent hooks name the pinned binary in full, so they work even when an
+agent's PATH does not hold the tools environment.
 
 ```bash
-cd <study>                                  # must be a git repository
-entire enable --agent claude-code --telemetry=false --skip-push-sessions
-# work as usual; commit iteration files; then
 arh sessions -n N                           # checkpoints, with agent, model and tokens
 entire checkpoint explain <id>              # the session itself
+entire session tokens <session-id>          # token use of one session
 ```
 
-`entire enable` installs its hooks in the project's `.claude/settings.json` (or the agent's own
-project configuration), not in your home directory. The conclusion receipt
-(`metadata/conclusions.jsonl`) records the checkpoint ids and, with Entire installed, the model
-each session ran: evidence that the harness configuration alone does not give. Checkpoints stay
-local unless you push them (`--skip-push-sessions`); transcripts can hold host paths and data
-excerpts, so check them before publishing a repository.
+The conclusion receipt (`metadata/conclusions.jsonl`) records the checkpoint ids and the model
+each session ran: evidence the harness configuration alone does not give. Transcripts can hold host
+paths and data excerpts, so check them before you publish a repository.
 
 ## gitleaks: credential rules ARH does not maintain
 
-`secret_scanner = auto` (the default, `.arh/config/harnesses.md`) applies gitleaks's rules on top
-of the built-in patterns whenever `gitleaks` is on PATH. That covers `arh ask`, `arh delegate`,
-`arh evoke`, dispatch briefs and session logs, and `arh memory add`. A Slack webhook URL, which no
-built-in pattern models, is refused and redacted. `secret_scanner = gitleaks` stops a request when
-gitleaks is missing; `builtin` never calls it. Install the release binary on PATH:
-<https://github.com/gitleaks/gitleaks/releases>.
+`secret_scanner = auto` applies gitleaks's rules on top of the built-in patterns, for `arh ask`,
+`arh delegate`, `arh evoke`, dispatch briefs and session logs, and `arh memory add`. **Both are
+needed.** On 2026-10-30, gitleaks 8.30.1 missed Anthropic, OpenAI, AWS, Google and Hugging Face key
+shapes, assigned passwords and a lone private-key header that the built-in patterns catch, while it
+alone caught a Slack webhook URL. `secret_scanner = gitleaks` refuses to run without gitleaks;
+`builtin` never calls it.
 
 ## basic-memory: searching findings
 
 `arh memory add` writes each finding of a concluded iteration as a Markdown file with YAML front
-matter under `knowledge/`. To search them with basic-memory:
+matter under `knowledge/`, then reindexes. `arh memory search QUERY` hands the query to
+basic-memory. Its configuration and index stay in the project (`BASIC_MEMORY_CONFIG_DIR =
+.arh/basic-memory`), and `disable_permalinks` and `ensure_frontmatter_on_sync = false` keep it from
+rewriting a finding. The first index downloads a small embedding model. basic-memory also serves
+the findings to any MCP-capable agent (`bm mcp`). Another Markdown knowledge tool can take its
+place: `memory_search_cmd = <command with {query} and {dir}>`.
 
-```bash
-bm project add arh-knowledge <study>/knowledge
-# in basic-memory's config.json: "disable_permalinks": true, "ensure_frontmatter_on_sync": false
-bm reindex --project arh-knowledge
-```
+## Resume after a usage limit
 
-and in `.arh/config/harnesses.md`:
+None of the tools above handles a provider's usage limit, so `arh dispatch` does it. A controller
+that exits before it hands back, with a usage-limit message in its output, is continued:
+
+1. **`fallback`** (default): it continues at once on `iteration_controller_fallback`, for example a
+   second account of the same harness or another family. It waits only when both are at their limit.
+2. **`wait`**: it continues on the same harness when the limit lifts. The stated reset is an upper
+   bound, not a schedule, so ARH probes again after `dispatch_limit_backoff` (30 min) at the latest.
+3. It restarts at most `dispatch_max_resumes` times. After that, the dispatch ends with the
+   controller's exit code.
+
+The continuation is a **fresh session** of the controller harness. It gets the brief, a current
+`arh context -n N`, and a preamble telling it to check `arh status` first and not redo recorded
+steps. That works for any harness, because the state is in the project. It is also usually cheaper
+than reloading a long conversation whose prompt cache has expired. When a harness defines
+`harness_<name>_resume_cmd` (placeholders `{prompt}`, `{session_id}`; e.g. `claude -p {prompt}
+--resume {session_id}`) and Entire names exactly one session for the attempt, the harness resumes
+its own conversation instead. Entire's own `entire session resume` is not used: it checks out a
+branch, which would disturb other sessions sharing the working tree.
+
+The supervisor keeps the lease and the dispatch lock throughout, so no other session can step in.
+`arh dispatch status` shows `paused until <time>`. Every restart is in `run.json` (`restarts[]`:
+time, provider line, harness, wait, mode) and in the iteration's notes.
+
+**Reboots.** `arh dispatch tick` restarts the supervisor of any dispatch whose supervisor died
+before its controller handed back. It calls no model. Run it from cron:
 
 ```text
-memory_search_cmd = bm tool search-notes {query} --project arh-knowledge
+*/15 * * * * ARH_PROJECT=<study> <arh>/bin/arh dispatch tick >/dev/null 2>&1
 ```
 
-Then `arh memory search QUERY` hands the query to basic-memory, which also serves the findings to
-any MCP-capable agent (`bm mcp`). The two settings matter: by default basic-memory rewrites each
-note's front matter on sync (quotes, lists, a permalink). ARH still reads a rewritten finding, but
-the file is then no longer as ARH wrote it.
-
-## Omnigent: not usable on this cluster yet
-
-Omnigent can start an agent headless (`omnigent run --harness codex -p ...`), so it could be an
-`iteration_controller` command for `arh dispatch`. On the RHEL 9 login node it did not run: its
-managed terminals need tmux 3.3 or newer (the node has 3.2), and its Claude SDK path started Claude
-Code but lost the connection (`ECONNRESET`), while plain `claude -p` worked from the same home. It
-is labelled alpha; ARH has no Omnigent-specific code, and a site where it runs can name it in a
-harness command template like any other CLI. Telemetry: `OMNIGENT_DISABLE_TELEMETRY=1`.
+**Reviews and delegations.** `arh ask --wait-on-limit` probes again every `ask_limit_backoff`
+(30 min) for up to `ask_limit_max_wait` (6 h) when no verifier is available, and a failed probe
+spends no round. `arh delegate` exits 75 when the delegated harness is at its limit.
 
 ## Harness logins under a fresh home
 

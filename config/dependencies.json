@@ -1,6 +1,12 @@
 {
-  "nextflow": {"version": "26.04.6", "channel": "bioconda"},
-  "python": {"version": "3.12", "channel": "conda-forge"},
+  "nextflow": {
+    "version": "26.04.6",
+    "channel": "bioconda"
+  },
+  "python": {
+    "version": "3.12",
+    "channel": "conda-forge"
+  },
   "micromamba": {
     "version": "2.8.1",
     "release": "2.8.1-0",
@@ -10,5 +16,23 @@
       "linux-ppc64le": "321c822aaf4c2922cf3e653cbe8b44a86e28cda8f81f8fac3c0804744c7baf75"
     }
   },
-  "runtime_image": "docker://mambaorg/micromamba:2.8.1"
+  "runtime_image": "docker://mambaorg/micromamba:2.8.1",
+  "tools": {
+    "_comment": "Integrations ARH turns on by default (scripts/setup-tools.sh, docs/integrations.md). Each can be switched off in harnesses.md.",
+    "conda": {
+      "entire": "0.11.6",
+      "python": "3.12",
+      "pip": "25.2"
+    },
+    "pip": {
+      "basic-memory": "0.23.2"
+    },
+    "gitleaks": {
+      "version": "8.30.1",
+      "sha256": {
+        "linux-64": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+        "linux-aarch64": "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+      }
+    }
+  }
 }
