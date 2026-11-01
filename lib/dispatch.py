@@ -255,11 +255,20 @@ def run_controller(n, record, run, harness, k, preamble):
     with open(out_log, 'wb') as out, open(err_log, 'wb') as err, \
             open(record / f'prompt{suffix}.md', 'rb') if on_stdin else open(os.devnull, 'rb') as stdin:
         try:
-            rc = subprocess.run(argv, cwd=os.environ['ARH_ROOT'], env=env, stdin=stdin, stdout=out, stderr=err,
-                                timeout=timeout or None).returncode
-        except subprocess.TimeoutExpired:
-            rc = 124
-            err.write(f'\narh: the controller ran longer than dispatch_timeout ({timeout:g} s) and was stopped\n'.encode())
+            child = subprocess.Popen(argv, cwd=os.environ['ARH_ROOT'], env=env, stdin=stdin, stdout=out, stderr=err)
+            # The lock names the controller too: if this supervisor dies while the controller works on,
+            # arh dispatch tick must not start a second controller (field feedback #146).
+            lock = record.parents[2] / '.dispatch-lock'
+            owner = locks.owner(lock)
+            if owner:
+                (lock / 'owner.json').write_text(json.dumps(dict(owner, controller_pid=child.pid)) + '\n')
+            try:
+                rc = child.wait(timeout=timeout or None)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+                rc = 124
+                err.write(f'\narh: the controller ran longer than dispatch_timeout ({timeout:g} s) and was stopped\n'.encode())
         except OSError as error:
             rc = 127
             err.write(f'\narh: could not start the controller: {error}\n'.encode())

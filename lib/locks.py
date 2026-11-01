@@ -46,7 +46,8 @@ def state(lock):
     # After a reboot the recorded pid may belong to some other process (field feedback #97).
     if record.get('boot_id') and boot_id() and record['boot_id'] != boot_id():
         return 'stale'
-    return 'live' if alive(record.get('pid')) else 'stale'
+    # A dispatch lock also names its controller, which works on if its supervisor dies (#146).
+    return 'live' if alive(record.get('pid')) or (record.get('controller_pid') is not None and alive(record['controller_pid'])) else 'stale'
 
 
 def describe(record):

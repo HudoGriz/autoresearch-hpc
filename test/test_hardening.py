@@ -464,6 +464,22 @@ sys.exit(1)
         run = json.loads((it / 'metadata/dispatch/001/run.json').read_text())
         self.assertEqual((run['exit_code'], run['restarts']), (1, []))
 
+    def test_tick_leaves_a_controller_whose_supervisor_died(self):
+        n, it, brief = self.dispatch_config()
+        release = self.root / 'release'
+        self.env['WAIT_FOR'] = str(release)
+        self.call('dispatch', '-n', n, '--brief', str(brief), '--detach')
+        lock = it / '.dispatch-lock/owner.json'
+        for _ in range(50):
+            if 'controller_pid' in json.loads(lock.read_text()):
+                break
+            time.sleep(0.2)
+        os.kill(json.loads(lock.read_text())['pid'], signal.SIGKILL)   # the supervisor only
+        time.sleep(0.5)
+        self.assertIn('nothing to restart', self.call('dispatch', 'tick').stdout)
+        release.write_text('')
+        self.call('wait', '-n', n, timeout=240)
+
     def test_tick_restarts_a_dispatch_whose_supervisor_died(self):
         n, it, brief = self.dispatch_config()
         release = self.root / 'release'
