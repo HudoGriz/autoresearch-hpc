@@ -62,7 +62,8 @@ def main(iterations, verifications, scheduler, jobs, only=None):
                     '%Y-%m-%dT%H:%M:%SZ')}) + '\n')
             if said:
                 done.append(said)
-        if (d / '.dispatch-lock').is_dir():
+        # A controller stopping its own runs must not stop itself (field feedback #147).
+        if (d / '.dispatch-lock').is_dir() and os.environ.get('ARH_DISPATCH') != d.name[9:]:
             said = signal_lock(d / '.dispatch-lock', f'{label}: dispatched controller')
             if said:
                 done.append(said)

@@ -480,6 +480,20 @@ sys.exit(1)
         release.write_text('')
         self.call('wait', '-n', n, timeout=240)
 
+    def test_a_controller_running_arh_stop_does_not_stop_itself(self):
+        n, it, brief = self.dispatch_config()
+        release = self.root / 'release'
+        self.env['WAIT_FOR'] = str(release)
+        self.call('dispatch', '-n', n, '--brief', str(brief), '--detach')
+        supervisor = json.loads((it / '.dispatch-lock/owner.json').read_text())['pid']
+        self.env['ARH_DISPATCH'] = n
+        self.call('stop', '-n', n)
+        del self.env['ARH_DISPATCH']
+        time.sleep(0.5)
+        os.kill(supervisor, 0)                          # still alive
+        release.write_text('')
+        self.call('wait', '-n', n, timeout=240)
+
     def test_tick_restarts_a_dispatch_whose_supervisor_died(self):
         n, it, brief = self.dispatch_config()
         release = self.root / 'release'
