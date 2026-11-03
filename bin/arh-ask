@@ -68,11 +68,13 @@ arh_load_project
 # Whether a review must come from a different model family than the producer. True by default;
 # a project that sets it false accepts a same-family adversarial review as a full cross-check, and
 # every review records which rule it ran under so the gate does not change meaning retroactively.
+dir="$ARH_ITERS/iteration$n"
+[ -d "$dir" ] || arh_die "no iteration $n"
+# The iteration's own harnesses.md (arh roles) comes first; the review terms are hashed over the same file.
+ARH_HARN=$(arh_iter_harn "$dir"); export ARH_HARN
 strict_family=$(arh_config_get "$ARH_HARN" require_foreign_family true)
 case "$strict_family" in true|false) ;; *) arh_die "require_foreign_family must be true or false, not '$strict_family'" ;; esac
 [ "$strict_family" = true ] && strict_arg=1 || strict_arg=0
-dir="$ARH_ITERS/iteration$n"
-[ -d "$dir" ] || arh_die "no iteration $n"
 # An exploratory iteration has no frozen plan; a review of it is advice, never required.
 if [ "$(arh_tier "$dir")" != exploratory ]; then
   [ -f "$dir/PREDECLARATION.sha256" ] || arh_die "iteration is not frozen"

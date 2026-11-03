@@ -70,6 +70,7 @@ case "$harness" in *..*|*/*) arh_die "invalid harness name" ;; esac
 
 dir="$ARH_ITERS/iteration$n"
 [ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+ARH_HARN=$(arh_iter_harn "$dir"); export ARH_HARN
 
 [ -n "$harness" ] || harness=$(role_harness "$role")
 [ -n "$harness" ] || arh_die "no harness configured for role '$role'; set '$role = <harness>' in ${ARH_HARN#"$ARH_ROOT"/}"

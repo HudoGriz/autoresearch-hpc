@@ -135,8 +135,19 @@ that exits before it hands back, with a usage-limit message in its output, is co
    second account of the same harness or another family. It waits only when both are at their limit.
 2. **`wait`**: it continues on the same harness when the limit lifts. The stated reset is an upper
    bound, not a schedule, so ARH probes again after `dispatch_limit_backoff` (30 min) at the latest.
-3. It restarts at most `dispatch_max_resumes` times. After that, the dispatch ends with the
-   controller's exit code.
+3. It restarts at most `dispatch_max_resumes` times that did work. A probe that meets the limit at
+   once (no model turn) does not count; `dispatch_limit_max_wait` (24 h) bounds the waiting instead.
+   After that, the dispatch ends with the controller's exit code.
+
+The continuation also gets the earlier session's last `dispatch_resume_tail` steps (30: what it said
+and which commands it ran) and is told not to open earlier transcripts, so it continues from the
+project's state and that tail instead of re-reading the whole earlier conversation.
+
+**Per iteration.** `arh claim --worker H --reviewer H --orchestrator H --on-limit fallback|wait|stop`
+(also `--worker-fallback`, `--reviewer-fallback`, `--set KEY=VALUE`) writes `iterationN/harnesses.md`,
+whose keys override `.arh/config/harnesses.md` for that iteration only; unset roles use the project's.
+`arh roles -n N` shows each role and where it comes from, and changes it later. The iteration's
+settings are part of its review terms: changed after the claim, `arh ask` asks for `--terms-changed`.
 
 The continuation is a **fresh session** of the controller harness. It gets the brief, a current
 `arh context -n N`, and a preamble telling it to check `arh status` first and not redo recorded

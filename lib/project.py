@@ -23,6 +23,15 @@ def config(path):
     return values
 
 
+def iteration_config(directory, project_harn):
+    """The harness configuration iteration DIRECTORY runs under: its own harnesses.md, where present,
+    over the project's (arh_iter_harn in common.sh writes the same as a file for the shell)."""
+    values = config(Path(directory) / 'harnesses.md')
+    for key, value in config(project_harn).items():
+        values.setdefault(key, value)
+    return values
+
+
 def notify(root, event, iteration, message):
     """Tell the operator: run site.md's notify command (mail, ntfy, a chat webhook) with ARH_EVENT,
     ARH_ITERATION and ARH_MESSAGE set. Best effort: a failing command never fails the caller."""

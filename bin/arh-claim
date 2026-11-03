@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
-title=""; agent=""; question=""; continues=""; tier=confirmatory; promotes=""
+title=""; agent=""; question=""; continues=""; tier=confirmatory; promotes=""; roles=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -t|--title) title="$2"; shift 2 ;;
@@ -13,14 +13,22 @@ while [ $# -gt 0 ]; do
     --continues) continues="$2"; shift 2 ;;
     --explore) tier=exploratory; shift ;;
     --promotes) promotes="$2"; shift 2 ;;
+    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--orchestrator|--on-limit)
+                roles+=("${1#--}=$2"); shift 2 ;;
+    --set)      roles+=("$2"); shift 2 ;;
     -h|--help)  echo 'usage: arh claim -t TITLE [-a AGENT] [--question ID | --continues N] [--explore | --promotes N]
+                 [--worker H] [--reviewer H] [--orchestrator H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
 --question ID: the question this iteration addresses (letters, digits, . _ -); iterations that share
   one are counted as attempts at it in the ledger. --continues N: the question iteration N addressed.
   Without either, the iteration is its own question (qN).
 --explore: an exploratory iteration. No freeze and no review are required; sealed inputs stay sealed,
   and its numbers are not findings. Record every attempt in its README journal.
 --promotes N: a confirmatory iteration that re-measures the variant exploratory iteration N chose,
-  on data the choice was not made on. It takes the question of iteration N.'; exit 0 ;;
+  on data the choice was not made on. It takes the question of iteration N.
+--worker, --reviewer, --orchestrator (and --worker-fallback, --reviewer-fallback): the harness for that
+  role in this iteration only; unset roles use .arh/config/harnesses.md. --on-limit: what a dispatched
+  worker does at its usage limit. --set KEY=VALUE: any other harnesses.md key, for this iteration only.
+  They are written to iterationN/harnesses.md and are part of the review terms; arh roles changes them later.'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
 done
@@ -79,9 +87,10 @@ done
 # The review terms the iteration is claimed under. A copy, so that a later change can be shown and
 # not only detected; its hash in CLAIM.json is what arh ask and arh gate results compare against.
 terms=""
+[ ${#roles[@]} -eq 0 ] || arh_set_iter_harn "$dir" "${roles[@]}" || { rmdir "$dir" 2>/dev/null; exit 1; }
 if [ -f "$ARH_HARN" ]; then
   mkdir -p "$dir/metadata"
-  cp "$ARH_HARN" "$dir/metadata/harnesses.claimed.md"
+  cp "$(arh_iter_harn "$dir")" "$dir/metadata/harnesses.claimed.md"
   terms=$(arh_sha256 "$dir/metadata/harnesses.claimed.md")
 fi
 

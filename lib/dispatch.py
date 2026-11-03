@@ -53,7 +53,7 @@ from findings import summary as verdict_summary
 from harness import classify, cli_version, digest, reset_epoch
 import lease
 import locks
-from project import config, notify
+from project import iteration_config, notify
 from secret_scan import findings as secret_findings, redact_file
 
 OUTCOMES = ('concluded', 'unconcluded', 'blocked')
@@ -100,9 +100,14 @@ def prompt(n, brief):
         + f'\n---\n\n## The iteration as it stands (arh context -n {n})\n\n```json\n{context.strip()}\n```\n'
 
 
+def harness_config(directory):
+    """The iteration's harness settings: its own harnesses.md (arh roles) over the project's."""
+    return iteration_config(directory, os.environ.get('ARH_HARN_PROJECT') or os.environ['ARH_HARN'])
+
+
 def start(n, brief, harness, detach, dry):
-    harn = config(os.environ['ARH_HARN'])
     directory = iteration(n)
+    harn = harness_config(directory)
     if harn.get('orchestration', 'single') != 'per-iteration':
         sys.exit("arh: arh dispatch needs orchestration = per-iteration in .arh/config/harnesses.md; with "
                  "single, one producer session does the whole iteration")
@@ -189,6 +194,60 @@ not repeat a step whose record exists.
 
 """
 
+HANDOVER = """### The earlier session's last steps
+
+Its last {count} steps, oldest first, are below. With `arh status` and the iteration's files they are
+enough to continue: do not open earlier session logs or transcripts (metadata/dispatch/*/session*.log,
+the harness's own history), which would re-read the whole earlier conversation.
+
+{steps}
+
+"""
+
+
+def handover(log, limit):
+    """The last LIMIT steps of a stream-json controller log, one line each: what the session said and
+    which commands it ran, so a resumed session continues without re-reading the transcript."""
+    steps = []
+    try:
+        lines = Path(log).read_text(errors='replace').splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get('type') != 'assistant':
+            continue
+        for block in (event.get('message') or {}).get('content') or []:
+            if block.get('type') == 'text' and block.get('text', '').strip():
+                steps.append('- said: ' + ' '.join(block['text'].split())[:300])
+            elif block.get('type') == 'tool_use':
+                args = block.get('input') or {}
+                what = args.get('command') or args.get('file_path') or json.dumps(args)
+                steps.append(f"- {block.get('name')}: " + ' '.join(str(what).split())[:200])
+    return steps[-limit:] if limit > 0 else []
+
+
+def resume_preamble(why, when, n, record, harn):
+    """RESUME, plus the previous attempt's last steps unless dispatch_resume_tail = 0."""
+    text = RESUME.format(why=why, when=when, n=n)
+    # The latest session that did any work: a probe that met the limit at once has nothing to hand over.
+    logs = [p for p in sorted(record.glob('session*.log'), key=lambda p: p.stat().st_mtime) if did_work(p)]
+    tail_n = int(harn.get('dispatch_resume_tail', '30') or 0)
+    steps = handover(logs[-1], tail_n) if logs else []
+    return text + HANDOVER.format(count=len(steps), steps='\n'.join(steps)) if steps else text
+
+
+def did_work(log):
+    """Whether a controller session got any model turn: a probe that met the usage limit at once did not."""
+    try:
+        return any('"type":"assistant"' in line.replace(' ', '') and '"model":"<synthetic>"' not in line.replace(' ', '')
+                   for line in Path(log).read_text(errors='replace').splitlines())
+    except OSError:
+        return False
+
 
 def tail(*paths, limit=20000):
     text = ''
@@ -222,7 +281,7 @@ def entire_session(started, agent_hint):
 
 def run_controller(n, record, run, harness, k, preamble):
     """Start one controller session; return its exit code and the paths of its logs."""
-    harn = config(os.environ['ARH_HARN'])
+    harn = harness_config(record.parents[2])
     suffix = '' if k == 0 else f'.{k}'
     out_log, err_log = record / f'session{suffix}.log', record / f'stderr{suffix}.log'
     template = harn.get(f'harness_{harness}_cmd', run['command_template']) if k else run['command_template']
@@ -290,8 +349,8 @@ def next_harness(harn, primary, limited, clock):
 
 
 def supervise(n, seq):
-    harn = config(os.environ['ARH_HARN'])
     directory = iteration(n)
+    harn = harness_config(directory)
     record = directory / 'metadata/dispatch' / seq
     run = load(record / 'run.json')
     on_limit = harn.get('dispatch_on_limit', 'fallback')
@@ -299,7 +358,7 @@ def supervise(n, seq):
     restarts = run.setdefault('restarts', [])
     limited = {}
     harness = restarts[-1]['harness'] if restarts else run['harness']
-    preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n) if restarts else ''
+    preamble = resume_preamble(restarts[-1]['reason'], restarts[-1]['time'], n, record, harn) if restarts else ''
     k = len(restarts)
     while True:
         run['attempt_started'] = now()
@@ -308,7 +367,14 @@ def supervise(n, seq):
         if k:
             restarts[-1].update(mode=mode, exit_code=rc, finished=now())
         refusal = classify(tail(out_log, err_log)) if not load(record / 'summary.json') else None
-        if not refusal or refusal[0] != 'limit' or on_limit == 'stop' or len(restarts) >= budget:
+        if k:
+            restarts[-1]['worked'] = did_work(out_log)
+        # A probe that met the limit at once spent no model turn, so it does not use up the budget:
+        # only restarts that worked count, and dispatch_limit_max_wait bounds the time spent waiting.
+        spent = sum(1 for r in restarts if r.get('worked', True))
+        waited = sum(r.get('waited_s', 0) for r in restarts)
+        if not refusal or refusal[0] != 'limit' or harn.get('dispatch_on_limit', on_limit) == 'stop' or spent >= budget \
+                or waited >= float(harn.get('dispatch_limit_max_wait') or 86400):
             break
         line, hint = refusal[2], refusal[3]
         # The stated reset is an upper bound, not a schedule (arh ask learned this): probe again
@@ -329,7 +395,8 @@ def supervise(n, seq):
                 f"continuing on {nxt} at {restarts[-1]['resumes_at']} (restart {len(restarts)} of {budget})", run['session'])
         time.sleep(wait_s)
         harness, k = nxt, k + 1
-        preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n)
+        harn = harness_config(directory)          # arh roles may have changed it while paused
+        preamble = resume_preamble(restarts[-1]['reason'], restarts[-1]['time'], n, record, harn)
         run['state'] = 'running'
         run.pop('paused_until', None)
     removed = sum(redact(p) for p in sorted(record.glob('session*.log')) + sorted(record.glob('stderr*.log')))

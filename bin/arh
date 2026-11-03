@@ -41,6 +41,7 @@ arh — AutoResearch HPC
   arh freeze -n N PATH...        freeze the decisions a confirmation applies; unseals sealed inputs for it
   arh ask    --role R -n N       cross-check with a foreign harness
   arh delegate --role R -n N     hand a bounded task to the configured orchestrator/executor harness
+  arh roles -n N [--worker H ...] show or set this iteration's worker, reviewer and orchestrator harnesses
   arh dispatch -n N --brief F    give iteration N its own controller session (orchestration = per-iteration)
   arh verify {new|gate|run|conclude|list}  re-examine an object an iteration produced
   arh note   -n N [--job ID] TEXT record work that ran outside arh submit
@@ -78,7 +79,7 @@ case "$cmd" in
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
   # Commands that change the record: with git_record = on, a successful one is committed.
-  claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify|sign|migrate)
+  claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify|sign|migrate|roles)
     rc=0; "$ARH_HOME/bin/arh-$cmd" "$@" || rc=$?
     # The commit takes the iteration or verification named by -n (and the shared files), never
     # another session's work in progress (field feedback #118).

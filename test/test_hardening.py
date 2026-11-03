@@ -494,6 +494,45 @@ sys.exit(1)
         release.write_text('')
         self.call('wait', '-n', n, timeout=240)
 
+    def test_roles_override_the_project_for_one_iteration_only(self):
+        controller = self.root / 'controller.py'
+        n, _, brief = self.dispatch_config(extra=f'harness_ctl2_family = openai\nharness_ctl2_cmd = python3 "{controller}" {{prompt}}\n'
+                                                 f'harness_rev2_family = google\nharness_rev2_cmd = python3 "{self.mock}" {{prompt}}\n')
+        m = self.call('claim', '-t', 'own roles', '--explore', '--worker', 'ctl2', '--reviewer', 'rev2',
+                      '--on-limit', 'wait').stdout.split()[0]
+        roles = self.call('roles', '-n', m).stdout
+        self.assertRegex(roles, r'worker\s+ctl2\s+iteration' + m)
+        self.assertRegex(roles, r'on-limit\s+wait\s+iteration' + m)
+        self.assertRegex(roles, r'executor\s+-\s+project')
+        self.assertIn('would start ctl2', self.call('dispatch', '-n', m, '--brief', str(brief), '--dry-run').stdout)
+        self.assertIn('would start ctl ', self.call('dispatch', '-n', n, '--brief', str(brief), '--dry-run').stdout)
+        self.assertIn('would invoke: rev2', self.call('ask', '--role', 'adversary', '-n', m, '--dry-run').stdout)
+        # A role changed after the claim is a change of review terms, like an edit of harnesses.md.
+        self.call('roles', '-n', m, '--reviewer', 'reviewer')
+        self.assertIn('changed since', self.call('ask', '--role', 'adversary', '-n', m, '--dry-run', good=False).stderr)
+        # An unknown harness is refused, and the claim leaves nothing behind.
+        before = sorted(p.name for p in (self.root / 'iterations').iterdir())
+        self.assertIn("no harness 'nosuch'", self.call('claim', '-t', 'bad', '--worker', 'nosuch', good=False).stderr)
+        self.assertEqual(before, sorted(p.name for p in (self.root / 'iterations').iterdir()))
+
+    def test_resume_hands_over_the_last_steps_and_probes_are_free(self):
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import dispatch
+        log = self.root / 'session.log'
+        steps = [{'type': 'assistant', 'message': {'model': 'm', 'content': [{'type': 'tool_use', 'name': 'Bash', 'input': {'command': f'step {i}'}}]}}
+                 for i in range(5)]
+        log.write_text('\n'.join(json.dumps(e) for e in steps) + '\n')
+        self.assertEqual(dispatch.handover(log, 2), ['- Bash: step 3', '- Bash: step 4'])
+        self.assertEqual(dispatch.handover(log, 0), [])
+        self.assertTrue(dispatch.did_work(log))
+        probe = self.root / 'probe.log'
+        probe.write_text(json.dumps({'type': 'assistant', 'message': {'model': '<synthetic>', 'content': []}}) + '\n')
+        self.assertFalse(dispatch.did_work(probe))
+        # dispatch_on_limit: fallback moves to the fallback at once; wait stays on the worker until its limit lifts.
+        harn = {'iteration_controller_fallback': 'b', 'dispatch_limit_margin': '0'}
+        self.assertEqual(dispatch.next_harness(dict(harn, dispatch_on_limit='fallback'), 'a', {'a': 500}, 100), ('b', 0))
+        self.assertEqual(dispatch.next_harness(dict(harn, dispatch_on_limit='wait'), 'a', {'a': 500}, 100), ('a', 500))
+
     def test_tick_restarts_a_dispatch_whose_supervisor_died(self):
         n, it, brief = self.dispatch_config()
         release = self.root / 'release'

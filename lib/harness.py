@@ -307,7 +307,8 @@ def run():
     reviewed_report = digest(report) if report.exists() else None
     reviewed_predeclaration = digest(directory / 'README.md')
     reviewed_artifacts = result_artifacts(directory)
-    config = Path(cwd, '.arh/config/harnesses.md')
+    # arh ask exports the iteration's effective configuration (its own harnesses.md over the project's).
+    config = Path(os.environ.get('ARH_HARN') or Path(cwd, '.arh/config/harnesses.md'))
     terms = digest(config) if config.is_file() else None
     claimed = claimed_terms(directory)
     changed = bool(claimed) and terms != claimed
