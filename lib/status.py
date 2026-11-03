@@ -44,6 +44,10 @@ def row(directory, project_harn):
     notes = d / 'metadata/notes.jsonl'
     count = sum(1 for line in notes.read_text().splitlines() if line.strip()) if notes.is_file() else 0
     title = claim.get('title', '')[:48]
+    # Only an iteration not yet reported and reviewed still has a review and runs ahead:
+    # listing every one since iteration 12 buried the warning (#136).
+    if res == 'concluded' or (res == 'report' and xc == 'yes'):
+        changed, count = False, 0
     return f"{n:<5} {claim.get('declared_agent') or '-':<12} {pre:<11} {res:<9} {xc:<7} {title}", changed, count
 
 
@@ -63,10 +67,10 @@ def table(iterations, only, project_harn):
     if not dirs:
         print('(no iterations yet — arh claim -t "your question")')
     if changed:
-        print(f"\nWARN .arh/config/harnesses.md changed since iteration(s) {' '.join(changed)} were claimed: a new review of\n"
+        print(f"\nWARN .arh/config/harnesses.md changed since open iteration(s) {' '.join(changed)} were claimed: a new review of\n"
               "     them counts only with arh ask --terms-changed REASON.")
     if noted:
-        print(f"\nwork outside arh submit, without run receipts (arh note list): {' '.join(noted)}")
+        print(f"\nopen iterations' work outside arh submit, without run receipts (arh note list): {' '.join(noted)}")
 
 
 if __name__ == '__main__':

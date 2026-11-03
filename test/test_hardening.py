@@ -580,7 +580,7 @@ sys.exit(r.returncode)
         # A role changed after the claim is a change of review terms, like an edit of harnesses.md.
         self.call('roles', '-n', m, '--reviewer', 'reviewer')
         self.assertIn('changed since', self.call('ask', '--role', 'adversary', '-n', m, '--dry-run', good=False).stderr)
-        self.assertRegex(self.call('status').stdout, rf'WARN .*changed since iteration\(s\) {m} were')
+        self.assertRegex(self.call('status').stdout, rf'WARN .*changed since open iteration\(s\) {m} were')
         # An unknown harness is refused, and the claim leaves nothing behind.
         before = sorted(p.name for p in (self.root / 'iterations').iterdir())
         self.assertIn("no harness 'nosuch'", self.call('claim', '-t', 'bad', '--worker', 'nosuch', good=False).stderr)
