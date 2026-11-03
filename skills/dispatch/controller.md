@@ -19,7 +19,8 @@ to find out.
    `arh dispatch report -n {N} --outcome concluded|unconcluded|blocked --summary "..." [--flag "..."]`.
    The summary is what the main controller reads instead of your transcript: the result in the
    declared quantity, the review's verdict and what you did about it, and what remains open.
-   `concluded` exactly when the results gate passed; `--flag` names what the main controller must decide.
+   `concluded` exactly when the results gate passed; `--flag` names what the main controller must decide,
+   including any part of the brief left undone (an exploratory gate checks runs, not the brief).
 
 Work only on iteration {N}: do not claim, dispatch or change other iterations. A failed acceptance
 criterion or control is a result: report it, have it reviewed, pass the results gate and hand it back

@@ -585,6 +585,10 @@ sys.exit(r.returncode)
         before = sorted(p.name for p in (self.root / 'iterations').iterdir())
         self.assertIn("no harness 'nosuch'", self.call('claim', '-t', 'bad', '--worker', 'nosuch', good=False).stderr)
         self.assertEqual(before, sorted(p.name for p in (self.root / 'iterations').iterdir()))
+        # A session restarted after a limit is told which runs its predecessor left unjournalled (85).
+        receipt = self.root / 'iterations' / f'iteration{m}' / 'logs/nextflow/it_a/attempt-x/run.json'
+        receipt.parent.mkdir(parents=True); receipt.write_text('{}')
+        self.assertIn('journal the runs without a row: it_a', self.call('context', '-n', m).stdout)
         # A promotion needs no -t: it takes the promoted iteration's title (#148).
         p = self.call('claim', '--promotes', m).stdout.split()[0]
         claim = json.loads((self.root / 'iterations' / f'iteration{p}' / 'CLAIM.json').read_text())
@@ -2070,7 +2074,7 @@ elif args[0] == 'list':
     @needs_site
     def test_detached_submission_outlives_its_caller_and_can_be_followed(self):
         # A harness's two-hour cap on background tasks stopped a long run (2026-10-04).
-        script = self.it / 'scripts/it1_01_slow.sh'; script.write_text('sleep 20\n')
+        script = self.it / 'scripts/it1_01_slow.sh'; script.write_text('sleep 60\n')
         started = time.time()
         out = self.call('submit', str(script), '-n', 'slow', '--detach', timeout=300)
         self.assertLess(time.time() - started, 120)
@@ -2386,7 +2390,10 @@ elif args[0] == 'list':
         hook = self.root / 'hook.sh'
         hook.write_text('echo "$ARH_RUN_NAME $ARH_RUN_EXIT $ARH_RUN_OWNER" >> "$ARH_ROOT/notified.txt"\n')
         self.set_config('site.md', on_exit=f'bash {hook}')
-        script = self.it / 'scripts/it1_01_bad.sh'; script.write_text('exit 3\n')
+        # A run that fails within the detach watch returns its error at once, before the caller parks (#161).
+        early = self.it / 'scripts/it1_01_early.sh'; early.write_text('exit 3\n')
+        self.assertNotEqual(self.call('submit', str(early), '-n', 'early', '--detach', timeout=300, good=None).returncode, 0)
+        script = self.it / 'scripts/it1_01_bad.sh'; script.write_text('sleep 35; exit 3\n')   # past the 30 s detach watch
         out = self.call('submit', str(script), '-n', 'bad', '--detach', timeout=300)
         # arh wait says the run it waited on ended badly, with the command that resumes it (#97).
         waited = self.call('wait', '-n', '1', '--timeout', '600', timeout=700, good=None)
@@ -2395,7 +2402,7 @@ elif args[0] == 'list':
         self.assertIn('--resume --detach', waited.stdout + waited.stderr)
         log = Path(out.stdout.strip().splitlines()[-1])
         self.assertIn('live log', log.read_text())
-        self.assertEqual((self.root / 'notified.txt').read_text().split()[:3], ['bad', '1', 'iterations/iteration1'])
+        self.assertEqual((self.root / 'notified.txt').read_text().splitlines()[-1].split()[:3], ['bad', '1', 'iterations/iteration1'])
         record = json.loads(next((self.it / 'logs/nextflow/bad').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['on_exit']['exit_code'], 0)
         running = self.call('status', '--running').stdout

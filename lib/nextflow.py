@@ -25,6 +25,7 @@ from locks import Held, acquire, owner, release
 from project import config, guard, notify as notify_operator, share
 
 GPU_LABELS = ('gpu', 'process_gpu')
+DETACH_WATCH = 30          # seconds a detached submission is watched for an early failure
 # Groovy, evaluated per task in the generated config: does this task want a GPU?
 WANTS_GPU = ("((task.label ?: []).any { it in ['" + "', '".join(GPU_LABELS) + "'] } || task.accelerator)")
 
@@ -97,11 +98,16 @@ def detach(lock, logs, owner_dir, kind):
         child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *argv], stdin=subprocess.DEVNULL,
                                  stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
                                  env=dict(os.environ, ARH_DETACHED='1'))
-    deadline = time.time() + 600
+    started = time.time()
+    deadline = started + 600
     while time.time() < deadline and child.poll() is None:
         record = owner(lock)
         if record and record.get('pid') == child.pid:
             break
+        time.sleep(0.5)
+    # A script error ends the run seconds after it starts (83: a shadowed closure variable; 85: an
+    # undefined variable in publishDir, which `nextflow lint` passes); say so before the caller parks (#161).
+    while time.time() < started + DETACH_WATCH and child.poll() is None:
         time.sleep(0.5)
     if child.poll() is not None and child.returncode:
         print(log.read_text()[-3000:], file=sys.stderr)
