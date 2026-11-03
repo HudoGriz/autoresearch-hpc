@@ -3,7 +3,7 @@
 set -euo pipefail
 . "${ARH_HOME:?}/lib/common.sh"
 
-target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0; env_cache=""
+target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0; env_cache=""; tools=1
 usage() {
   cat <<'USAGE'
 usage: arh init [dir] [options]
@@ -13,6 +13,7 @@ Options:
   --micromamba PATH                 optional micromamba override for host Nextflow setup
   --runtime IMAGE.sif               task runtime image to configure
   --bootstrap                       build the host Nextflow environment now; downloads a pinned project-local micromamba if needed
+  --no-tools                        with --bootstrap: skip the integrations' tools (offline sites; arh doctor names them)
   --env-cache DIR                   build the pinned Nextflow and task environments once in DIR and share them
                                     between projects (DIR must be reachable from compute nodes at the same path)
   -h, --help                        show this help
@@ -30,6 +31,7 @@ while [ $# -gt 0 ]; do
     --micromamba) micromamba="$2"; shift 2 ;;
     --runtime) runtime="$2"; shift 2 ;;
     --bootstrap) bootstrap=1; shift ;;
+    --no-tools) tools=0; shift ;;
     --env-cache) env_cache="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
@@ -102,7 +104,7 @@ fi
 if [ -n "$runtime" ]; then "$ARH_HOME/scripts/setup-runtime.sh" "$target" "$runtime"; fi
 # The integrations ARH turns on by default (docs/integrations.md), then the git record and Entire.
 # A failed tools build (offline, no PyPI) leaves the project usable; arh doctor names what is missing.
-if [ "$bootstrap" = 1 ] && ! "$ARH_HOME/scripts/setup-tools.sh" "$target"; then
+if [ "$bootstrap" = 1 ] && [ "$tools" = 1 ] && ! "$ARH_HOME/scripts/setup-tools.sh" "$target"; then
   arh_warn "the tools environment (Entire, gitleaks, basic-memory) was not built; rerun $ARH_HOME/scripts/setup-tools.sh $target"
 fi
 ARH_PROJECT="$target" "$ARH_HOME/scripts/enable-record.sh" "$target"

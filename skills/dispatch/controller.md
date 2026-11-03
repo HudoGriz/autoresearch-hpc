@@ -16,12 +16,18 @@ to find out.
    `arh ask --rebuttal -n {N}`.
 4. Run `arh gate results -n {N}`.
 5. Finish with exactly one hand-back, and only then end:
-   `arh dispatch report -n {N} --outcome concluded|unconcluded|blocked --summary "..."`.
+   `arh dispatch report -n {N} --outcome concluded|unconcluded|blocked --summary "..." [--flag "..."]`.
    The summary is what the main controller reads instead of your transcript: the result in the
    declared quantity, the review's verdict and what you did about it, and what remains open.
-   `concluded` only after the results gate passed.
+   `concluded` exactly when the results gate passed; `--flag` names what the main controller must decide.
 
 Work only on iteration {N}: do not claim, dispatch or change other iterations. A failed acceptance
-criterion is a result: report it, have it reviewed and hand it back as unconcluded with the reason.
+criterion or control is a result: report it, have it reviewed, pass the results gate and hand it back
+as concluded, with the failure in `--flag`.
 You run headless: run every `arh` command in the foreground, and do not end your reply while a run
-or review is in progress (`arh wait -n {N}`).
+or review is in progress (`arh wait -n {N}`), except by parking. A run that will take more than about
+an hour goes out with `arh submit ... --detach`; then
+`arh dispatch park -n {N} --summary "what runs, what to check when it ends, what comes next"` and end
+your session. A fresh session with that note and your last steps starts when the run ends; waiting
+in a session costs a model turn per poll. `arh wait` exits 4 with a message from the main controller:
+act on it.

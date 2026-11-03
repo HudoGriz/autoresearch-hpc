@@ -6,6 +6,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import tempfile
 
 
 def config(path):
@@ -30,6 +31,53 @@ def iteration_config(directory, project_harn):
     for key, value in config(project_harn).items():
         values.setdefault(key, value)
     return values
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for block in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def cache_path(directory, kind):
+    """.arh/cache/KIND/<name>-<key>.json of the project holding DIRECTORY; None outside a project or with
+    ARH_NO_HASH_CACHE=1."""
+    directory = Path(directory).resolve()
+    if os.environ.get('ARH_NO_HASH_CACHE'):
+        return None
+    for parent in directory.parents:
+        if (parent / '.arh').is_dir():
+            key = hashlib.sha256(str(directory).encode()).hexdigest()[:16]
+            return parent / '.arh/cache' / kind / f'{directory.name}-{key}.json'
+    return None
+
+
+def cached_digests(files, cache_file):
+    """{key: SHA-256} of FILES ({key: path}, existing files only). Each hash is kept in CACHE_FILE with
+    the file's size, mtime, ctime and inode and reused only while all four match: ctime cannot be set
+    by a user (even `touch` moves it), so any write is hashed again (field feedback #102, #136)."""
+    try:
+        cached = json.loads(cache_file.read_text()) if cache_file else {}
+    except (OSError, ValueError):
+        cached = {}
+    out, fresh = {}, {}
+    for key, path in files.items():
+        st = Path(path).stat()
+        sig = [st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino]
+        hit = cached.get(key)
+        out[key] = hit[4] if isinstance(hit, list) and hit[:4] == sig else sha256_file(path)
+        fresh[key] = sig + [out[key]]
+    if cache_file and fresh != cached:
+        try:                     # a lost race or an unwritable cache only costs a re-hash next time
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile('w', dir=cache_file.parent, delete=False) as tmp:
+                json.dump(fresh, tmp)
+            os.replace(tmp.name, cache_file)
+        except OSError:
+            pass
+    return out
 
 
 def notify(root, event, iteration, message):

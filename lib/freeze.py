@@ -22,7 +22,7 @@ from pathlib import Path
 import re
 import sys
 
-from project import config
+from project import cache_path, cached_digests, config
 
 SKIP = ('__pycache__', '.nextflow')
 
@@ -106,13 +106,10 @@ def state(root, directory):
         files = data['files']
     except (ValueError, KeyError, TypeError):
         return 'changed', sha(record), ['FREEZE.json is not a freeze record']
-    changed = []
-    for rel, want in sorted(files.items()):
-        path = Path(root) / rel
-        if not path.is_file():
-            changed.append(rel + ' (missing)')
-        elif sha(path) != want:
-            changed.append(rel)
+    # Every status re-read 5,012 frozen files (3.3 GB) on CephFS: 247 s (field feedback #136).
+    present = {rel: Path(root) / rel for rel in sorted(files) if (Path(root) / rel).is_file()}
+    now = cached_digests(present, cache_path(directory, 'freeze'))
+    changed = [rel + ' (missing)' if rel not in now else rel for rel, want in sorted(files.items()) if now.get(rel) != want]
     return ('changed' if changed else 'valid'), sha(record), changed
 
 

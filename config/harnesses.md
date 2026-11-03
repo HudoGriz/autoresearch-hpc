@@ -93,6 +93,11 @@ dispatch_limit_max_wait = 86400
 # A continued session gets the earlier session's last N steps (what it said, which commands it ran)
 # and is told not to re-read earlier transcripts; 0 sends none.
 dispatch_resume_tail = 30
+# A parked controller (arh dispatch park) waits with no model: the supervisor checks every
+# dispatch_park_poll seconds whether the iteration's runs ended or a message arrived, and wakes it
+# after dispatch_park_max_hours regardless.
+dispatch_park_poll = 300
+dispatch_park_max_hours = 168
 max_parallel_iterations = 2
 # A prefix for the controller's command, e.g. `srun -t 08:00:00 --mem 8G` to run it as a job
 # (the compute node then needs to reach the model provider). Empty runs it here.

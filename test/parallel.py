@@ -46,15 +46,17 @@ def main():
     parser.add_argument('-k', action='append', default=[])
     args = parser.parse_args()
     todo = names(args.k)
-    start, failed, skipped = time.time(), [], 0
+    start, failed, skipped, times = time.time(), [], 0, []
     with ThreadPoolExecutor(args.j) as pool:
         for name, rc, took, err in pool.map(run, todo):
             skipped += 'skipped=' in err
+            times.append((took, name))
             if rc:
                 failed.append((name, err))
                 print(f'FAIL {name} ({took:.0f} s)', flush=True)
     for name, err in failed:
         print(f'\n===== {name}\n{err[-3000:]}')
+    print('\nslowest: ' + ', '.join(f'{n.rsplit(".", 1)[-1]} {t:.0f} s' for t, n in sorted(times)[-5:][::-1]))
     print(f'\nRan {len(todo)} tests in {time.time() - start:.0f} s with -j {args.j}: '
           f'{len(todo) - len(failed) - skipped} passed, {skipped} skipped, {len(failed)} failed')
     if skipped and not os.environ.get('ARH_TEST_SITE'):

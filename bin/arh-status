@@ -68,36 +68,9 @@ printf 'scheduler=%s  containers=%s  producer=%s  verifier=%s\n\n' \
 
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' IT AGENT PREDECL RESULTS XCHECK TITLE
 printf '%-5s %-12s %-11s %-9s %-7s %s\n' ----- ------------ ----------- --------- ------- -----
-found=0; changed=""; noted=""
-iters=$(list_iterations)
-for d in $iters; do
-  found=1
-  dir="$ARH_ITERS/iteration$d"
-  agent=$(sed -n 's/.*"declared_agent"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
-  title=$(sed -n 's/.*"title"[ ]*:[ ]*"\(.*\)",\{0,1\}$/\1/p' "$dir/CLAIM.json" 2>/dev/null | head -1)
-
-  if   [ "$(arh_tier "$dir")" = exploratory ]; then pre=explore
-  elif [ -f "$dir/PREDECLARATION.sha256" ]; then
-    if [ "$(head -1 "$dir/PREDECLARATION.sha256")" = "$(arh_sha256 "$dir/README.md" 2>/dev/null)" ]
-    then pre=frozen; else pre=ALTERED; fi
-  elif [ -f "$dir/README.md" ]; then pre=draft
-  else pre=-; fi
-
-  [ -f "$dir/results/report/iteration${d}_report.md" ] && res=report \
-    || { [ -n "$(find "$dir/results" -type f 2>/dev/null | head -1)" ] && res=partial || res=-; }
-  [ "$res" != report ] || [ "$(python3 "$ARH_HOME/lib/attempts.py" state "$dir")" != concluded ] || res=concluded
-
-  arh_crosschecks "$dir" | grep -q . && xc=yes || xc=-
-
-  printf '%-5s %-12s %-11s %-9s %-7s %s\n' "$d" "${agent:--}" "$pre" "$res" "$xc" "${title:0:48}"
-  [ "$(arh_harness_config_state "$dir")" != changed ] || changed="$changed $d"
-  [ ! -s "$dir/metadata/notes.jsonl" ] || noted="$noted $d($(grep -c . "$dir/metadata/notes.jsonl"))"
-done
-[ "$found" = 0 ] && printf '(no iterations yet — arh claim -t "your question")\n'
-[ -z "$changed" ] || printf '\nWARN .arh/config/harnesses.md changed since iteration(s)%s were claimed: a new review of\n     them counts only with arh ask --terms-changed REASON.\n' "$changed"
+python3 "$ARH_HOME/lib/status.py" table "$ARH_ITERS" "$only" "${ARH_HARN_PROJECT:-$ARH_HARN}"
 open=$(python3 "$ARH_HOME/lib/lease.py" open "$ARH_ITERS" "$(arh_config_get "$ARH_PROJ" lease_stale_hours 24)")
 [ -z "$open" ] || printf '\nopen iterations (arh lease show -n N; arh status --running for what runs now):\n%s\n' "$open"
-[ -z "$noted" ] || printf '\nwork outside arh submit, without run receipts (arh note list):%s\n' "$noted"
 vrows=$(python3 "$ARH_HOME/lib/verification.py" rows "$ARH_ROOT" "$ARH_VERIFY")
 if [ -n "$vrows" ]; then
   printf '\nverifications (arh verify list):\n'

@@ -52,6 +52,7 @@ arh_ctr_run() {
   case "$backend" in
     apptainer|singularity)
       args=(exec --cleanenv --containall --env LC_ALL=C)
+      [ -z "${ARH_AS_TASK:-}" ] || args+=(--no-home)   # arh run --as-task: as an arh submit task
       for b in $ro_binds; do [ -n "$b" ] && args+=(--bind "$b:$b:ro"); done
       for b in $binds;    do [ -n "$b" ] && args+=(--bind "$b"); done
       args+=(--bind "$ARH_ROOT:$ARH_ROOT")

@@ -100,6 +100,9 @@ def touch(directory, command, who):
     holder = dispatched(directory)
     if holder is not None and who.get('session') != holder.get('session'):
         n = Path(directory).name[9:]
+        if os.environ.get('ARH_DISPATCH') == n:      # the controller itself, under a session id it set (#158)
+            raise Refused(f"you are iteration {n}'s dispatched controller, but ARH_SESSION={who.get('session')} replaces "
+                          f"your session {holder.get('session', '?')}: unset ARH_SESSION (arh dispatch sets it)")
         raise Refused(f"iteration {n} is held by its dispatched controller ({holder.get('harness', '?')}, "
                       f"session {holder.get('session', '?')}): the main controller reads it and does not change "
                       f"it. See arh dispatch status -n {n}; arh wait -n {n} waits for it to finish.")
@@ -108,7 +111,9 @@ def touch(directory, command, who):
         lease = dict(holder=who, since=now())
         if not who.get('session') and owner_label(directory)[0] == 'iteration':
             shared_session_warning(directory, who)
-    elif not same(lease['holder'], who):
+    # A dispatched controller is the holder by its session; its agent name may differ from the lease's,
+    # and the takeover hint printed on each of its commands told it to take its own lease (#158).
+    elif holder is None and not same(lease['holder'], who):
         last = lease.get('last', {})
         kind, n = owner_label(directory)
         print(f"arh: {kind} {n} is held by {name(lease['holder'])}, last active "

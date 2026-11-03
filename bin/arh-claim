@@ -32,9 +32,13 @@ while [ $# -gt 0 ]; do
     *) arh_die "unexpected argument: $1" ;;
   esac
 done
-[ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
-
 arh_load_project
+# A promotion re-measures N's variant, so its title defaults to N's (field feedback #148).
+if [ -z "$title" ] && [ -n "$promotes" ] && [ -f "$ARH_ITERS/iteration$promotes/CLAIM.json" ]; then
+  title="Promotion of iteration $promotes: $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("title", ""))' \
+    "$ARH_ITERS/iteration$promotes/CLAIM.json")"
+fi
+[ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
 if [ -n "$promotes" ]; then
   [ "$tier" = confirmatory ] || arh_die "--promotes makes a confirmatory iteration; drop --explore"
   [ -z "$continues$question" ] || arh_die "--promotes takes the question of the iteration it promotes"

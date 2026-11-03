@@ -136,6 +136,16 @@ case "$sub" in
       while IFS= read -r line; do arh_fail "$line"; done <<< "$imports"; fails=$((fails+1)); imports=""
     fi
 
+    # A workflow `arh submit --lint` rejects would freeze and then fail with no task (field feedback #155):
+    # lint every *.nf in scripts/ with the pinned Nextflow first, when one is configured.
+    if [ -n "$(arh_config_get "$ARH_SITE" nextflow_prefix "")" ]; then
+      for wf in "$dir"/scripts/*.nf; do
+        [ -f "$wf" ] || continue
+        if lint_out=$("$ARH_HOME/bin/arh-submit" "$wf" --lint 2>&1); then arh_ok "lint ${wf#"$dir"/}"
+        else arh_fail "lint ${wf#"$dir"/}: $(printf '%s\n' "$lint_out" | grep -m3 -i 'error' | tr '\n' ' ')"; fails=$((fails+1)); fi
+      done
+    fi
+
     # Commands the plan declares in an arh-smoke block are run once in their image before the freeze:
     # a flag copied from a patched build's VCF header failed only on the first real task (2026-10-04).
     # One command per line, optionally prefixed by the image key: `vg: vg --version`.
@@ -149,7 +159,7 @@ case "$sub" in
         if printf '%s' "$line" | grep -qE '^[A-Za-z0-9_-]+:[[:space:]]'; then image=${line%%:*}; command=${line#*:}; fi
         printf '$ [%s] %s\n' "$image" "$command" >> "$smoke_out"
         # From the project root, so a command can name .arh/envs/... relatively (field feedback #66).
-        if "$ARH_HOME/bin/arh" run "$image" -- /bin/sh -c "cd $(printf '%q' "$ARH_ROOT") && $command" >> "$smoke_out" 2>&1; then
+        if "$ARH_HOME/bin/arh" run --as-task "$image" -- /bin/sh -c "cd $(printf '%q' "$ARH_ROOT") && $command" >> "$smoke_out" 2>&1; then
           arh_ok "smoke [$image]:$command"
         else
           arh_fail "smoke [$image]:$command failed (output in ${smoke_out#"$ARH_ROOT"/})"; fails=$((fails+1))
@@ -314,6 +324,12 @@ print(len(attempts.journal(sys.argv[2])))' "$ARH_HOME/lib" "$dir")
       fi
     fi
 
+    # A failed frozen criterion or control is the iteration's result, so it does not fail the gate; it is
+    # named here and in the conclusion receipt, so "concluded" never hides it (field feedback #150, #151).
+    failed=$(python3 "$ARH_HOME/lib/attempts.py" failed-checks "$dir")
+    [ -z "$failed" ] || printf '  NOTE a frozen check reported false (the result, not a gate failure):\n%s\n' \
+      "$(printf '%s\n' "$failed" | head -12 | sed 's/^/       /')"
+
     [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s).\n' "$fails" >&2; exit 1; }
     # The conclusion receipt: the hashes this pass rested on, so the ledger can say which iterations
     # concluded and how many attempts at their question came first.
@@ -326,6 +342,14 @@ print(len(attempts.journal(sys.argv[2])))' "$ARH_HOME/lib" "$dir")
     [ -f "$file" ] || arh_die "no such file: $file"
     printf 'gate: standing rules, %s\n' "$file"
     check_rules "$file" report
+    # On an iteration's report, also the number check, so a slip is caught before a review binds it (#153).
+    case "$(cd "$(dirname "$file")" && pwd)/$(basename "$file")" in
+      */iterations/iteration*/results/report/iteration*_report.md)
+        rdir=$(cd "$(dirname "$file")/../.." && pwd)
+        unmatched=$(python3 "$ARH_HOME/lib/report_numbers.py" check "$rdir" "$file" "$(arh_config_get "$ARH_PROJ" report_numbers_files "")")
+        [ -z "$unmatched" ] || { printf '  WARN %s number(s) in the report match no file under results/:\n' "$(printf '%s\n' "$unmatched" | grep -c .)"
+          printf '%s\n' "$unmatched" | head -12 | awk -F'\t' '{ printf "       line %s: %s   %s\n", $1, $2, $3 }'; } ;;
+    esac
     [ "$fails" -gt 0 ] && { printf '\n%s rule violation(s).\n' "$fails" >&2; exit 1; }
     printf '\nAll standing rules satisfied.\n'
     ;;

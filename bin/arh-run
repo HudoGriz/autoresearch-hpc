@@ -3,7 +3,11 @@
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
-[ "${1-}" = "--help" ] && { echo 'usage: arh run IMAGE -- CMD...'; exit 0; }
+[ "${1-}" = "--help" ] && { echo 'usage: arh run [--as-task] IMAGE -- CMD...
+--as-task: run without the home directory, as Nextflow runs an arh submit task (singularity --no-home),
+  so a tool that writes to ~ fails here as it would in the real run (field feedback #145).'; exit 0; }
+# The freeze gate smoke-tests with --as-task: a smoke that passes should mean the task will start.
+if [ "${1-}" = "--as-task" ]; then export ARH_AS_TASK=1; shift; fi
 arh_load_project
 # shellcheck source=lib/container.sh
 . "$ARH_HOME/lib/container.sh"
@@ -17,6 +21,7 @@ if [ "$image" = runtime ]; then
   case "$backend" in singularity|apptainer) ;; *) arh_die "runtime requires singularity/apptainer, configured: $backend" ;; esac
   [ -f "$runtime_image" ] && [ -n "$digest" ] && [ "$(arh_sha256 "$runtime_image")" = "$digest" ] || arh_die "runtime SIF missing or digest mismatch"
   args=(exec --cleanenv --containall --bind "$ARH_HOME:$ARH_HOME:ro" --bind "$ARH_ROOT:$ARH_ROOT:rw" --pwd "$ARH_ROOT")
+  [ -z "${ARH_AS_TASK:-}" ] || args+=(--no-home)
   if [ -n "$prefix" ]; then
     args+=(--bind "$prefix:$prefix:ro" --env "PATH=$prefix/bin:/usr/local/bin:/usr/bin:/bin")
   fi

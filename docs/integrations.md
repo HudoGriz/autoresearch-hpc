@@ -143,6 +143,14 @@ The continuation also gets the earlier session's last `dispatch_resume_tail` ste
 and which commands it ran) and is told not to open earlier transcripts, so it continues from the
 project's state and that tail instead of re-reading the whole earlier conversation.
 
+**Parking.** A controller polling `arh wait` costs a model turn per poll, and the turn re-reads the
+whole conversation (one iteration spent 162 M tokens waiting on a GPU queue). After a detached
+submission, `arh dispatch park -n N --summary TEXT` ends its session; the supervisor checks every
+`dispatch_park_poll` seconds (300) and starts a fresh session, with the note and the last steps, when
+no submission or review of N runs, when a message arrives, or after `dispatch_park_max_hours` (168).
+`arh dispatch message -n N TEXT` is the main controller's way in: it wakes a parked controller, and a
+running one's next `arh wait` prints it and exits 4. Wakes do not count against `dispatch_max_resumes`.
+
 **Per iteration.** `arh claim --worker H --reviewer H --orchestrator H --on-limit fallback|wait|stop`
 (also `--worker-fallback`, `--reviewer-fallback`, `--set KEY=VALUE`) writes `iterationN/harnesses.md`,
 whose keys override `.arh/config/harnesses.md` for that iteration only; unset roles use the project's.

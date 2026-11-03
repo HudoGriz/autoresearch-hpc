@@ -209,6 +209,16 @@ harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
         self.call('run', 'test', '--', 'true')
         image.write_bytes(b'changed'); self.call('run', 'test', '--', 'true', good=False)
 
+    def test_run_as_task_has_no_home(self):
+        # The freeze smoke runs as a task would: without the home directory (field feedback #145).
+        image=self.root/'image.sif'; image.write_bytes(b'fixture')
+        fake=self.root/'apptainer'; fake.write_text('#!/bin/sh\necho "$@"\n'); fake.chmod(0o755)
+        self.env['PATH']=str(self.root)+os.pathsep+self.env['PATH']
+        (self.root/'.arh/config/site.md').write_text(f'```arh-config\ncontainer_runtime = apptainer\nimage_test = {image}\nimage_test_sha256 = {hashlib.sha256(image.read_bytes()).hexdigest()}\n```\n')
+        self.assertIn('--no-home', self.call('run', '--as-task', 'test', '--', 'true').stdout)
+        self.assertNotIn('--no-home', self.call('run', 'test', '--', 'true').stdout)
+        self.assertIn('run --as-task', (ROOT/'bin/arh-gate').read_text())
+
     def test_remote_tag_rejected(self):
         (self.root/'.arh/config/site.md').write_text('```arh-config\ncontainer_runtime = docker\nimage_test = docker://python:latest\n```\n')
         self.call('run', 'test', '--', 'true', good=False)
@@ -458,6 +468,58 @@ sys.exit(1)
         self.assertEqual((run['exit_code'], [r['harness'] for r in run['restarts']]), (0, ['ctl']))
         self.assertLessEqual(run['restarts'][0]['waited_s'], 2)
 
+    PARKER = """import os, subprocess, sys
+from pathlib import Path
+n, mark = os.environ['ARH_DISPATCH'], Path(os.environ['ARH_PROJECT']) / 'parked-once'
+if mark.exists():
+    exec(open(os.environ['CONTROLLER']).read())
+    sys.exit(0)
+mark.write_text('x')
+r = subprocess.run(['arh', 'dispatch', 'park', '-n', n, '--summary', 'the slow run goes on; check it, then conclude'],
+                   capture_output=True, text=True)
+print(r.stdout, r.stderr)
+sys.exit(r.returncode)
+"""
+
+    def test_a_parked_controller_wakes_when_its_runs_end_and_hears_messages(self):
+        # Iteration 70 spent 162 M tokens polling arh wait while its GPU stage queued (#144, #156).
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import locks
+        controller = self.root / 'controller.py'; controller.write_text(self.CONTROLLER)
+        parker = self.root / 'parker.py'; parker.write_text(self.PARKER)
+        self.env['CONTROLLER'] = str(controller)
+        self.configure(extra_config=f'orchestration = per-iteration\niteration_controller = ctl\n'
+                                    f'harness_ctl_family = openai\nharness_ctl_cmd = python3 "{parker}" {{prompt}}\n'
+                                    'dispatch_env = FIXTURE=1\ndispatch_park_poll = 0.5\n')
+        brief = self.root / 'brief.md'; brief.write_text('Find out whether the fixture passes its one check.\n')
+        n = self.call('claim', '-t', 'parked iteration').stdout.split()[0]
+        it = self.root / f'iterations/iteration{n}'
+        # A run that ends in 4 s, detached so that init reaps it (a zombie child would look alive).
+        slow = int(subprocess.run(['sh', '-c', 'sleep 4 >/dev/null 2>&1 & echo $!'], capture_output=True, text=True).stdout)
+        (it / 'metadata/nextflow/slow').mkdir(parents=True)
+        locks.acquire(it / 'metadata/nextflow/slow/.launch-lock', slow, 'launch lock')
+        self.call('dispatch', '-n', n, '--brief', str(brief), timeout=240)
+        record = it / 'metadata/dispatch/001'
+        run = json.loads((record / 'run.json').read_text())
+        self.assertEqual((run['exit_code'], run['restarts'][0]['wake']), (0, True))
+        self.assertIn('submissions and reviews finished', run['restarts'][0]['reason'])
+        # The controller is the holder: none of its commands told it to take its own lease over (#158).
+        self.assertNotIn('If that session has ended', (record / 'session.log').read_text() + (record / 'session.1.log').read_text())
+        woke = (record / 'prompt.1.md').read_text()
+        self.assertIn('## Waking from a park', woke)
+        self.assertIn('check it, then conclude', woke)
+        self.assertEqual(json.loads((record / 'summary.json').read_text())['outcome'], 'concluded')
+        # A message reaches the controller at its next arh wait, once.
+        self.call('dispatch', 'message', '-n', n, 'also run the CPU stage')
+        self.env['ARH_DISPATCH'] = n                    # from here on, as the dispatched controller
+        waited = self.call('wait', '-n', n, good=False)
+        self.assertEqual(waited.returncode, 4)
+        self.assertIn('also run the CPU stage', waited.stdout)
+        self.call('wait', '-n', n)
+        # Nothing running: a park would wake at once, so it is refused.
+        self.assertIn('nothing of iteration', self.call('dispatch', 'park', '-n', n, '--summary',
+                                                        'nothing runs now, so wake at once', good=False).stderr)
+
     def test_dispatch_on_limit_stop_ends_the_dispatch(self):
         n, it, brief = self.limited_config('dispatch_on_limit = stop\niteration_controller_fallback = ctl2\n')
         self.call('dispatch', '-n', n, '--brief', str(brief), good=False, timeout=120)
@@ -488,9 +550,16 @@ sys.exit(1)
         supervisor = json.loads((it / '.dispatch-lock/owner.json').read_text())['pid']
         self.env['ARH_DISPATCH'] = n
         self.call('stop', '-n', n)
-        del self.env['ARH_DISPATCH']
+        # A session id of its own locks the controller out of its iteration, and says why (#158).
+        self.env['ARH_SESSION'] = 'ana-it' + n
+        self.assertIn('unset ARH_SESSION', self.call('note', '-n', n, 'a note', good=False).stderr)
+        del self.env['ARH_DISPATCH'], self.env['ARH_SESSION']
         time.sleep(0.5)
         os.kill(supervisor, 0)                          # still alive
+        # arh wait never sleeps past its --timeout: a 10-minute command cap killed waits that did (#158).
+        started = time.time()
+        self.assertEqual(self.call('wait', '-n', n, '--timeout', '1', '--interval', '30', good=False).returncode, 124)
+        self.assertLess(time.time() - started, 10)
         release.write_text('')
         self.call('wait', '-n', n, timeout=240)
 
@@ -504,16 +573,33 @@ sys.exit(1)
         self.assertRegex(roles, r'worker\s+ctl2\s+iteration' + m)
         self.assertRegex(roles, r'on-limit\s+wait\s+iteration' + m)
         self.assertRegex(roles, r'executor\s+-\s+project')
+        self.assertNotIn('WARN', self.call('status').stdout)    # status hashes the terms as the claim did
         self.assertIn('would start ctl2', self.call('dispatch', '-n', m, '--brief', str(brief), '--dry-run').stdout)
         self.assertIn('would start ctl ', self.call('dispatch', '-n', n, '--brief', str(brief), '--dry-run').stdout)
         self.assertIn('would invoke: rev2', self.call('ask', '--role', 'adversary', '-n', m, '--dry-run').stdout)
         # A role changed after the claim is a change of review terms, like an edit of harnesses.md.
         self.call('roles', '-n', m, '--reviewer', 'reviewer')
         self.assertIn('changed since', self.call('ask', '--role', 'adversary', '-n', m, '--dry-run', good=False).stderr)
+        self.assertRegex(self.call('status').stdout, rf'WARN .*changed since iteration\(s\) {m} were')
         # An unknown harness is refused, and the claim leaves nothing behind.
         before = sorted(p.name for p in (self.root / 'iterations').iterdir())
         self.assertIn("no harness 'nosuch'", self.call('claim', '-t', 'bad', '--worker', 'nosuch', good=False).stderr)
         self.assertEqual(before, sorted(p.name for p in (self.root / 'iterations').iterdir()))
+        # A promotion needs no -t: it takes the promoted iteration's title (#148).
+        p = self.call('claim', '--promotes', m).stdout.split()[0]
+        claim = json.loads((self.root / 'iterations' / f'iteration{p}' / 'CLAIM.json').read_text())
+        self.assertEqual(claim['title'], f'Promotion of iteration {m}: own roles')
+
+    def test_running_names_why_tasks_are_pending(self):
+        # 384 GPU tasks waited 14 h on Resources and only squeue said so (#142).
+        sys.path.insert(0, str(ROOT / 'lib'))
+        import running
+        work = self.root / 'work'
+        jobs = [('PENDING', 'Resources', f'{work}/ab/1'), ('PENDING', 'Resources', f'{work}/cd/2'),
+                ('PENDING', 'Priority', f'{work}/ef/3'), ('RUNNING', 'None', f'{self.root}/other/4')]
+        note = running.queue_note(work, jobs, 20 * 3600, 12)
+        self.assertIn('0 running, 3 pending in the queue (Resources 2, Priority 1)', note)
+        self.assertIn('STARVED', note)
 
     def test_resume_hands_over_the_last_steps_and_probes_are_free(self):
         sys.path.insert(0, str(ROOT / 'lib'))
@@ -532,6 +618,35 @@ sys.exit(1)
         harn = {'iteration_controller_fallback': 'b', 'dispatch_limit_margin': '0'}
         self.assertEqual(dispatch.next_harness(dict(harn, dispatch_on_limit='fallback'), 'a', {'a': 500}, 100), ('b', 0))
         self.assertEqual(dispatch.next_harness(dict(harn, dispatch_on_limit='wait'), 'a', {'a': 500}, 100), ('a', 500))
+
+    def test_gate_rules_checks_a_reports_numbers_before_review(self):
+        # The number check runs with the standing rules, before a review binds the report (#153).
+        out = self.it / 'results/gather'; out.mkdir(parents=True, exist_ok=True)
+        (out / 'results.json').write_text(json.dumps({'f1': 0.3305}))
+        self.report.write_text('Negative controls reject failures. Detection limit: one check. Candidate only. F1 0.412.\n')
+        self.assertIn('0.412', self.call('gate', 'rules', str(self.report)).stdout)
+        self.report.write_text('Negative controls reject failures. Detection limit: one check. Candidate only. F1 0.3305.\n')
+        self.assertNotIn('match no file', self.call('gate', 'rules', str(self.report)).stdout)
+
+    def test_a_failed_frozen_check_is_named_at_conclusion(self):
+        # A false *_pass in a results JSON is the result, not a gate failure, and is recorded (#150, #151).
+        out = self.it / 'results/gather'; out.mkdir(parents=True, exist_ok=True)
+        (out / 'results.json').write_text(json.dumps({'controls': {'permuted_pass': False, 'shift_pass': True},
+                                                       'acceptance_pass': True}))
+        self.call('ask', '--role', 'adversary', '-n', '1')
+        self.assertIn('controls.permuted_pass = false', self.call('gate', 'results', '-n', '1').stdout)
+        receipt = json.loads((self.it / 'metadata/conclusions.jsonl').read_text().splitlines()[-1])
+        self.assertEqual(receipt['failed_checks'], ['results/gather/results.json: controls.permuted_pass = false'])
+        self.assertEqual(receipt['verdicts'], 'SOUND')
+        # The hand-back agrees with the record: a concluded iteration is handed back concluded, with --flag (#152).
+        (self.it / 'metadata/dispatch/001').mkdir(parents=True)
+        self.env['ARH_DISPATCH'] = '1'
+        self.assertIn('so it is concluded', self.call('dispatch', 'report', '-n', '1', '--outcome', 'unconcluded',
+                                                      '--summary', 'one two three four five', good=False).stderr)
+        self.call('dispatch', 'report', '-n', '1', '--outcome', 'concluded', '--summary', 'one two three four five',
+                  '--flag', 'the permuted control failed')
+        self.assertEqual(json.loads((self.it / 'metadata/dispatch/001/summary.json').read_text())['flag'],
+                         'the permuted control failed')
 
     def test_tick_restarts_a_dispatch_whose_supervisor_died(self):
         n, it, brief = self.dispatch_config()
@@ -1541,7 +1656,7 @@ elif args[0] == 'list':
         prefixes = []
         for name in ('a', 'b'):
             project = Path(self.temp.name) / name
-            result = subprocess.run([str(ROOT / 'bin/arh'), 'init', str(project), '--bootstrap', '--micromamba', str(mm),
+            result = subprocess.run([str(ROOT / 'bin/arh'), 'init', str(project), '--bootstrap', '--no-tools', '--micromamba', str(mm),
                                      '--runtime', str(image), '--env-cache', str(cache)],
                                     env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1676,6 +1791,8 @@ elif args[0] == 'list':
         self.assertIn('written once', self.call('freeze', '-n', '1', str(thresholds), good=False).stderr)
         self.call('freeze', 'check', '-n', '1')
         self.assertEqual(json.loads(self.call('status', '--json').stdout)['iterations'][0]['freeze'], 'valid')
+        # The check reuses cached hashes (#136); a same-size edit still moves ctime and is caught.
+        self.assertTrue(list((self.root / '.arh/cache/freeze').glob('iteration1-*.json')))
         thresholds.write_text('{"t": 0.4}\n')
         self.assertIn('thresholds.json', self.call('freeze', 'check', '-n', '1', good=False).stdout)
         self.ask()

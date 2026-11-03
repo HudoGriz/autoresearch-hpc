@@ -28,6 +28,7 @@ from pathlib import Path
 import re
 import sys
 
+from findings import summary as verdicts
 from harness import result_artifacts, valid_adjudications, valid_records
 import sessions
 
@@ -68,6 +69,37 @@ def holds(receipt, current):
     return all(receipt.get(k) == v for k, v in current.items())
 
 
+PASS_KEY = re.compile(r'(^|_)(pass|passes|passed|ok)$')
+
+
+def failed_checks(directory, max_bytes=2 * 2**20):
+    """Keys like acceptance_pass, permuted_pass or controls_ok that a JSON file under results/ sets to
+    false: a frozen criterion or control that failed. Files over MAX_BYTES are skipped (per-row tables)."""
+    out = []
+
+    def walk(value, path, rel):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                where = f'{path}.{key}' if path else str(key)
+                if item is False and PASS_KEY.search(str(key).lower()):
+                    out.append(f'{rel}: {where} = false')
+                else:
+                    walk(item, where, rel)
+        elif isinstance(value, list) and len(value) <= 1000:
+            for i, item in enumerate(value):
+                walk(item, f'{path}[{i}]', rel)
+
+    results = Path(directory) / 'results'
+    for path in sorted(results.rglob('*.json')) if results.is_dir() else []:
+        if path.stat().st_size > max_bytes:
+            continue
+        try:
+            walk(json.loads(path.read_text()), '', str(path.relative_to(directory)))
+        except (OSError, ValueError, RecursionError):
+            continue
+    return out
+
+
 def conclude(directory):
     directory = Path(directory)
     current = evidence(directory)
@@ -76,7 +108,8 @@ def conclude(directory):
         return
     # Which agent sessions the conclusion came from; recorded, not part of what must still hold.
     record = dict(time=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), question=question(directory),
-                  tier=tier(directory), **current, **sessions.as_json(directory))
+                  tier=tier(directory), **current, **sessions.as_json(directory),
+                  verdicts=verdicts(directory) or None, failed_checks=failed_checks(directory) or None)
     (directory / 'metadata').mkdir(exist_ok=True)
     with open(directory / 'metadata/conclusions.jsonl', 'a') as out:
         out.write(json.dumps(record, sort_keys=True) + '\n')
@@ -175,6 +208,8 @@ if __name__ == '__main__':
         print(tier(sys.argv[2]))
     elif cmd == 'unjournalled':
         print('\n'.join(unjournalled(sys.argv[2])))
+    elif cmd == 'failed-checks':
+        print('\n'.join(failed_checks(sys.argv[2])))
     elif cmd == 'valid-id':
         sys.exit(0 if QUESTION_ID.match(sys.argv[2]) else 1)
     else:

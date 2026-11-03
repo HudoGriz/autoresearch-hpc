@@ -16,7 +16,7 @@ done
 [ -n "$skills" ] || arh_die "no research skills installed: run $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT"
 case "${1-}" in
   -h|--help) sed -n '2,5s/^# \{0,1\}//p' "$0"; exit 0 ;;
-  "") find "$skills" -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort | paste -sd' ' - | fold -s -w 100 ;;
+  ""|list) find "$skills" -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort | paste -sd' ' - | fold -s -w 100 ;;
   *) case "$1" in */*|.*) arh_die "a skill name, not a path: $1" ;; esac
      [ -f "$skills/$1/SKILL.md" ] || arh_die "no skill '$1' (arh skill lists them)"
      printf '%s\n' "$skills/$1/SKILL.md" ;;
