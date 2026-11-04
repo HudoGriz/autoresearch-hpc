@@ -10,6 +10,45 @@ Singularity with two producer accounts and two verifier families, and from an ex
 of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studies need
 `arh migrate --apply`, which starts the freeze journal.
 
+### Changed (parked controllers, per-iteration roles, field feedback #90 and #136–#163, 2026-11-01 to 11-04)
+- **`arh dispatch park` and `arh dispatch message`** (#144, #156): after a detached submission a
+  dispatched controller ends its session with a note; the supervisor waits with no model running
+  and starts a fresh session, given the note and its last steps, when the runs end or an operator
+  message arrives. Wakes do not count against `dispatch_max_resumes`. `arh wait` exits 4 on a
+  message and cuts its last sleep to the time left, so it never outlasts `--timeout` (#159).
+- **Per-iteration harness roles**: `arh claim --worker/--reviewer/--orchestrator/--on-limit`
+  (and `--set KEY=VALUE`) and `arh roles -n N` write `iterationN/harnesses.md`, which overrides the
+  project's `harnesses.md` for that iteration; dispatch, ask and delegate read the effective
+  configuration, and the review terms are hashed over it.
+- **Resume from a short handover**: a continued controller gets the earlier session's last
+  `dispatch_resume_tail` steps and is told not to re-read transcripts. Restarts that met a usage
+  limit with no model turn no longer use up restarts; `dispatch_limit_max_wait` bounds the wait.
+- **Dispatch safety**: the dispatch lock names the controller as well as the supervisor, so a dead
+  supervisor never leads to a second controller (#146); `arh stop` on a controller's own iteration
+  stops its runs, not the controller (#147).
+- **Faster `arh status`** (#91, #136): frozen-file hashes are cached by size, mtime, ctime and
+  inode, and the table is built in one process (100–250 s to 8 s at 85 iterations); long sealed
+  groups are folded and only open iterations' changed terms and notes are named.
+  `arh status --running` names the scheduler's pending reasons (#142).
+- **Gates**: the freeze smoke runs as a task (`arh run --as-task`, `--no-home`, #145); `arh gate
+  predeclare` lints `scripts/*.nf` and refuses on error (#155); review verdicts and false frozen
+  `*_pass` checks are kept in the conclusion receipt and named at conclusion (#84, #150, #151);
+  `arh gate rules` runs the number check before review, reading named files first, then the
+  smallest (#153); `arh dispatch report` refuses an outcome that contradicts the receipt and takes
+  `--flag` for what the main controller must decide (#152).
+- **Open iterations follow the conclusion receipt** (#90, #94, #105): `arh context` and
+  `arh status` list an iteration as open until `metadata/conclusions.jsonl` exists, so one with a
+  report and a review but no passed results gate is no longer dropped; iterations without a
+  receipt idle for over a week are counted, not listed; a lease this account cannot read is named.
+- A detached `arh submit` watches its run for 30 s and returns the error of one that fails sooner
+  (#161); `arh context -n N` lists an exploratory iteration's runs without a journal row first
+  (#163); `claim --promotes N` defaults the title to the promoted one (#148); a dispatched
+  controller gets no takeover hint for its own lease, and an overriding `ARH_SESSION` is named
+  (#154, #158); `arh skill list` (#160).
+- Git record: interpreter caches are ignored, and `arh migrate` commits its own changes.
+- Tests: `arh init --no-tools` keeps the env-cache test offline (100 s to 5 s); `test/parallel.py`
+  prints the slowest tests.
+
 ### Changed (simpler, two tiers, outsourced tools, 2026-10-30)
 - **Exploratory and confirmatory iterations.** `arh claim --explore` claims a search: a short plan
   with a selection rule and a journal of every attempt, no freeze, no required review, sealed
