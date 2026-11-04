@@ -77,7 +77,7 @@ negative-control behaviour, detection limit and missed predictions.
 
 ```bash
 arh ask --role adversary -n N
-arh ask --role estimand-auditor -n N
+arh ask --role adversary -n N --skill result-to-claim   # optional: a research checklist on top
 ```
 
 Evaluate findings on their merits. A verdict is evidence, not a ruling.

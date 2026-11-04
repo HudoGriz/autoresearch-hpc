@@ -88,10 +88,6 @@ for p in sorted(cfg.glob('*.md')):
         n = n.replace(f'{root}/.dl/', f'{root}/.arh/')
         n = re.sub(r'(?m)^(image_dir[ \t]*=[ \t]*)\.dl/', r'\1.arh/', n)
     plan(p, n, 'config fence, command names and state paths')
-generators = cfg / 'generators.md'
-if not generators.exists():
-    rewrites[generators] = (home / 'config/generators.md').read_text()
-    changes.append(f'{generators.relative_to(root)}: optional external-generator registry added')
 # Durable knowledge lives in the project (agent contract rule 10). A study that predates the files
 # gets empty templates; existing ones are never touched.
 for name in ('DIRECTIVES.md', 'GOTCHAS.md'):
@@ -153,6 +149,13 @@ if stale_skills:
     names = [str(dst.relative_to(root / 'skills')) for _, dst in stale_skills]
     changes.append(f'skills/: {len(names)} file(s) copied from the framework: '
                    + ', '.join(names[:6]) + (' …' if len(names) > 6 else ''))
+# What the framework no longer ships (2026-10-30): its copies would tell agents about commands that
+# are gone. The backup keeps them.
+retired = [p for p in (root / 'skills/evoke', root / 'skills/arms', root / '.claude/skills/evoke',
+                       root / '.claude/skills/arms', root / 'skills/cross-check/roles/estimand-auditor.md',
+                       root / 'skills/cross-check/roles/gotcha-scanner.md', cfg / 'generators.md') if p.exists()]
+if retired:
+    changes.append('removed what the framework retired: ' + ', '.join(str(p.relative_to(root)) for p in retired))
 version = state_dir / 'VERSION'
 text = version.read_text() if version.exists() else ''
 found = re.search(r'(?m)^protocol[ \t]*=[ \t]*(\S+)', text)
@@ -234,11 +237,16 @@ if state == 'legacy':
     os.symlink('.arh', root / '.dl')
 backup = root / '.arh' / tmp.name.lstrip('.')
 os.replace(tmp, backup)
+# Three backups are enough to undo a bad migration; the git record keeps the history.
+for old in sorted((root / '.arh').glob('migration-backup-*.tgz'))[:-3]:
+    old.unlink()
 for path, content in rewrites.items():
     path.write_text(content)  # paths under .dl/ now resolve through the symlink
 for src, dst in stale_skills:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+for p in retired:
+    shutil.rmtree(p) if p.is_dir() else p.unlink()
 if unjournalled:
     record.backfill(root, iters, now)
 if access:

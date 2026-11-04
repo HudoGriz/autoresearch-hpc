@@ -100,6 +100,9 @@ def touch(directory, command, who):
     holder = dispatched(directory)
     if holder is not None and who.get('session') != holder.get('session'):
         n = Path(directory).name[9:]
+        if os.environ.get('ARH_DISPATCH') == n:      # the controller itself, under a session id it set (#158)
+            raise Refused(f"you are iteration {n}'s dispatched controller, but ARH_SESSION={who.get('session')} replaces "
+                          f"your session {holder.get('session', '?')}: unset ARH_SESSION (arh dispatch sets it)")
         raise Refused(f"iteration {n} is held by its dispatched controller ({holder.get('harness', '?')}, "
                       f"session {holder.get('session', '?')}): the main controller reads it and does not change "
                       f"it. See arh dispatch status -n {n}; arh wait -n {n} waits for it to finish.")
@@ -108,7 +111,9 @@ def touch(directory, command, who):
         lease = dict(holder=who, since=now())
         if not who.get('session') and owner_label(directory)[0] == 'iteration':
             shared_session_warning(directory, who)
-    elif not same(lease['holder'], who):
+    # A dispatched controller is the holder by its session; its agent name may differ from the lease's,
+    # and the takeover hint printed on each of its commands told it to take its own lease (#158).
+    elif holder is None and not same(lease['holder'], who):
         last = lease.get('last', {})
         kind, n = owner_label(directory)
         print(f"arh: {kind} {n} is held by {name(lease['holder'])}, last active "
@@ -130,8 +135,7 @@ def shared_session_warning(directory, who):
             continue
         lease = load(other)
         holder = (lease or {}).get('holder') or {}
-        if (holder and not holder.get('session') and same(holder, who)
-                and not ((other / 'results/report' / f'{other.name}_report.md').is_file() and reviewed(other))):
+        if holder and not holder.get('session') and same(holder, who) and not concluded(other):
             print(f"arh: iteration {other.name[9:]} is open and held by {name(holder)} too, and neither has a session id, "
                   "so the lease cannot tell these agents apart. Give each concurrent agent its own "
                   "ARH_SESSION=<name> before it runs arh.", file=sys.stderr)
@@ -174,6 +178,16 @@ def ps(pid, field):
     return out.stdout.strip() if out.returncode == 0 else ''
 
 
+def program_of(cmd):
+    """The program a command template runs, past an `env` or `chaperone` prefix and its options and
+    assignments: `env -u CLAUDE_CONFIG_DIR claude -p {prompt}` and `chaperone -p ai claude` run claude."""
+    words = shlex.split(cmd)
+    while words and (os.path.basename(words[0]) in ('env', 'chaperone') or '=' in words[0] or words[0].startswith('-')):
+        skip = 2 if words[0] in ('-u', '--unset', '-C', '--chdir', '-p') else 1
+        words = words[skip:]
+    return os.path.basename(words[0]) if words else ''
+
+
 def agent_process():
     """The agent session as the nearest ancestor process whose program is a configured harness
     command (the first word of a harness_<name>_cmd): 'name:pid@host:start'. Needs no knowledge of
@@ -182,7 +196,7 @@ def agent_process():
     for key, value in config(os.environ.get('ARH_HARN', '')).items():
         match = re.fullmatch(r'harness_(.+)_cmd', key)
         try:
-            program = os.path.basename(shlex.split(value)[0]) if match and value.strip() else ''
+            program = program_of(value) if match else ''
         except ValueError:
             continue
         if program and program not in GENERIC:
@@ -272,33 +286,44 @@ def show(directory):
     print(f"last:   {last.get('command', '?')} by {last.get('agent')}@{last.get('host')}, {ago(age(last.get('time')))}")
 
 
-def reviewed(directory):
-    """A successful review record exists (cheap: status already validates reviews in full)."""
-    for record in Path(directory).glob('CROSSCHECK_*.md.json'):
-        try:
-            data = json.loads(record.read_text())
-        except (OSError, ValueError):
-            continue
-        if data.get('exit_code') == 0 and data.get('verdict'):
-            return True
-    return False
+def concluded(directory):
+    """A conclusion receipt exists (metadata/conclusions.jsonl, written when the results gate passes).
+    Cheap on purpose: whether it still matches the evidence is for `arh status` and the gate to check.
+    A report and a review are not a conclusion: an iteration reviewed but not through its gate was
+    left out of the open list (field feedback #90)."""
+    try:
+        return bool((Path(directory) / 'metadata/conclusions.jsonl').read_text().strip())
+    except OSError:
+        return False
+
+
+# Iterations without a conclusion receipt and idle longer than this are counted, not listed: projects
+# that concluded iterations before receipts existed (before protocol 0.4) would otherwise list them all.
+RECENT_HOURS = 7 * 24
 
 
 def open_iterations(base, hours):
-    """Iterations not yet concluded (no report, or no review of it): who holds them and how long
-    they have been idle."""
+    """Iterations without a conclusion receipt: who holds them and how long they have been idle."""
     base = Path(base)
+    older = 0
     for d in sorted((p for p in base.glob('iteration*') if p.name[9:].isdigit()), key=lambda p: int(p.name[9:])):
-        if (d / 'results/report' / f'{d.name}_report.md').is_file() and reviewed(d):
+        if concluded(d):
             continue
         lease = load(d)
         if not lease:
+            if path(d).exists() and not os.access(path(d), os.R_OK):
+                print(f"  {d.name[9:]:<5} lease not readable by this account (file permissions)")
             continue
         idle = age(lease.get('last', {}).get('time'))
+        if idle is not None and idle > max(hours, RECENT_HOURS):
+            older += 1
+            continue
         stale = idle is not None and idle > hours
         print(f"  {d.name[9:]:<5} held by {name(lease['holder'])}, last active {ago(idle)} "
               f"({lease.get('last', {}).get('command', '?')})" + ('  STALE' if stale else ''))
-
+    if older:
+        print(f"  ({older} more without a conclusion receipt and idle over {max(hours, RECENT_HOURS) / 24:.0f} days: "
+              "concluded before receipts existed, or abandoned; arh status -n N shows one)")
 
 if __name__ == '__main__':
     cmd = sys.argv[1]

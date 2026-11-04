@@ -14,6 +14,12 @@ question, counting every iteration that addressed it, concluded or not.
   attempts.py question DIR          the iteration's question id
   attempts.py ledger ITERATIONS     the ledger's questions section (questions tried more than once)
   attempts.py json ITERATIONS       {iteration: {question, state, attempt, of}} for arh status --json
+  attempts.py tier DIR              exploratory | confirmatory
+  attempts.py unjournalled DIR      runs of an exploratory iteration its README journal does not name
+
+An exploratory iteration (`arh claim --explore`) records its search as a journal table in its
+README, one row per attempt; the ledger counts those rows, so a promoted result states how many
+variants it was chosen from.
 """
 from datetime import datetime, timezone
 import hashlib
@@ -22,6 +28,7 @@ from pathlib import Path
 import re
 import sys
 
+from findings import summary as verdicts
 from harness import result_artifacts, valid_adjudications, valid_records
 import sessions
 
@@ -62,6 +69,37 @@ def holds(receipt, current):
     return all(receipt.get(k) == v for k, v in current.items())
 
 
+PASS_KEY = re.compile(r'(^|_)(pass|passes|passed|ok)$')
+
+
+def failed_checks(directory, max_bytes=2 * 2**20):
+    """Keys like acceptance_pass, permuted_pass or controls_ok that a JSON file under results/ sets to
+    false: a frozen criterion or control that failed. Files over MAX_BYTES are skipped (per-row tables)."""
+    out = []
+
+    def walk(value, path, rel):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                where = f'{path}.{key}' if path else str(key)
+                if item is False and PASS_KEY.search(str(key).lower()):
+                    out.append(f'{rel}: {where} = false')
+                else:
+                    walk(item, where, rel)
+        elif isinstance(value, list) and len(value) <= 1000:
+            for i, item in enumerate(value):
+                walk(item, f'{path}[{i}]', rel)
+
+    results = Path(directory) / 'results'
+    for path in sorted(results.rglob('*.json')) if results.is_dir() else []:
+        if path.stat().st_size > max_bytes:
+            continue
+        try:
+            walk(json.loads(path.read_text()), '', str(path.relative_to(directory)))
+        except (OSError, ValueError, RecursionError):
+            continue
+    return out
+
+
 def conclude(directory):
     directory = Path(directory)
     current = evidence(directory)
@@ -70,7 +108,8 @@ def conclude(directory):
         return
     # Which agent sessions the conclusion came from; recorded, not part of what must still hold.
     record = dict(time=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), question=question(directory),
-                  **current, **sessions.as_json(directory))
+                  tier=tier(directory), **current, **sessions.as_json(directory),
+                  verdicts=verdicts(directory) or None, failed_checks=failed_checks(directory) or None)
     (directory / 'metadata').mkdir(exist_ok=True)
     with open(directory / 'metadata/conclusions.jsonl', 'a') as out:
         out.write(json.dumps(record, sort_keys=True) + '\n')
@@ -89,6 +128,36 @@ def question(directory):
     except (OSError, ValueError, AttributeError):
         q = None
     return q or f'q{directory.name[9:]}'
+
+
+def tier(directory):
+    try:
+        return json.loads((Path(directory) / 'CLAIM.json').read_text()).get('tier') or 'confirmatory'
+    except (OSError, ValueError, AttributeError):
+        return 'confirmatory'
+
+
+def journal(directory):
+    """The rows of the README's journal table (header and rule excluded)."""
+    try:
+        text = (Path(directory) / 'README.md').read_text()
+    except OSError:
+        return []
+    section = text.split('\n## Journal', 1)[1] if '\n## Journal' in text else ''
+    rows = [line for line in section.splitlines() if line.startswith('|')]
+    return [r for r in rows[1:] if not set(r.replace('|', '').strip()) <= set('-: ')]
+
+
+def unjournalled(directory):
+    directory = Path(directory)
+    text = '\n'.join(journal(directory))
+    runs = sorted({p.parent.parent.name for p in (directory / 'logs').glob('*/*/attempt-*/run.json')})
+    return [r for r in runs if r not in text]
+
+
+def label(directory):
+    n = directory.name[9:]
+    return f'{n} (exploratory, {len(journal(directory))} tries)' if tier(directory) == 'exploratory' else n
 
 
 def iterations(base):
@@ -110,7 +179,8 @@ def ledger(base):
     print('\n| Question | Iterations | Concluded |\n|---|---|---|')
     for q, its in tried.items():
         done = [f'{n} (attempt {k} of {len(its)})' for k, (n, s) in enumerate(its, 1) if s == 'concluded']
-        print(f"| {q} | {', '.join(str(n) for n, _ in its)} | {', '.join(done) or 'none yet'} |")
+        names = ', '.join(label(Path(base) / f'iteration{n}') for n, _ in its)
+        print(f"| {q} | {names} | {', '.join(done) or 'none yet'} |")
     print('\nIterations not listed here each address their own question.')
 
 
@@ -134,6 +204,12 @@ if __name__ == '__main__':
         ledger(sys.argv[2])
     elif cmd == 'json':
         as_json(sys.argv[2])
+    elif cmd == 'tier':
+        print(tier(sys.argv[2]))
+    elif cmd == 'unjournalled':
+        print('\n'.join(unjournalled(sys.argv[2])))
+    elif cmd == 'failed-checks':
+        print('\n'.join(failed_checks(sys.argv[2])))
     elif cmd == 'valid-id':
         sys.exit(0 if QUESTION_ID.match(sys.argv[2]) else 1)
     else:

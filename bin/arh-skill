@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# The research skills installed with the integrations (ARIS, pinned in config/dependencies.json).
+#
+#   arh skill          list them
+#   arh skill NAME     print the path of NAME's SKILL.md, for any harness to read
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+arh_load_project
+tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
+# Releases keep the skills under crates/runtime/assets/skills; the development branch under skills/.
+skills=""
+for d in "$tools/aris/skills" "$tools/aris/crates/runtime/assets/skills"; do
+  [ -z "$tools" ] || [ ! -d "$d" ] || { skills=$d; break; }
+done
+[ -n "$skills" ] || arh_die "no research skills installed: run $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT"
+case "${1-}" in
+  -h|--help) sed -n '2,5s/^# \{0,1\}//p' "$0"; exit 0 ;;
+  ""|list) find "$skills" -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort | paste -sd' ' - | fold -s -w 100 ;;
+  *) case "$1" in */*|.*) arh_die "a skill name, not a path: $1" ;; esac
+     [ -f "$skills/$1/SKILL.md" ] || arh_die "no skill '$1' (arh skill lists them)"
+     printf '%s\n' "$skills/$1/SKILL.md" ;;
+esac

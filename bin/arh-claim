@@ -4,23 +4,49 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
-title=""; agent=""; question=""; continues=""
+title=""; agent=""; question=""; continues=""; tier=confirmatory; promotes=""; roles=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -t|--title) title="$2"; shift 2 ;;
     -a|--agent) agent="$2"; shift 2 ;;
     -q|--question) question="$2"; shift 2 ;;
     --continues) continues="$2"; shift 2 ;;
-    -h|--help)  echo 'usage: arh claim -t TITLE [-a AGENT] [--question ID | --continues N]
+    --explore) tier=exploratory; shift ;;
+    --promotes) promotes="$2"; shift 2 ;;
+    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--orchestrator|--on-limit)
+                roles+=("${1#--}=$2"); shift 2 ;;
+    --set)      roles+=("$2"); shift 2 ;;
+    -h|--help)  echo 'usage: arh claim -t TITLE [-a AGENT] [--question ID | --continues N] [--explore | --promotes N]
+                 [--worker H] [--reviewer H] [--orchestrator H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
 --question ID: the question this iteration addresses (letters, digits, . _ -); iterations that share
   one are counted as attempts at it in the ledger. --continues N: the question iteration N addressed.
-  Without either, the iteration is its own question (qN).'; exit 0 ;;
+  Without either, the iteration is its own question (qN).
+--explore: an exploratory iteration. No freeze and no review are required; sealed inputs stay sealed,
+  and its numbers are not findings. Record every attempt in its README journal.
+--promotes N: a confirmatory iteration that re-measures the variant exploratory iteration N chose,
+  on data the choice was not made on. It takes the question of iteration N.
+--worker, --reviewer, --orchestrator (and --worker-fallback, --reviewer-fallback): the harness for that
+  role in this iteration only; unset roles use .arh/config/harnesses.md. --on-limit: what a dispatched
+  worker does at its usage limit. --set KEY=VALUE: any other harnesses.md key, for this iteration only.
+  They are written to iterationN/harnesses.md and are part of the review terms; arh roles changes them later.'; exit 0 ;;
     *) arh_die "unexpected argument: $1" ;;
   esac
 done
-[ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
-
 arh_load_project
+# A promotion re-measures N's variant, so its title defaults to N's (field feedback #148).
+if [ -z "$title" ] && [ -n "$promotes" ] && [ -f "$ARH_ITERS/iteration$promotes/CLAIM.json" ]; then
+  title="Promotion of iteration $promotes: $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("title", ""))' \
+    "$ARH_ITERS/iteration$promotes/CLAIM.json")"
+fi
+[ -n "$title" ] || arh_die "a title is required: arh claim -t 'the question'"
+if [ -n "$promotes" ]; then
+  [ "$tier" = confirmatory ] || arh_die "--promotes makes a confirmatory iteration; drop --explore"
+  [ -z "$continues$question" ] || arh_die "--promotes takes the question of the iteration it promotes"
+  case "$promotes" in ""|*[!0-9]*) arh_die "--promotes takes an iteration number" ;; esac
+  [ "$(arh_tier "$ARH_ITERS/iteration$promotes")" = exploratory ] \
+    || arh_die "iteration $promotes is not an exploratory iteration (arh claim --explore)"
+  continues=$promotes
+fi
 # Which question this is another attempt at: the ledger counts every iteration on it, concluded or not.
 if [ -n "$continues" ]; then
   [ -z "$question" ] || arh_die "give --question or --continues, not both"
@@ -65,9 +91,10 @@ done
 # The review terms the iteration is claimed under. A copy, so that a later change can be shown and
 # not only detected; its hash in CLAIM.json is what arh ask and arh gate results compare against.
 terms=""
+[ ${#roles[@]} -eq 0 ] || arh_set_iter_harn "$dir" "${roles[@]}" || { rmdir "$dir" 2>/dev/null; exit 1; }
 if [ -f "$ARH_HARN" ]; then
   mkdir -p "$dir/metadata"
-  cp "$ARH_HARN" "$dir/metadata/harnesses.claimed.md"
+  cp "$(arh_iter_harn "$dir")" "$dir/metadata/harnesses.claimed.md"
   terms=$(arh_sha256 "$dir/metadata/harnesses.claimed.md")
 fi
 
@@ -82,6 +109,7 @@ print(json.dumps(dict(zip(("require_crosscheck", "review_response", "unsound_rev
   "$(arh_config_get "$ARH_PROJ" require_crosscheck true)" "$(arh_config_get "$ARH_PROJ" review_response require)" \
   "$(arh_config_get "$ARH_PROJ" unsound_review require-adjudication)")
 
+promotes_field=""; [ -z "$promotes" ] || promotes_field=$(printf ',\n  "promotes": %s' "$promotes")
 cat > "$dir/CLAIM.json" <<EOF
 {
   "iteration": $n,
@@ -98,7 +126,8 @@ cat > "$dir/CLAIM.json" <<EOF
   "harness_config_sha256": "$terms",
   "knowledge_sha256": $knowledge,
   "review_policy": $policy,
-  "freeze_journal": true
+  "freeze_journal": true,
+  "tier": "$tier"$promotes_field
 }
 EOF
 
@@ -114,5 +143,9 @@ mkdir -p "$dir"/{scripts,results,logs,resources,metadata}
 arh_lease_touch "$dir" "arh claim"
 printf '%s\n' "$n"
 printf 'claimed iteration %s at %s\n' "$n" "$dir" >&2
-printf 'next: arh new -n %s   (complete the pre-declaration BEFORE running anything)\n' "$n" >&2
+if [ "$tier" = exploratory ]; then
+  printf 'next: arh new -n %s   (a short plan and a journal; no freeze or review needed, sealed inputs stay sealed)\n' "$n" >&2
+else
+  printf 'next: arh new -n %s   (complete the pre-declaration BEFORE running anything)\n' "$n" >&2
+fi
 printf 'read: arh context (directives in force, gotchas index); write what this session learns into the project, not private memory\n' >&2

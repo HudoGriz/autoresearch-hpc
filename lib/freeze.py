@@ -22,7 +22,7 @@ from pathlib import Path
 import re
 import sys
 
-from project import config
+from project import cache_path, cached_digests, config
 
 SKIP = ('__pycache__', '.nextflow')
 
@@ -106,13 +106,10 @@ def state(root, directory):
         files = data['files']
     except (ValueError, KeyError, TypeError):
         return 'changed', sha(record), ['FREEZE.json is not a freeze record']
-    changed = []
-    for rel, want in sorted(files.items()):
-        path = Path(root) / rel
-        if not path.is_file():
-            changed.append(rel + ' (missing)')
-        elif sha(path) != want:
-            changed.append(rel)
+    # Every status re-read 5,012 frozen files (3.3 GB) on CephFS: 247 s (field feedback #136).
+    present = {rel: Path(root) / rel for rel in sorted(files) if (Path(root) / rel).is_file()}
+    now = cached_digests(present, cache_path(directory, 'freeze'))
+    changed = [rel + ' (missing)' if rel not in now else rel for rel, want in sorted(files.items()) if now.get(rel) != want]
     return ('changed' if changed else 'valid'), sha(record), changed
 
 
@@ -171,7 +168,7 @@ def unseals(root):
     return [r for r in rows if len(r) >= 6]
 
 
-def listing(root, iterations, only=None):
+def listing(root, iterations, only=None, fold=0):
     """Every freeze and sealed input; with `only` (iteration numbers), those iterations' freezes and the
     sealed inputs they read, then one count line: a one-iteration status printed hundreds of
     'never read' lines for other iterations' inputs (field feedback #96)."""
@@ -199,11 +196,17 @@ def listing(root, iterations, only=None):
         rows = unseals(root)
         total = 0
         for group, paths in groups.items():
+            shown_here = 0
             for s in paths:
                 total += 1
                 if only is not None and not any(r[4] == str(s) and r[1] in only for r in rows):
                     continue
+                shown_here += 1
+                if fold and shown_here > fold:      # arh status: a long group is a count (#136)
+                    continue
                 print(f"  {s}{'' if len(groups) == 1 else f' [{group}]'}  — {reads_text(rows, s)}")
+            if fold and shown_here > fold:
+                print(f"  ... and {shown_here - fold} more in group {group} (arh freeze list)")
         if only is not None:
             print(f"  ({total} sealed input(s) in all; those not released to iteration(s) {', '.join(sorted(only, key=int))} "
                   "are not listed: arh freeze list)")
@@ -337,7 +340,8 @@ if __name__ == '__main__':
             sys.exit(1)
         print(f'every frozen file matches FREEZE.json ({digest[:12]})')
     elif cmd == 'list':
-        listing(sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 and sys.argv[4] else None)
+        listing(sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 and sys.argv[4] else None,
+                int(sys.argv[5]) if len(sys.argv) > 5 else 0)
     elif cmd == 'sealed':
         print('\n'.join(map(str, sealed_inputs(sys.argv[2]))))
     elif cmd == 'git-exclude':                   # git-exclude ROOT: sealed paths inside ROOT, as git patterns

@@ -21,14 +21,14 @@ hook. Claude reads it through `CLAUDE.md`; other supported harnesses use
 | Source | Integration |
 |---|---|
 | Ponytail | Pinned core coding guidance and default activation policy |
-| ARIS | Adapted adversarial-review guidance; full autonomous workflow is not bundled |
-| This repository | iterate, arms, verify, cross-check, replicate, ledger and evoke skills |
+| ARIS | Adapted adversarial-review guidance; its research skills as a pinned release (`arh skill`, `arh ask --skill`), not copied |
+| This repository | iterate, verify, cross-check, replicate, ledger and dispatch skills |
 | Karpathy autoresearch | Inspiration and attribution; no imported runtime |
 | Nextflow / Singularity/Apptainer | Execution infrastructure, not skill repositories |
 
-The Evoke skill selects among optional, independently installed specialist
-generators. It does not install them or promote their output to evidence. See
-[External generators](external-generators.md).
+Research skills are read on demand: `arh skill NAME` prints one `SKILL.md` path, so a session pays
+for a skill only when it reads it. Installing the whole ARIS plugin would put all of its skill
+descriptions into every session.
 
 ## Deterministic budget controls
 

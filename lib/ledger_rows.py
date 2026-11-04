@@ -11,6 +11,7 @@ import sys
 
 import attempts
 import findings
+import signoff
 
 
 def row(base, n):
@@ -19,6 +20,8 @@ def row(base, n):
     if (directory / 'results/report' / f'iteration{n}_report.md').is_file():
         try:
             results = 'concluded' if attempts.state(directory) == 'concluded' else 'report'
+            if results == 'concluded' and (directory / 'metadata/signoff.jsonl').is_file():
+                results += ', signed' if signoff.state(directory) == 'signed' else ', sign-off stale'
         except Exception:      # the shell it replaces read a crash as "not concluded"
             results = 'report'
     try:

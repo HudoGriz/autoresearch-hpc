@@ -32,11 +32,22 @@ for r in $rules; do
   rule_lines="${rule_lines}- \`$r\` — ${desc}"$'\n'
 done
 
+tier=$(arh_tier "$dir")
+template="$ARH_HOME/templates/iteration/README.md"
+[ "$tier" = confirmatory ] || template="$ARH_HOME/templates/iteration/EXPLORE.md"
 sed -e "s|{{N}}|$n|g" \
     -e "s|{{TITLE}}|${title:-<state the question>}|g" \
     -e "s|{{DATE}}|$(arh_today)|g" \
     -e "s|{{AGENT}}|$(arh_agent_name)|g" \
-    "$ARH_HOME/templates/iteration/README.md" > "$dir/README.md"
+    "$template" > "$dir/README.md"
+# A promoted variant carries the size of the search it won, so the report can state it.
+promotes=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("promotes", ""))' "$dir/CLAIM.json" 2>/dev/null || true)
+if [ -n "$promotes" ]; then
+  tried=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import attempts
+print(len(attempts.journal(sys.argv[2])))' "$ARH_HOME/lib" "$ARH_ITERS/iteration$promotes")
+  awk -v p="$promotes" -v k="$tried" 'NR==4 { print; print ""; printf "**Promotes exploratory iteration %s**, whose journal records %s attempt(s). The quantity below is measured on data that choice was not made on (say which in section 3); the exploratory numbers are not reported as findings.\n", p, k; next } { print }' \
+    "$dir/README.md" > "$dir/README.md.new" && mv "$dir/README.md.new" "$dir/README.md"
+fi
 
 if [ -n "$rule_lines" ]; then
   tmp=$(mktemp); printf '%s' "$rule_lines" > "$tmp"
@@ -50,5 +61,10 @@ fi
 
 arh_lease_touch "$dir" "arh new"
 printf 'wrote %s\n' "$dir/README.md"
-printf '\nComplete every section, then:  arh gate predeclare -n %s\n' "$n"
-printf 'No result may be recorded until that gate passes and freezes the hash.\n'
+if [ "$tier" = exploratory ]; then
+  printf '\nWrite the aim and the selection rule, then run attempts with arh submit and add a journal row for each.\n'
+  printf 'Finish with a short report and arh gate results -n %s. Promote a winner with arh claim --promotes %s.\n' "$n" "$n"
+else
+  printf '\nComplete every section, then:  arh gate predeclare -n %s\n' "$n"
+  printf 'No result may be recorded until that gate passes and freezes the hash.\n'
+fi

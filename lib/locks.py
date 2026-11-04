@@ -46,7 +46,8 @@ def state(lock):
     # After a reboot the recorded pid may belong to some other process (field feedback #97).
     if record.get('boot_id') and boot_id() and record['boot_id'] != boot_id():
         return 'stale'
-    return 'live' if alive(record.get('pid')) else 'stale'
+    # A dispatch lock also names its controller, which works on if its supervisor dies (#146).
+    return 'live' if alive(record.get('pid')) or (record.get('controller_pid') is not None and alive(record['controller_pid'])) else 'stale'
 
 
 def describe(record):
@@ -106,9 +107,18 @@ def running(iterations, number=None):
 
 def wait(iterations, number, timeout, interval):
     """Block until no live submission or review lock remains. Exit 3 when a submission it saw ended
-    badly (failed, or its process died: field feedback #97), 124 on timeout."""
+    badly (failed, or its process died: field feedback #97), 124 on timeout, 4 when the main controller
+    left a message for the dispatched controller that is waiting (arh dispatch message, #144)."""
     started, shown, seen = time.time(), None, {}
+    mine = str(number) if number and os.environ.get('ARH_DISPATCH') == str(number) else None
     while True:
+        if mine:
+            from dispatch import current, unread
+            notes = unread(current(mine), mark=True)
+            for m in notes:
+                print(f"message from the main controller ({m['time']}): {m['text']}", flush=True)
+            if notes:
+                return 4
         busy, stale = [], []
         for label, lock in running(iterations, number or None):
             if not lock.is_dir():
@@ -136,7 +146,8 @@ def wait(iterations, number, timeout, interval):
         if timeout and time.time() - started >= timeout:
             print(f'arh: still running after {timeout:g} s: ' + '; '.join(busy), file=sys.stderr)
             return 124
-        time.sleep(interval)
+        # Never past --timeout: a harness that caps a command at 10 min killed waits that overslept it (#158).
+        time.sleep(min(interval, timeout - (time.time() - started)) if timeout else interval)
 
 
 if __name__ == '__main__':

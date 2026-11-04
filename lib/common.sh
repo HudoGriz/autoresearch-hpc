@@ -35,6 +35,51 @@ arh_config_get() {
   [ -n "$val" ] && printf '%s' "$val" || printf '%s' "$default"
 }
 
+# An iteration's own harnesses.md (arh claim --worker/--reviewer/..., arh roles) overrides the project's
+# for that iteration only. Its keys come first in a generated effective file, and the first value wins.
+# Without one, the project's file is the iteration's, so older claims keep their terms hash.
+arh_iter_harn() {
+  local dir="$1" eff="$1/metadata/harnesses.effective.md" project="${ARH_HARN_PROJECT:-$ARH_HARN}"
+  [ -f "$dir/harnesses.md" ] || { printf '%s' "$project"; return 0; }
+  mkdir -p "$dir/metadata"
+  { printf '# Generated: %s/harnesses.md first, then the project'"'"'s harnesses.md. Edit those, not this.\n\n' "${dir##*/}"
+    cat "$dir/harnesses.md"; printf '\n'; cat "$project" 2>/dev/null; } > "$eff.tmp" && mv "$eff.tmp" "$eff"
+  printf '%s' "$eff"
+}
+
+# Set KEY=VALUE pairs in iteration DIR's own harnesses.md (created on first use). The role names map to
+# the project keys they override: worker = iteration_controller, reviewer = verifier,
+# orchestrator = orchestrator, on-limit = dispatch_on_limit; any other KEY is used as written.
+arh_set_iter_harn() {
+  local dir="$1"; shift
+  python3 - "$dir/harnesses.md" "${ARH_HARN_PROJECT:-$ARH_HARN}" "$@" <<'PY' || return 1
+import re, sys
+from pathlib import Path
+own, project, pairs = Path(sys.argv[1]), sys.argv[2], sys.argv[3:]
+sys.path.insert(0, __import__('os').environ['ARH_HOME'] + '/lib')
+from project import config
+alias = {'worker': 'iteration_controller', 'worker-fallback': 'iteration_controller_fallback', 'reviewer': 'verifier',
+         'reviewer-fallback': 'verifier_fallback', 'orchestrator': 'orchestrator', 'on-limit': 'dispatch_on_limit'}
+roles = {'iteration_controller', 'iteration_controller_fallback', 'verifier', 'verifier_fallback', 'orchestrator'}
+values, known = config(own), config(project)
+for pair in pairs:
+    key, sep, value = pair.partition('=')
+    key = alias.get(key, key)
+    if not sep or not re.fullmatch(r'[a-z][a-z0-9_]*', key):
+        sys.exit(f"arh: expected KEY=VALUE, not '{pair}'")
+    if key in roles:
+        for h in value.split():
+            if not known.get(f'harness_{h}_cmd'):
+                sys.exit(f"arh: no harness '{h}' in {project} (harness_{h}_cmd); define it there first")
+    if key == 'dispatch_on_limit' and value not in ('fallback', 'wait', 'stop'):
+        sys.exit("arh: on-limit must be fallback, wait or stop")
+    values[key] = value
+body = ''.join(f'{k} = {v}\n' for k, v in values.items())
+own.write_text('# This iteration\'s own harness settings; they override .arh/config/harnesses.md for it only.\n\n'
+               f'```arh-config\n{body}```\n')
+PY
+}
+
 arh_config_keys() {
   awk '
     /^[ \t]*```[ \t]*arh-config[ \t]*$/ { inb=1; next }
@@ -60,8 +105,7 @@ arh_load_project() {
   ARH_CONF="$ARH_STATE/config"
   ARH_SITE="$ARH_CONF/site.md"
   ARH_PROJ="$ARH_CONF/project.md"
-  ARH_HARN="$ARH_CONF/harnesses.md"
-  ARH_GENS="$ARH_CONF/generators.md"
+  ARH_HARN="$ARH_CONF/harnesses.md"; ARH_HARN_PROJECT="$ARH_HARN"
   ARH_ITERS="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" iterations_dir iterations)"
   ARH_VERIFY="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" verification_dir verification)"
   ARH_LEDGER="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" ledger PROGRESS.md)"
@@ -69,10 +113,12 @@ arh_load_project() {
   # The operator's directives file; a study that kept them in VALIDATION_PROTOCOL.md names it (#47).
   ARH_DIRECTIVES="$ARH_ROOT/$(arh_config_get "$ARH_PROJ" directives DIRECTIVES.md)"
   # Which environment variables carry the harness's own session id (harnesses.md session_env).
-  ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "")
+  # Unset, the variables Claude Code and Codex set (feedback #129); every harness is also identified
+  # by its process (agent_process), so a harness without such a variable is still linked.
+  ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID")
   # auto: gitleaks's maintained rules on top of the built-in patterns when gitleaks is installed.
   ARH_SECRET_SCANNER=$(arh_config_get "$ARH_HARN" secret_scanner auto)
-  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_GENS ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
+  export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_HARN_PROJECT ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
     ARH_SESSION_ENV ARH_SECRET_SCANNER
 }
 
@@ -171,13 +217,18 @@ arh_harness_config_state() {
   local claimed
   claimed=$(sed -n 's/.*"harness_config_sha256"[ ]*:[ ]*"\([0-9a-f]\{64\}\)".*/\1/p' "$1/CLAIM.json" 2>/dev/null | head -1)
   if [ -z "$claimed" ]; then echo unrecorded
-  elif [ "$claimed" = "$(arh_sha256 "$ARH_HARN" 2>/dev/null)" ]; then echo unchanged
+  elif [ "$claimed" = "$(arh_sha256 "$(arh_iter_harn "$1")" 2>/dev/null)" ]; then echo unchanged
   else echo changed; fi
 }
 
 # The value of a review-policy key (require_crosscheck, review_response, unsound_review) that iteration
 # DIR is judged by: the one recorded when it was claimed, else project.md's (claims older than the
 # record). A later edit of project.md is named on stderr and does not apply.
+# arh_tier DIR — exploratory or confirmatory (the default, and every iteration claimed before tiers).
+arh_tier() {
+  if grep -q '"tier": *"exploratory"' "$1/CLAIM.json" 2>/dev/null; then echo exploratory; else echo confirmatory; fi
+}
+
 arh_review_policy() {
   local dir="$1" key="$2" default="$3" current claimed
   current=$(arh_config_get "$ARH_PROJ" "$key" "$default")
@@ -237,7 +288,7 @@ arh_has_sealed() {
 }
 
 # arh_secret_scan NOTE FILE...: succeed unless the files, or the note text, carry something shaped like
-# a credential; the findings go to stderr, redacted. Run on what arh ask, arh delegate and arh evoke
+# a credential; the findings go to stderr, redacted. Run on what arh ask and arh delegate
 # are about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
 arh_secret_scan() {
   local note="$1" tmp="" rc=0 hits; shift

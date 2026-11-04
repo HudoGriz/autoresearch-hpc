@@ -65,7 +65,10 @@ Every switch is a line in `.arh/config/harnesses.md`; [Integrations](docs/integr
 | Foreign-family review | on | a second harness | `require_foreign_family = false` |
 | Continue a dispatched iteration after a usage limit (fallback harness, then wait) | `fallback` | `orchestration = per-iteration` | `dispatch_on_limit = stop` |
 | Restart dispatches after a reboot | when scheduled | cron: `arh dispatch tick` | do not schedule it |
-| External research generators (`arh evoke`) | **off** | each tool's install and API keys | — (opt in per tool) |
+| abtop: tokens, context and status of the agent sessions running now, in `arh sessions` | on | tools environment | — |
+| ARIS research skills (`arh skill`, `arh ask --skill`), pinned release | on | tools environment | — |
+| Notify the operator: failed run, controller ended, UNSOUND review | off | a command (mail, ntfy) | `notify =` in site.md |
+| Agents as their own Unix user, so the OS keeps them from sealed and restricted data | off | [Chaperone](https://github.com/HudoGriz/hpc-chaperone) | prefix harness commands with `chaperone` |
 
 For an existing project: `scripts/setup-tools.sh <study> && scripts/enable-record.sh <study>`.
 
@@ -83,7 +86,6 @@ Project state lives under `.arh/`:
 .arh/config/site.md        scheduler, resources, runtime and shared paths
 .arh/config/project.md     immutable inputs and standing project rules
 .arh/config/harnesses.md   producer / verifier harnesses and model families
-.arh/config/generators.md  optional external research generators; disabled by default
 ```
 
 > [!TIP]
@@ -181,14 +183,12 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 | **[Iterate](skills/iterate/SKILL.md)** | Run one complete research iteration | `claim` → `new` → `gate predeclare` → `submit/run` → `ask` → `gate results` → `ledger` |
 | **[Cross-check](skills/cross-check/SKILL.md)** | Critique an iteration from a defined role | `arh ask --role ...` |
 | **[Verify](skills/verify/SKILL.md)** | Re-examine an existing result without rewriting history | `arh verify new/gate/run/conclude` |
-| **[Arms](skills/arms/SKILL.md)** | Track parallel sub-analyses with explicit fates | `arh arm ...` |
 | **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
-| **[Evoke](skills/evoke/SKILL.md)** | Select and invoke a configured specialist generator as an advisory proposal engine | `arh evoke ...` |
 | **[Dispatch](skills/dispatch/SKILL.md)** | Act as main controller: give each iteration its own controller session, read their hand-backs | `arh dispatch ...` (with `orchestration = per-iteration`) |
 | **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
 
-`harness/install.sh` copies all nine into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/arms`, `/replicate`, `/ledger`, `/evoke`, `/dispatch` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
+`harness/install.sh` copies all seven into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/replicate`, `/ledger`, `/dispatch` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
 
 The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
@@ -197,12 +197,14 @@ The separation matters: an agent may choose to *use the Iterate skill*, but it i
 The diagram above is a research loop, not the discovery DAG.
 
 ```bash
-arh arm new ...             # parallel sub-analysis inside one iteration
+arh claim --explore -t ...  # a search (tuning, variants): no freeze or review, one journal row per attempt
+arh claim --promotes N -t . # re-measure the chosen variant as a finding, on data it was not chosen on
 arh verify new OBJECT       # re-examine an existing result
 arh dag init -n N           # reconstruct the discovery path, inputs to claim
 arh dag freeze -n N         # freeze that specification
 arh replicate run ...       # blind reimplementation from the frozen DAG
-arh evoke list              # optional specialist generators available at this site
+arh skill [NAME]            # research skills (ARIS): checklists for reviews, audits and writing
+arh sign -n N               # the operator signs a concluded finding; an agent cannot
 arh freeze -n N PATH...     # freeze a confirmation's decisions; only then may it read sealed inputs
 arh doctor --smoke [gpu]    # one real task through the scheduler and image: what can it see?
 arh inputs check            # are the declared CRAM/BAM/VCF inputs whole?
@@ -210,7 +212,7 @@ arh submit WF.nf --detach   # a run that outlives the session; arh status --runn
 arh claim -t ... --continues N   # another attempt at N's question; the ledger counts attempts
 arh ask --rebuttal -n N     # put a rebuttal of an UNSOUND verdict to the reviewer
 arh dispatch -n N --brief F # per-iteration controllers: iteration N gets its own agent session
-arh sessions -n N           # the agent sessions behind an iteration, and Entire checkpoints
+arh sessions -n N           # the agent sessions behind an iteration: Entire, live (abtop), CPU hours
 arh memory add -n N TEXT    # carry a concluded iteration's finding into later work
 ```
 
@@ -218,11 +220,8 @@ Held-out data can be declared as `sealed_inputs`. Until an iteration freezes the
 
 Disagreement between replicators is treated as useful evidence; agreement is not promoted to scientific confirmation by majority vote.
 
-External generators are invoked, not bundled. Biomni, AI Scientist v2 and
-Agent Laboratory have first-class registry entries, all disabled by default.
-Their responses stay advisory until selected work passes the ordinary
-pre-declaration, pinned execution and review path. See
-[External generators](docs/external-generators.md).
+External research generators (AI Scientist v2, Biomni, Agent Laboratory) are not wrapped: run one
+yourself and record it with `arh note`; its proposal enters through an ordinary pre-declaration.
 
 ## Why this layer exists
 
@@ -262,7 +261,6 @@ This is a cooperative research-integrity system, not a hostile-code sandbox or a
 | **Agent contract** | [AGENTS.md](AGENTS.md) |
 | **HPC execution** | [Nextflow, schedulers, containers, receipts and stopping a run](docs/hpc-execution.md) |
 | **Skills & model budget** | [Skills, harnesses and bounded review](docs/skills-and-token-budget.md) |
-| **External generators** | [Select, configure and safely evoke specialist research systems](docs/external-generators.md) |
 | **Unattended agents** | [Running producer and reviewer sessions headless](docs/headless.md) |
 | **Integrations** | [Git record, Entire, gitleaks, basic-memory, Ponytail and resume after usage limits: what is on by default, what it needs, how to switch it off](docs/integrations.md) |
 | **Validation** | [Tested behavior and limitations](docs/validation.md) |
@@ -302,15 +300,12 @@ GitHub's "Cite this repository" button and most reference managers can read.
 AutoResearch HPC is an independent project. Two upstream sources are vendored, pinned to an upstream commit and recorded with their licences under [`third_party/`](third_party/):
 
 - **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance in [`skills/ponytail/`](skills/ponytail/SKILL.md), used unmodified. No upstream hooks, MCP server or auxiliary skills are installed.
-- **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). The upstream multi-round orchestration is not installed.
+- **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** (MIT) — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). Its research skills are not copied: `scripts/setup-tools.sh` installs a pinned release, read through `arh skill` and `arh ask --skill`.
 
 Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [micromamba](https://github.com/mamba-org/mamba) for the pinned host controller and task environments, and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
 
-Optional generators follow the same composition rule: their source and
-environments are not vendored. `arh evoke` can call independently installed
-[Biomni](https://github.com/snap-stanford/Biomni),
-[AI Scientist v2](https://github.com/SakanaAI/AI-Scientist-v2) or
-[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) through
-a site-owned wrapper and retain what was sent, returned and executed.
+Access control is [Chaperone](https://github.com/HudoGriz/hpc-chaperone)'s: run a harness as its own
+Unix user (`harness_<name>_cmd = chaperone claude ...`) and `arh doctor` checks that the persona
+cannot read the sealed inputs. Live session tracking is [abtop](https://github.com/graykode/abtop)'s.
 
 The design borrows pre-registration from clinical trials and psychology's replication reform, and append-only records from lab notebooks and version control. [`docs/related-work.md`](docs/related-work.md) sets out what that means here, and which systems this composes with rather than competes against.

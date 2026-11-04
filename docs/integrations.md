@@ -17,10 +17,23 @@ is **on by default**, and each can be switched off in `.arh/config/harnesses.md`
 | Restart after a reboot (`arh dispatch tick`) | when cron runs it | cron or `scrontab` | ARH | do not schedule it |
 | `arh ask --wait-on-limit` | per call | — | ARH | leave the flag out |
 | Secret scan of everything sent to a provider | on | — | ARH | `secret_scan = off` (with a recorded reason) |
-| External research generators (`arh evoke`: Biomni, AI Scientist v2, Agent Laboratory) | **off** | each tool's own install and API keys | the site ([external-generators.md](external-generators.md)) | — (`generator_<tool>_enabled = true` and `--allow-external` per call turn one on) |
+| [abtop](https://github.com/graykode/abtop) 0.5.5: tokens, context and status of the live Claude Code, Codex and OpenCode sessions linked to an iteration, in `arh sessions -n N` | on | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | — |
+| [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28 research skills: `arh skill`, `arh ask --skill NAME` | on | — | `scripts/setup-tools.sh` (release archive, sha256-checked) | — |
+| Notify the operator (failed run, controller ended, UNSOUND or maintained review) | off | a command | site.md `notify =` (`ARH_EVENT`, `ARH_ITERATION`, `ARH_MESSAGE`) | leave it empty |
+| [Chaperone](https://github.com/HudoGriz/hpc-chaperone): each agent as its own Unix user | off | Chaperone on the cluster | prefix `harness_<name>_cmd` with `chaperone` | — |
 
-The generators stay off: each needs its own model keys and a multi-gigabyte environment, runs its
-own code and sends project content to its provider.
+External research generators (AI Scientist v2, Biomni, Agent Laboratory) are not wrapped; ARH's
+`arh evoke` was removed on 2026-10-30. Run one yourself and record it with `arh note`.
+
+### Access control is Chaperone's
+
+ARH writes deny rules into the harness configurations it knows (Claude Code, OpenCode, Codex), and
+covers sealed inputs with empty mounts in task containers. That does not hold for a harness it
+cannot configure, nor against an agent that runs as you. [Chaperone](https://github.com/HudoGriz/hpc-chaperone)
+runs a harness as `<you>-<profile>`, a real Unix user with your groups minus banned ones: keep
+sealed and restricted data in a group the persona does not hold, and give it access when a freeze
+releases a group. With `harness_<name>_cmd = chaperone claude -p {prompt} ...`, `arh doctor` checks
+that the persona cannot read any sealed input, and arh still knows the harness as `claude`.
 
 ### Installing
 
@@ -97,7 +110,7 @@ paths and data excerpts, so check them before you publish a repository.
 ## gitleaks: credential rules ARH does not maintain
 
 `secret_scanner = auto` applies gitleaks's rules on top of the built-in patterns, for `arh ask`,
-`arh delegate`, `arh evoke`, dispatch briefs and session logs, and `arh memory add`. **Both are
+`arh delegate`, dispatch briefs and session logs, and `arh memory add`. **Both are
 needed.** On 2026-10-30, gitleaks 8.30.1 missed Anthropic, OpenAI, AWS, Google and Hugging Face key
 shapes, assigned passwords and a lone private-key header that the built-in patterns catch, while it
 alone caught a Slack webhook URL. `secret_scanner = gitleaks` refuses to run without gitleaks;
@@ -122,8 +135,27 @@ that exits before it hands back, with a usage-limit message in its output, is co
    second account of the same harness or another family. It waits only when both are at their limit.
 2. **`wait`**: it continues on the same harness when the limit lifts. The stated reset is an upper
    bound, not a schedule, so ARH probes again after `dispatch_limit_backoff` (30 min) at the latest.
-3. It restarts at most `dispatch_max_resumes` times. After that, the dispatch ends with the
-   controller's exit code.
+3. It restarts at most `dispatch_max_resumes` times that did work. A probe that meets the limit at
+   once (no model turn) does not count; `dispatch_limit_max_wait` (24 h) bounds the waiting instead.
+   After that, the dispatch ends with the controller's exit code.
+
+The continuation also gets the earlier session's last `dispatch_resume_tail` steps (30: what it said
+and which commands it ran) and is told not to open earlier transcripts, so it continues from the
+project's state and that tail instead of re-reading the whole earlier conversation.
+
+**Parking.** A controller polling `arh wait` costs a model turn per poll, and the turn re-reads the
+whole conversation (one iteration spent 162 M tokens waiting on a GPU queue). After a detached
+submission, `arh dispatch park -n N --summary TEXT` ends its session; the supervisor checks every
+`dispatch_park_poll` seconds (300) and starts a fresh session, with the note and the last steps, when
+no submission or review of N runs, when a message arrives, or after `dispatch_park_max_hours` (168).
+`arh dispatch message -n N TEXT` is the main controller's way in: it wakes a parked controller, and a
+running one's next `arh wait` prints it and exits 4. Wakes do not count against `dispatch_max_resumes`.
+
+**Per iteration.** `arh claim --worker H --reviewer H --orchestrator H --on-limit fallback|wait|stop`
+(also `--worker-fallback`, `--reviewer-fallback`, `--set KEY=VALUE`) writes `iterationN/harnesses.md`,
+whose keys override `.arh/config/harnesses.md` for that iteration only; unset roles use the project's.
+`arh roles -n N` shows each role and where it comes from, and changes it later. The iteration's
+settings are part of its review terms: changed after the claim, `arh ask` asks for `--terms-changed`.
 
 The continuation is a **fresh session** of the controller harness. It gets the brief, a current
 `arh context -n N`, and a preamble telling it to check `arh status` first and not redo recorded

@@ -22,8 +22,9 @@ composed prompt; `{cwd}` with the working directory.
 ## Roles
 
 `arh ask --role <role>` composes a prompt from
-`skills/cross-check/roles/<role>.md`. Shipped roles are `adversary`,
-`reimplementer`, `estimand-auditor` and `gotcha-scanner`.
+`skills/cross-check/roles/<role>.md`. Shipped roles are `adversary` and
+`reimplementer` (from the frozen DAG). Other checklists come from the research
+skills: `arh ask --skill NAME` (`arh skill` lists them).
 
 ```arh-config
 # Each iteration is bound to this file as it stood when the iteration was claimed. Changing it
@@ -86,6 +87,17 @@ iteration_controller_fallback =
 dispatch_limit_margin = 300
 dispatch_limit_backoff = 1800
 dispatch_max_resumes = 6
+# Restarts that met the limit at once (no model turn) do not count toward dispatch_max_resumes; this
+# bounds the total waiting instead, in seconds.
+dispatch_limit_max_wait = 86400
+# A continued session gets the earlier session's last N steps (what it said, which commands it ran)
+# and is told not to re-read earlier transcripts; 0 sends none.
+dispatch_resume_tail = 30
+# A parked controller (arh dispatch park) waits with no model: the supervisor checks every
+# dispatch_park_poll seconds whether the iteration's runs ended or a message arrived, and wakes it
+# after dispatch_park_max_hours regardless.
+dispatch_park_poll = 300
+dispatch_park_max_hours = 168
 max_parallel_iterations = 2
 # A prefix for the controller's command, e.g. `srun -t 08:00:00 --mem 8G` to run it as a job
 # (the compute node then needs to reach the model provider). Empty runs it here.
@@ -102,8 +114,10 @@ dispatch_env = CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1
 # Every arh command on an iteration records, in metadata/activity.jsonl, the agent process it ran
 # under: the nearest ancestor whose program is one of the harness commands above, for any harness
 # (arh sessions -n N). Optionally also a session id a harness reports in an environment variable,
-# which links to that harness's own transcript; Claude Code's is CLAUDE_CODE_SESSION_ID.
-session_env = CLAUDE_CODE_SESSION_ID
+# which links to that harness's own transcript: Claude Code's CLAUDE_CODE_SESSION_ID, Codex's
+# CODEX_SESSION_ID (the default when unset). A controller started by arh dispatch drops these and
+# the other session markers it would inherit (dispatch_env_unset replaces that list).
+session_env = CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
 
 verifier   = codex
 # Whether a cross-check must come from a different model family than the producer. Keep this
@@ -116,7 +130,7 @@ require_foreign_family = true
 # deny for a blinded study, where a producer must not look published results up:
 # harness/install.sh then turns each harness's web tools off, and arh doctor checks them.
 web_access = allow
-# arh ask, arh delegate and arh evoke refuse to send a plan, report or task that carries something
+# arh ask and arh delegate refuse to send a plan, report or task that carries something
 # shaped like a credential (an API key, a token, a private key). off only for a recorded reason.
 secret_scan = on
 # How arh memory search finds recorded findings: basic-memory (the default, in the tools

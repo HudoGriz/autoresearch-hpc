@@ -14,22 +14,20 @@ makes whatever a generator produces auditable and correctable. It composes with
 those systems rather than competing with them — any of them could be the thing
 that fills in a pre-declaration.
 
-## Composition implemented
+## What it borrows and what it outsources
 
-`arh evoke` now gives that composition claim a concrete, bounded interface. The
-first registry entries are [Biomni](https://github.com/snap-stanford/Biomni),
-[AI Scientist v2](https://github.com/SakanaAI/AI-Scientist-v2) and
-[Agent Laboratory](https://github.com/SamuelSchmidgall/AgentLaboratory). They
-were selected because each has an official open repository and can be invoked
-locally through a pinned, site-owned wrapper. None is bundled or enabled by
-default.
+A generator can still fill a pre-declaration: run it yourself and record what it did with
+`arh note`. ARH no longer wraps generators (`arh evoke` was removed on 2026-10-30, unused in 73
+iterations). From AI Scientist v2 it takes two ideas, not code: an exploratory iteration records its
+search as a journal of attempts (`arh claim --explore`), and the chosen variant is re-measured in a
+confirmatory iteration on data the choice was not made on (`arh claim --promotes N`).
 
-The request, response, artifacts, command, version and hashes are retained, but
-the response is advisory: it still has to enter the ordinary pre-declaration,
-pinned execution and review path. [AgentRxiv](https://github.com/AgentRxiv/AgentRxiv.github.io),
-Robin and Kosmos remain documented composition targets rather than built-in
-adapters because publication/exchange or hosted-service data egress needs a
-separate operator policy. See [external generators](external-generators.md).
+Maintained tools do the rest: Nextflow runs the work, Entire records agent sessions, gitleaks holds
+the credential rules, basic-memory searches the knowledge notes, abtop shows live sessions, the ARIS
+research skills supply review and writing checklists (`arh skill`), and
+[Chaperone](https://github.com/HudoGriz/hpc-chaperone) gives each agent its own Unix identity, which
+is where access control belongs. The survey and the reasoning are in the study's
+`ARH_OUTSOURCING_REVIEW.md` (2026-10-30).
 
 ## The failure modes it targets
 
@@ -60,7 +58,7 @@ here:
 | 57% of agent users with failures repeat an identical failure across sessions; lessons are relearned per user | `DIRECTIVES.md` and `GOTCHAS.md` in the project, a site-wide `site_gotchas` file, each entry with its source and conditions (§8.4) |
 | 32.7% of agent jobs finish within a minute and 10.3% are cancelled ("trial storms") | `arh submit --lint`, `arh doctor --smoke`, an `arh-smoke` block run at the pre-declaration gate, `arh inputs check` |
 | sessions last a median of 7.5 days and are lost on disruption | `arh submit --detach`, iteration leases, `arh status --running` |
-| 127 API keys exposed in three weeks; secrets leak through model requests | `arh ask`, `arh delegate` and `arh evoke` refuse requests carrying credentials |
+| 127 API keys exposed in three weeks; secrets leak through model requests | `arh ask` and `arh delegate` refuse requests carrying credentials |
 
 [RASER](https://arxiv.org/abs/2609.03598) (Attar-Khorasani, Lieber and Ghiasvand, 2026)
 adds checkpointed, work-stealing agent job arrays to Slurm, and
@@ -119,7 +117,7 @@ Those classes included:
 - concurrent agents attempting to allocate the same unit of work, motivating
   atomic iteration claiming;
 - an analysis question drifting from the intended change/contrast, motivating
-  explicit estimands and a dedicated estimand-auditor role;
+  explicit estimands in every pre-declaration;
 - a set-valued result appearing to reproduce when only its cardinality matched,
   motivating membership-aware verification;
 - upstream metadata required by an analysis disappearing while downstream tools

@@ -32,20 +32,21 @@ arh — AutoResearch HPC
 
   arh init [dir] [options]       create and bootstrap a research project
   arh migrate [DIR] [--apply]    bring a study up to this framework: layout, agent contract, skills (dry run first)
-  arh claim  -t TITLE            atomically claim the next iteration number
+  arh claim  -t TITLE            atomically claim the next iteration number (--explore: exploratory)
   arh new    -n N                scaffold iteration N from the pre-declaration template
-  arh arm    {new|gate|fate|list} parallel sub-analyses within one iteration
   arh gate   predeclare -n N     check the pre-declaration, then freeze its hash
   arh gate   results    -n N     check results against the frozen pre-declaration
   arh gate   rules      <file>   check a document against the standing rules
+  arh sign   -n N | list         the operator's sign-off on a concluded finding (not from an agent)
   arh freeze -n N PATH...        freeze the decisions a confirmation applies; unseals sealed inputs for it
   arh ask    --role R -n N       cross-check with a foreign harness
-  arh evoke  TOOL -n N --phase P invoke a configured external research generator
   arh delegate --role R -n N     hand a bounded task to the configured orchestrator/executor harness
+  arh roles -n N [--worker H ...] show or set this iteration's worker, reviewer and orchestrator harnesses
   arh dispatch -n N --brief F    give iteration N its own controller session (orchestration = per-iteration)
   arh verify {new|gate|run|conclude|list}  re-examine an object an iteration produced
   arh note   -n N [--job ID] TEXT record work that ran outside arh submit
   arh dag    {init|check|freeze} reconstruct the path a result took
+  arh skill  [NAME]              research skills (ARIS): list them, or print one SKILL.md path
   arh replicate [run|report]     N agents re-implement from the DAG, blind to the code
   arh run    IMAGE -- CMD...     run a command in a pinned container
   arh submit SCRIPT -n NAME      submit a job through the configured workflow engine
@@ -78,7 +79,7 @@ case "$cmd" in
       "$(sed -n 's/^# The AutoResearch HPC protocol, v//p' "$ARH_HOME/PROTOCOL.md" 2>/dev/null || echo unknown)"
     ;;
   # Commands that change the record: with git_record = on, a successful one is committed.
-  claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify)
+  claim|new|gate|freeze|ask|memory|ledger|note|dispatch|verify|sign|migrate|roles)
     rc=0; "$ARH_HOME/bin/arh-$cmd" "$@" || rc=$?
     # The commit takes the iteration or verification named by -n (and the shared files), never
     # another session's work in progress (field feedback #118).
@@ -86,7 +87,7 @@ case "$cmd" in
     for a in "$@"; do [ "$prev" = -n ] && scope=$a; prev=$a; done
     [ "$rc" -ne 0 ] || [ -z "${ARH_ROOT:-}" ] || arh_git_record "arh $cmd $*" "$scope"
     exit "$rc" ;;
-  init|migrate|arm|evoke|delegate|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
+  init|delegate|skill|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac

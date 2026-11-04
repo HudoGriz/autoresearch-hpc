@@ -26,18 +26,6 @@ arh freeze -n N iterations/iteration8/results/model/ iterations/iteration8/resul
 arh submit iterations/iterationN/scripts/confirm.nf -n itN_confirm
 ```
 
-## Confirming on held-out data: freeze, then unseal
-
-When the project declares `sealed_inputs` (an external validation sample, a
-test split), no run can read them while you are still choosing. Once the
-configuration is chosen without them:
-
-```bash
-arh freeze -n N iterations/iteration8/results/model/ iterations/iteration8/results/thresholds.json \
-    iterations/iterationN/scripts/
-arh submit iterations/iterationN/scripts/confirm.nf -n itN_confirm
-```
-
 `FREEZE.json` is written once and names every file the confirmation applies:
 the model, the thresholds and emission rule, the feature list, the scripts.
 Freeze everything that carries a decision, not only the model file. A run of
@@ -147,7 +135,7 @@ notices, and it ends as soon as its reply ends.
   was spent. The reset time it prints is an upper bound, not a schedule: run the
   same command again after a bounded wait (for example 30 minutes) instead of
   sleeping until then.
-- `arh ask`, `arh delegate` and `arh evoke` refuse to send a request that carries
+- `arh ask` and `arh delegate` refuse to send a request that carries
   something shaped like a credential. Remove it from the file; never paste keys or
   tokens into a pre-declaration, report, task or note.
 - `arh ask` exit 77: the provider refused the content. No round was spent, and
@@ -192,16 +180,42 @@ does not change a dispatched iteration, and `arh` refuses if it tries. An
 iteration controller finds its instructions in its prompt; it works only on its
 own iteration and ends with `arh dispatch report`.
 
-## Optional external generators
+## Exploratory iterations
 
-External research systems are proposal engines, not protocol authorities. Read
-`skills/evoke/SKILL.md` and run `arh evoke list` when a specialist generator
-materially fits the iteration. Preview the bounded request with `--dry-run`;
-never clone, install, enable or invoke a generator implicitly.
+`arh claim --explore -t ...` claims an exploratory iteration: a search, not a finding. `arh new`
+writes a short plan (aim, selection rule) and a journal table. No freeze and no review are needed;
+run attempts with `arh submit` and add one journal row per attempt, failed ones too, each naming
+its run. Sealed inputs stay sealed, and `arh freeze` refuses. It concludes with a short report and
+`arh gate results`, which checks that every run is in the journal.
 
-An evocation is stored under `metadata/evocations/` and cannot satisfy a
-results gate. Adopt useful proposals through the ordinary pre-declaration,
-pinned execution, cross-check and ledger path. Never send credentials, patient
-identifiers or undeclared data, and never use an evoked generator in place of
-the required `arh ask` review.
+Its numbers are not findings. To report the chosen variant, claim a confirmatory iteration with
+`arh claim --promotes N`: it takes N's question, its pre-declaration states how many attempts the
+choice came from, and it measures the variant on data the choice was not made on (fresh seeds,
+other samples, or a sealed set). The ledger lists exploratory iterations with their attempt counts.
+
+Use exploratory iterations for tuning, debugging a pipeline and trying variants. Use a confirmatory
+iteration for anything the report will state.
+
+## Research skills (ARIS)
+
+`arh skill` lists the research skills installed with the integrations (ARIS, pinned in
+`config/dependencies.json`), and `arh skill NAME` prints the path of one `SKILL.md` for any harness
+to read. Read them as checklists: where a skill calls another reviewer, an MCP tool or the web,
+skip that step (`arh ask` is the review), and use web steps only where `web_access` allows.
+
+- before `arh gate results`: `experiment-audit` (fake ground truth, results with no source);
+- in a review: `arh ask --skill paper-claim-audit` (or `result-to-claim`, `kill-argument`) adds
+  the skill to the reviewer's instructions;
+- answering findings: `rebuttal`;
+- planning an exploratory search: `experiment-plan`, `ablation-planner`, `novelty-check`;
+- the final report: `research-lit`, `citation-audit`, `paper-plan`, `paper-writing`, `paper-figure`.
+
+## Calibrating the reviewers
+
+To know what the review gate catches, plant errors and count. Claim an exploratory iteration
+(`arh claim --explore -t 'reviewer calibration'`), copy a concluded iteration's report (renamed to
+this iteration's number) and results into it with a few known errors (a wrong denominator, a
+swapped label, a number no file holds, a missing negative control), list them in its README, and
+run `arh ask` with each reviewer harness. Record per harness how many planted errors the review
+names. A reviewer that misses most of them is not evidence of soundness.
 

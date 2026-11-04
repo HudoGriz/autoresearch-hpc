@@ -36,6 +36,11 @@ arh gate results -n N
 arh ledger render && arh ledger check
 ```
 
+Tuning, debugging and trying variants go in an exploratory iteration
+(`arh claim --explore`): no freeze and no review, one journal row per attempt,
+sealed inputs stay sealed, and nothing in it is a finding. Promote the chosen
+variant with `arh claim --promotes N`, which re-measures it under the full loop.
+
 If your harness resets the shell's directory, `export ARH_PROJECT=<study>`.
 `skills/iterate/SKILL.md` walks one iteration; `skills/iterate/reference.md`
 covers workflows for `arh submit`, held-out data (`arh freeze`), the
@@ -80,7 +85,7 @@ report states comes from a file under `results/`.
   limit in the estimand's units.
 - Anything without orthogonal validation is a candidate; causal language only
   when the design supports it.
-- Report negative controls, failed arms and missed predictions.
+- Report negative controls, failed attempts and missed predictions.
 
 An operator's challenge is the motivation for a new iteration, not an edit. A
 failed acceptance criterion is this iteration's result: report, review and

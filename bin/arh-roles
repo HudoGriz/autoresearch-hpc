@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Show or set the harness each role uses in one iteration. Unset roles use .arh/config/harnesses.md.
+set -euo pipefail
+# shellcheck source=lib/common.sh
+. "${ARH_HOME:?}/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+usage: arh roles -n N [--worker H] [--worker-fallback H] [--reviewer H] [--reviewer-fallback H]
+                      [--orchestrator H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
+
+Without a setting, prints each role's harness for iteration N and where it comes from. A setting is
+written to iterationN/harnesses.md and applies to this iteration only. After the claim it is a change
+of the review terms: arh ask then asks for --terms-changed. A running dispatch reads it at its next
+restart.
+USAGE
+}
+
+n=""; pairs=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n) n="$2"; shift 2 ;;
+    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--orchestrator|--on-limit)
+        pairs+=("${1#--}=$2"); shift 2 ;;
+    --set) pairs+=("$2"); shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) arh_die "unexpected argument: $1" ;;
+  esac
+done
+case "$n" in ""|*[!0-9]*) arh_die "which iteration? arh roles -n N" ;; esac
+arh_load_project
+dir="$ARH_ITERS/iteration$n"
+[ -f "$dir/CLAIM.json" ] || arh_die "no claimed iteration $n"
+[ ${#pairs[@]} -eq 0 ] || arh_set_iter_harn "$dir" "${pairs[@]}"
+
+printf '%-18s %-30s %s\n' ROLE HARNESS FROM
+for pair in worker:iteration_controller worker-fallback:iteration_controller_fallback reviewer:verifier \
+            reviewer-fallback:verifier_fallback orchestrator:orchestrator executor:executor on-limit:dispatch_on_limit; do
+  role=${pair%%:*}; key=${pair#*:}
+  own=$(arh_config_get "$dir/harnesses.md" "$key" "")
+  if [ -n "$own" ]; then printf '%-18s %-30s %s\n' "$role" "$own" "iteration$n/harnesses.md"
+  else printf '%-18s %-30s %s\n' "$role" "$(arh_config_get "$ARH_HARN" "$key" "-")" "project"; fi
+done

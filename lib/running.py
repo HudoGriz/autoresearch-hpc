@@ -39,28 +39,32 @@ def ago(seconds):
 
 
 def queued(scheduler):
-    """[(state, working directory)] of this user's Slurm jobs. A Nextflow task's job runs in its work
-    directory, which lies under the submission's own work/, so jobs can be counted per run."""
+    """[(state, reason, working directory)] of this user's Slurm jobs. A Nextflow task's job runs in its
+    work directory, which lies under the submission's own work/, so jobs can be counted per run."""
     if scheduler != 'slurm':
         return []
     try:
-        out = subprocess.run(['squeue', '-h', '-u', os.environ.get('USER', ''), '-o', '%T|%Z'],
+        out = subprocess.run(['squeue', '-h', '-u', os.environ.get('USER', ''), '-o', '%T|%r|%Z'],
                              capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired):
         return []
-    return [tuple(line.split('|', 1)) for line in out.splitlines() if '|' in line]
+    return [tuple(line.split('|', 2)) for line in out.splitlines() if line.count('|') >= 2]
 
 
 def queue_note(work, jobs, idle, starve_hours):
     """'3 running, 12 pending in the queue', with STARVED when tasks wait and none has started or
     finished for starve_hours: one iteration's 4-CPU tasks waited 3.5 days behind another's larger
-    ones while its driver kept logging and looked live (field feedback #69)."""
+    ones while its driver kept logging and looked live (field feedback #69). Pending jobs carry the
+    scheduler's reason: 384 GPU tasks waited 14 h on Resources and only squeue said so (#142)."""
     prefix = str(work) + os.sep
-    mine = Counter(s for s, wd in jobs if wd.startswith(prefix))
+    mine = [(s, r) for s, r, wd in jobs if wd.startswith(prefix)]
     if not mine:
         return ''
-    running, pending = mine.get('RUNNING', 0), mine.get('PENDING', 0)
-    note = f'; {running} running, {pending} pending in the queue'
+    states = Counter(s for s, _ in mine)
+    running, pending = states.get('RUNNING', 0), states.get('PENDING', 0)
+    reasons = Counter(r for s, r in mine if s == 'PENDING')
+    why = f" ({', '.join(f'{r} {k}' for r, k in reasons.most_common(3))})" if reasons else ''
+    note = f'; {running} running, {pending} pending in the queue{why}'
     if pending and not running and idle is not None and idle > starve_hours * 3600:
         note += f' — STARVED: nothing has started or finished for {ago(idle)}'
     return note

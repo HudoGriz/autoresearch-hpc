@@ -205,37 +205,14 @@ else
   done
 fi
 
-printf '\nexternal generators (optional):\n'
-if [ ! -f "$ARH_GENS" ]; then
-  arh_warn "no generators.md; run: arh migrate $ARH_ROOT"
-else
-  for g in $(arh_config_get "$ARH_GENS" generators ""); do
-    enabled=$(arh_config_get "$ARH_GENS" "generator_${g}_enabled" false)
-    cmd=$(arh_config_get "$ARH_GENS" "generator_${g}_cmd" "")
-    if [ "$enabled" != true ]; then
-      arh_info "$g — disabled"
-      continue
-    fi
-    if [ -z "$cmd" ]; then
-      arh_fail "$g — enabled but generator_${g}_cmd is empty"
-      warn=$((warn+1))
-      continue
-    fi
-    exe=$(python3 -c 'import shlex,sys; p=shlex.split(sys.argv[1]); print(p[0] if p else "")' "$cmd" 2>/dev/null || true)
-    if { case "$exe" in /*) [ -x "$exe" ] ;; *) command -v "$exe" >/dev/null 2>&1 ;; esac; }; then
-      arh_ok "$g — enabled; $exe present"
-    else
-      arh_fail "$g — enabled; command not found: $exe"
-      warn=$((warn+1))
-    fi
-  done
-fi
-
 printf '\nknowledge:\n'
 # Facts that outlive a session belong in the project, where every harness and the reviewer read them
 # (agent contract rule 10). A study once ran on directives held only in one harness's private memory.
-for f in "${ARH_DIRECTIVES#"$ARH_ROOT"/}" GOTCHAS.md; do
-  if [ -f "$ARH_ROOT/$f" ]; then arh_ok "$f"
+for f in "${ARH_DIRECTIVES#"$ARH_ROOT"/}" GOTCHAS.md PROGRESS.md; do
+  # Every session reads these: past ~600 lines each, history belongs in the ledger and the git record.
+  if [ -f "$ARH_ROOT/$f" ] && [ "$(wc -l < "$ARH_ROOT/$f")" -gt 600 ]; then
+    arh_warn "$f has $(wc -l < "$ARH_ROOT/$f") lines, and every session pays to read it: keep what is in force, move history to the ledger"
+  elif [ -f "$ARH_ROOT/$f" ]; then arh_ok "$f"
   else
     arh_warn "$f is missing, so what it should hold lives only in some session's memory; fix: arh migrate $ARH_ROOT --apply"
   fi
@@ -278,6 +255,28 @@ if arh_has_sealed; then
       *) arh_warn "$msg" ;;
     esac
   done < <(python3 "$ARH_HOME/lib/freeze.py" doctor "$ARH_ROOT")
+  # Harnesses run through Chaperone (https://github.com/HudoGriz/hpc-chaperone) act as their own Unix
+  # user, so the operating system can keep sealed inputs from them whatever the harness: check that
+  # each such persona cannot read them (a persona that holds the data's group can).
+  while IFS=$'\t' read -r h profile; do
+    [ -n "$h" ] || continue
+    readable=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from freeze import sealed_inputs
+print("\n".join(str(p) for p in sealed_inputs(sys.argv[2])))' "$ARH_HOME/lib" "$ARH_ROOT" \
+      | while IFS= read -r p; do chaperone ${profile:+-p "$profile"} -- test -r "$p" 2>/dev/null && printf '%s\n' "$p"; done)
+    if [ -z "$readable" ]; then arh_ok "harness $h runs through Chaperone and cannot read the sealed inputs"
+    else arh_warn "harness $h runs through Chaperone but its persona can read sealed input(s): $(printf '%s\n' "$readable" | head -3 | paste -sd' ' -)"; fi
+  done < <(python3 - "$ARH_HARN" <<'PY'
+import re, shlex, sys
+sys.path.insert(0, __import__('os').environ['ARH_HOME'] + '/lib')
+from project import config
+for key, value in config(sys.argv[1]).items():
+    m = re.fullmatch(r'harness_(.+)_cmd', key)
+    words = shlex.split(value) if m and value.strip() else []
+    if words and words[0].endswith('chaperone'):
+        profile = words[words.index('-p') + 1] if '-p' in words[:3] else ''
+        print(f'{m.group(1)}\t{profile}')
+PY
+)
 fi
 
 printf '\nrules:\n'

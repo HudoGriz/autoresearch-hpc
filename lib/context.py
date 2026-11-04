@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from attempts import tier, unjournalled
 from harness import digest, valid_records
 from project import knowledge
 from freeze import state as freeze_state
@@ -53,5 +54,13 @@ state['memory'] = memory_index(root, os.environ['ARH_ITERS'], 20)
 notes = directory / 'metadata/notes.jsonl'
 state['notes'] = [json.loads(line) for line in (notes.read_text().splitlines() if notes.is_file() else [])
                   if line.strip()][-5:]
-state['next'] = 'inspect altered plan' if state['predeclaration'] == 'ALTERED' else ('freeze plan' if state['predeclaration'] != 'frozen' else ('execute/write report' if not report.exists() else ('review evidence' if not state['reviews'] else 'check results gate and ledger')))
+state['tier'] = tier(directory)
+if state['tier'] == 'exploratory':
+    state['next'] = 'run attempts, one journal row each' if not report.exists() else 'arh gate results, then arh claim --promotes ' + n
+    # A session restarted after a limit lost the attempts its predecessor had run but not journalled (85).
+    missing = unjournalled(directory)
+    if missing:
+        state['next'] = 'journal the runs without a row: ' + ', '.join(missing) + '; then ' + state['next']
+else:
+    state['next'] = 'inspect altered plan' if state['predeclaration'] == 'ALTERED' else ('freeze plan' if state['predeclaration'] != 'frozen' else ('execute/write report' if not report.exists() else ('review evidence' if not state['reviews'] else 'check results gate and ledger')))
 print(json.dumps(state, ensure_ascii=True, indent=2))

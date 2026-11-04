@@ -16,14 +16,16 @@ import time
 
 import re
 
+import attempts
 import freeze
 import imports
 import inputs
 import lease
 from locks import Held, acquire, owner, release
-from project import config, guard, share
+from project import config, guard, notify as notify_operator, share
 
 GPU_LABELS = ('gpu', 'process_gpu')
+DETACH_WATCH = 30          # seconds a detached submission is watched for an early failure
 # Groovy, evaluated per task in the generated config: does this task want a GPU?
 WANTS_GPU = ("((task.label ?: []).any { it in ['" + "', '".join(GPU_LABELS) + "'] } || task.accelerator)")
 
@@ -96,11 +98,16 @@ def detach(lock, logs, owner_dir, kind):
         child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *argv], stdin=subprocess.DEVNULL,
                                  stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
                                  env=dict(os.environ, ARH_DETACHED='1'))
-    deadline = time.time() + 600
+    started = time.time()
+    deadline = started + 600
     while time.time() < deadline and child.poll() is None:
         record = owner(lock)
         if record and record.get('pid') == child.pid:
             break
+        time.sleep(0.5)
+    # A script error ends the run seconds after it starts (83: a shadowed closure variable; 85: an
+    # undefined variable in publishDir, which `nextflow lint` passes); say so before the caller parks (#161).
+    while time.time() < started + DETACH_WATCH and child.poll() is None:
         time.sleep(0.5)
     if child.poll() is not None and child.returncode:
         print(log.read_text()[-3000:], file=sys.stderr)
@@ -172,7 +179,9 @@ def run():
     if args.lint:
         return lint(workflow, root, site, parser)
     import_sha256 = {}
-    if kind != 'smoke':
+    # An exploratory iteration runs without a frozen plan; it never unseals anything (below).
+    exploratory = kind == 'iteration' and attempts.tier(iteration) == 'exploratory'
+    if kind != 'smoke' and not exploratory:
         predeclared = iteration / 'PREDECLARATION.sha256'
         if not predeclared.is_file() or predeclared.read_text().splitlines()[0] != sha(plan):
             parser.error(f'{kind} must have an unchanged frozen pre-declaration')
@@ -202,7 +211,7 @@ def run():
               + '. Report it as a deviation; the run receipt records it.', file=sys.stderr)
     sealed = freeze.sealed_inputs(root)
     # A valid freeze releases only the sealed groups it names; every other sealed path stays hidden.
-    readable = freeze.unsealed(root, iteration) if sealed and kind != 'smoke' else []
+    readable = freeze.unsealed(root, iteration) if sealed and kind != 'smoke' and not exploratory else []
     hidden = [p for p in sealed if p not in readable]
     unsealed = bool(readable)
     if hidden and kind != 'smoke':
@@ -509,6 +518,7 @@ def run():
               + (f'; stopped by {record["signal"]}' if received else ''), file=sys.stderr)
         if returncode:
             print('\n'.join((attempt / 'console.log').read_text().splitlines()[-20:]), file=sys.stderr)
+            notify_operator(root, 'run-failed', iteration.name[9:], f'run {name} exited {returncode} ({attempt})')
         return returncode
     finally:
         release(lock)

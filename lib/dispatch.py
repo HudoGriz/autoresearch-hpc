@@ -21,6 +21,14 @@ under the site scheduler. ARH keeps only what is protocol-specific:
   dispatch.py status [N]                          dispatches and their outcomes
   dispatch.py controller DIR                      harness of the iteration's latest dispatch
   dispatch.py tick                                restart supervisors that died (cron-safe, no model call)
+  dispatch.py park N SUMMARY                      the controller ends its session while its runs go on
+  dispatch.py message N TEXT                      the main controller's word to a dispatched controller
+
+A controller whose submissions will run for hours parks (`arh dispatch park`) instead of polling
+`arh wait`, a model turn every few minutes (iteration 70: 162 M tokens, mostly waiting; field
+feedback #144, #156). Its session ends, the supervisor waits with no model running until no
+submission or review of the iteration runs or a message arrives, then starts a fresh session with
+the park note, the messages and the last steps.
 
 A controller that stops at its provider's usage limit is continued, not lost (dispatch_on_limit):
 on iteration_controller_fallback at once, or on the same harness once the limit lifts, as a fresh
@@ -41,13 +49,20 @@ import subprocess
 import sys
 import time
 
+# The variables by which a harness marks the session a process belongs to. A controller is its own
+# session, so it never inherits these from the session that dispatched it (field feedback #130).
+# dispatch_env_unset (harnesses.md) replaces the list; session_env names are always dropped.
+INHERITED = ('CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION '
+             'CLAUDE_CODE_SESSION_ATTENDED CODEX_SESSION_ID CODEX_THREAD_ID CODEX_CI')
+
 import agenthome
 import attempts
 from findings import summary as verdict_summary
 from harness import classify, cli_version, digest, reset_epoch
 import lease
 import locks
-from project import config
+from locks import running as live_runs
+from project import iteration_config, notify
 from secret_scan import findings as secret_findings, redact_file
 
 OUTCOMES = ('concluded', 'unconcluded', 'blocked')
@@ -94,9 +109,14 @@ def prompt(n, brief):
         + f'\n---\n\n## The iteration as it stands (arh context -n {n})\n\n```json\n{context.strip()}\n```\n'
 
 
+def harness_config(directory):
+    """The iteration's harness settings: its own harnesses.md (arh roles) over the project's."""
+    return iteration_config(directory, os.environ.get('ARH_HARN_PROJECT') or os.environ['ARH_HARN'])
+
+
 def start(n, brief, harness, detach, dry):
-    harn = config(os.environ['ARH_HARN'])
     directory = iteration(n)
+    harn = harness_config(directory)
     if harn.get('orchestration', 'single') != 'per-iteration':
         sys.exit("arh: arh dispatch needs orchestration = per-iteration in .arh/config/harnesses.md; with "
                  "single, one producer session does the whole iteration")
@@ -183,6 +203,75 @@ not repeat a step whose record exists.
 
 """
 
+WAKE = """## Waking from a park
+
+You parked this iteration at {when} ({why}). This is a new session; the project holds everything
+the earlier one recorded. Run `arh status -n {n}` and `arh status --running` first. Your park note:
+
+{note}
+
+{messages}"""
+
+MESSAGES = """### Messages from the main controller
+
+{text}
+
+"""
+
+HANDOVER = """### The earlier session's last steps
+
+Its last {count} steps, oldest first, are below. With `arh status` and the iteration's files they are
+enough to continue: do not open earlier session logs or transcripts (metadata/dispatch/*/session*.log,
+the harness's own history), which would re-read the whole earlier conversation.
+
+{steps}
+
+"""
+
+
+def handover(log, limit):
+    """The last LIMIT steps of a stream-json controller log, one line each: what the session said and
+    which commands it ran, so a resumed session continues without re-reading the transcript."""
+    steps = []
+    try:
+        lines = Path(log).read_text(errors='replace').splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get('type') != 'assistant':
+            continue
+        for block in (event.get('message') or {}).get('content') or []:
+            if block.get('type') == 'text' and block.get('text', '').strip():
+                steps.append('- said: ' + ' '.join(block['text'].split())[:300])
+            elif block.get('type') == 'tool_use':
+                args = block.get('input') or {}
+                what = args.get('command') or args.get('file_path') or json.dumps(args)
+                steps.append(f"- {block.get('name')}: " + ' '.join(str(what).split())[:200])
+    return steps[-limit:] if limit > 0 else []
+
+
+def resume_preamble(why, when, n, record, harn):
+    """RESUME, plus the previous attempt's last steps unless dispatch_resume_tail = 0."""
+    text = RESUME.format(why=why, when=when, n=n)
+    # The latest session that did any work: a probe that met the limit at once has nothing to hand over.
+    logs = [p for p in sorted(record.glob('session*.log'), key=lambda p: p.stat().st_mtime) if did_work(p)]
+    tail_n = int(harn.get('dispatch_resume_tail', '30') or 0)
+    steps = handover(logs[-1], tail_n) if logs else []
+    return text + HANDOVER.format(count=len(steps), steps='\n'.join(steps)) if steps else text
+
+
+def did_work(log):
+    """Whether a controller session got any model turn: a probe that met the usage limit at once did not."""
+    try:
+        return any('"type":"assistant"' in line.replace(' ', '') and '"model":"<synthetic>"' not in line.replace(' ', '')
+                   for line in Path(log).read_text(errors='replace').splitlines())
+    except OSError:
+        return False
+
 
 def tail(*paths, limit=20000):
     text = ''
@@ -216,7 +305,7 @@ def entire_session(started, agent_hint):
 
 def run_controller(n, record, run, harness, k, preamble):
     """Start one controller session; return its exit code and the paths of its logs."""
-    harn = config(os.environ['ARH_HARN'])
+    harn = harness_config(record.parents[2])
     suffix = '' if k == 0 else f'.{k}'
     out_log, err_log = record / f'session{suffix}.log', record / f'stderr{suffix}.log'
     template = harn.get(f'harness_{harness}_cmd', run['command_template']) if k else run['command_template']
@@ -238,6 +327,8 @@ def run_controller(n, record, run, harness, k, preamble):
     base, linked = (agenthome.fresh_env(record / 'home', harn.get('fresh_home_files', ''),
                                         harn.get('fresh_home_env_unset', '')) if fresh else (dict(os.environ), []))
     env = dict(base, ARH_SESSION=run['session'], ARH_DISPATCH=str(n), ARH_PROJECT=os.environ['ARH_ROOT'])
+    for name in (harn.get('dispatch_env_unset') or INHERITED).split() + os.environ.get('ARH_SESSION_ENV', '').split():
+        env.pop(name, None)
     for assignment in shlex.split(harn.get('dispatch_env', '')):
         key, _, value = assignment.partition('=')
         if key:
@@ -247,11 +338,20 @@ def run_controller(n, record, run, harness, k, preamble):
     with open(out_log, 'wb') as out, open(err_log, 'wb') as err, \
             open(record / f'prompt{suffix}.md', 'rb') if on_stdin else open(os.devnull, 'rb') as stdin:
         try:
-            rc = subprocess.run(argv, cwd=os.environ['ARH_ROOT'], env=env, stdin=stdin, stdout=out, stderr=err,
-                                timeout=timeout or None).returncode
-        except subprocess.TimeoutExpired:
-            rc = 124
-            err.write(f'\narh: the controller ran longer than dispatch_timeout ({timeout:g} s) and was stopped\n'.encode())
+            child = subprocess.Popen(argv, cwd=os.environ['ARH_ROOT'], env=env, stdin=stdin, stdout=out, stderr=err)
+            # The lock names the controller too: if this supervisor dies while the controller works on,
+            # arh dispatch tick must not start a second controller (field feedback #146).
+            lock = record.parents[2] / '.dispatch-lock'
+            owner = locks.owner(lock)
+            if owner:
+                (lock / 'owner.json').write_text(json.dumps(dict(owner, controller_pid=child.pid)) + '\n')
+            try:
+                rc = child.wait(timeout=timeout or None)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+                rc = 124
+                err.write(f'\narh: the controller ran longer than dispatch_timeout ({timeout:g} s) and was stopped\n'.encode())
         except OSError as error:
             rc = 127
             err.write(f'\narh: could not start the controller: {error}\n'.encode())
@@ -272,9 +372,49 @@ def next_harness(harn, primary, limited, clock):
                key=lambda c: max(c[1], clock))
 
 
+def busy(n):
+    """The iteration's live submissions and reviews, without its own controller."""
+    return [label for label, lock in live_runs(os.environ['ARH_ITERS'], n)
+            if lock.is_dir() and not label.endswith(': controller') and locks.state(lock) != 'stale']
+
+
+def unread(record, mark=False):
+    """Messages the controller has not seen; MARK records them as seen."""
+    path, seen = record / 'messages.jsonl', record / 'messages.seen'
+    lines = path.read_text().splitlines() if path.is_file() else []
+    done = int(seen.read_text() or 0) if seen.is_file() else 0
+    if mark and len(lines) > done:
+        seen.write_text(str(len(lines)))
+    return [json.loads(line) for line in lines[done:]]
+
+
+def wake_preamble(park, n, record, harn, messages):
+    text = WAKE.format(when=park['time'], why=park['why'], n=n, note=park['summary'],
+                       messages=MESSAGES.format(text='\n'.join(f"- {m['time']}: {m['text']}" for m in messages))
+                       if messages else '')
+    logs = [p for p in sorted(record.glob('session*.log'), key=lambda p: p.stat().st_mtime) if did_work(p)]
+    steps = handover(logs[-1], int(harn.get('dispatch_resume_tail', '30') or 0)) if logs else []
+    return text + HANDOVER.format(count=len(steps), steps='\n'.join(steps)) if steps else text
+
+
+def sleep_parked(n, record, run, harn):
+    """Wait, with no model running, until the parked iteration's runs end, a message arrives or
+    dispatch_park_max_hours pass. Returns why it woke."""
+    poll = float(harn.get('dispatch_park_poll') or 300)
+    limit = time.time() + float(harn.get('dispatch_park_max_hours') or 168) * 3600
+    while True:
+        if unread(record):
+            return 'a message from the main controller'
+        if not busy(n):
+            return 'its submissions and reviews finished'
+        if time.time() >= limit:
+            return f"dispatch_park_max_hours ({harn.get('dispatch_park_max_hours') or 168}) passed"
+        time.sleep(poll)
+
+
 def supervise(n, seq):
-    harn = config(os.environ['ARH_HARN'])
     directory = iteration(n)
+    harn = harness_config(directory)
     record = directory / 'metadata/dispatch' / seq
     run = load(record / 'run.json')
     on_limit = harn.get('dispatch_on_limit', 'fallback')
@@ -282,16 +422,40 @@ def supervise(n, seq):
     restarts = run.setdefault('restarts', [])
     limited = {}
     harness = restarts[-1]['harness'] if restarts else run['harness']
-    preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n) if restarts else ''
+    preamble = resume_preamble(restarts[-1]['reason'], restarts[-1]['time'], n, record, harn) if restarts else ''
     k = len(restarts)
+    run['features'] = ['park']                    # what this supervisor's code supports (park checks it)
     while True:
+        # A parked controller (or a supervisor that tick restarted while parked) sleeps here, with no model.
+        park = load(record / 'parked.json')
+        if park and not load(record / 'summary.json'):
+            run.update(state='parked')
+            save(record / 'run.json', run)
+            why = sleep_parked(n, record, run, harn)
+            (record / 'parked.json').rename(record / f'parked-{k}.json')
+            harn = harness_config(directory)
+            restarts.append(dict(time=now(), reason=f'woke from a park: {why}', harness=harness, waited_s=0, wake=True))
+            note(n, f"dispatch {seq}: woke the controller ({why})", run['session'])
+            preamble = wake_preamble(park, n, record, harn, unread(record, mark=True))
+            run['state'] = 'running'
+            k = len(restarts)
+
         run['attempt_started'] = now()
         save(record / 'run.json', run)
         rc, out_log, err_log, mode = run_controller(n, record, run, harness, k, preamble)
         if k:
             restarts[-1].update(mode=mode, exit_code=rc, finished=now())
+        if (record / 'parked.json').is_file() and not load(record / 'summary.json'):
+            continue
         refusal = classify(tail(out_log, err_log)) if not load(record / 'summary.json') else None
-        if not refusal or refusal[0] != 'limit' or on_limit == 'stop' or len(restarts) >= budget:
+        if k:
+            restarts[-1]['worked'] = did_work(out_log)
+        # A probe that met the limit at once spent no model turn, so it does not use up the budget:
+        # only restarts that worked count, and dispatch_limit_max_wait bounds the time spent waiting.
+        spent = sum(1 for r in restarts if r.get('worked', True) and not r.get('wake'))
+        waited = sum(r.get('waited_s', 0) for r in restarts)
+        if not refusal or refusal[0] != 'limit' or harn.get('dispatch_on_limit', on_limit) == 'stop' or spent >= budget \
+                or waited >= float(harn.get('dispatch_limit_max_wait') or 86400):
             break
         line, hint = refusal[2], refusal[3]
         # The stated reset is an upper bound, not a schedule (arh ask learned this): probe again
@@ -312,7 +476,8 @@ def supervise(n, seq):
                 f"continuing on {nxt} at {restarts[-1]['resumes_at']} (restart {len(restarts)} of {budget})", run['session'])
         time.sleep(wait_s)
         harness, k = nxt, k + 1
-        preamble = RESUME.format(why=restarts[-1]['reason'], when=restarts[-1]['time'], n=n)
+        harn = harness_config(directory)          # arh roles may have changed it while paused
+        preamble = resume_preamble(restarts[-1]['reason'], restarts[-1]['time'], n, record, harn)
         run['state'] = 'running'
         run.pop('paused_until', None)
     removed = sum(redact(p) for p in sorted(record.glob('session*.log')) + sorted(record.glob('stderr*.log')))
@@ -327,8 +492,10 @@ def supervise(n, seq):
         locks.release(directory / '.dispatch-lock')
     except OSError:
         pass
-    print(f"iteration {n}: controller exited {rc}; outcome {summary.get('outcome') or 'not reported'}"
-          f"{f', after {len(restarts)} restart(s)' if restarts else ''} (metadata/dispatch/{seq})", file=sys.stderr)
+    message = (f"iteration {n}: controller exited {rc}; outcome {summary.get('outcome') or 'not reported'}"
+               f"{f', after {len(restarts)} restart(s)' if restarts else ''} (metadata/dispatch/{seq})")
+    print(message, file=sys.stderr)
+    notify(os.environ['ARH_ROOT'], 'controller-ended', n, message)
     return rc
 
 
@@ -350,7 +517,7 @@ def tick():
         record = runs[-1]
         run = load(record / 'run.json')
         lock = directory / '.dispatch-lock'
-        if run.get('state') not in ('running', 'paused') or load(record / 'summary.json'):
+        if run.get('state') not in ('running', 'paused', 'parked') or load(record / 'summary.json'):
             continue
         if lock.is_dir() and locks.state(lock) != 'stale':
             continue
@@ -377,7 +544,40 @@ def tick():
     return 0
 
 
-def report(n, outcome, text):
+def current(n):
+    directory = iteration(n)
+    holder = lease.dispatched(directory) or {}
+    seq = holder.get('dispatch') or (records(directory)[-1].name if records(directory) else None)
+    if not seq:
+        sys.exit(f'arh: iteration {n} has no dispatch record')
+    return directory / 'metadata/dispatch' / seq
+
+
+def park(n, text):
+    if os.environ.get('ARH_DISPATCH') != str(n):
+        sys.exit(f'arh: only the controller dispatched to iteration {n} parks it')
+    if len(text.split()) < 5:
+        sys.exit('arh: the park note is all the next session gets besides the project: say what runs, '
+                 'what to check when it ends and what comes next')
+    runs = busy(n)
+    if not runs:
+        sys.exit(f'arh: nothing of iteration {n} is running (arh submit --detach first); a park would wake at once')
+    record = current(n)
+    if 'park' not in load(record / 'run.json').get('features', []):
+        sys.exit(f'arh: the supervisor of this dispatch started before arh dispatch park existed: keep waiting with arh wait')
+    save(record / 'parked.json', dict(time=now(), why='waiting on ' + '; '.join(runs), summary=text))
+    print(f'parked iteration {n}: end this session now; it restarts when {len(runs)} run(s) end or a message arrives')
+
+
+def message(n, text):
+    record = current(n)
+    with open(record / 'messages.jsonl', 'a') as handle:
+        handle.write(json.dumps(dict(time=now(), text=text)) + '\n')
+    print(f'message left for iteration {n} ({record.name}): a parked controller wakes on it, a running one '
+          'sees it at its next arh wait')
+
+
+def report(n, outcome, text, flag=''):
     directory = iteration(n)
     if os.environ.get('ARH_DISPATCH') != str(n):
         sys.exit(f'arh: only the controller dispatched to iteration {n} reports on it (arh dispatch report runs '
@@ -392,9 +592,15 @@ def report(n, outcome, text):
     if not seq:
         sys.exit(f'arh: iteration {n} has no dispatch record')
     data = dict(outcome=outcome, summary=text, time=now(), state=attempts.state(directory),
-                verdicts=verdict_summary(directory) or None, question=attempts.question(directory))
+                verdicts=verdict_summary(directory) or None, question=attempts.question(directory),
+                flag=flag or None, failed_checks=attempts.failed_checks(directory) or None)
     if outcome == 'concluded' and data['state'] != 'concluded':
         sys.exit(f'arh: iteration {n} has not passed arh gate results; report it as unconcluded or blocked')
+    # The record and the hand-back must agree (field feedback #152): a failed criterion or control is the
+    # result of a concluded iteration, and what the main controller should look at goes in --flag.
+    if outcome != 'concluded' and data['state'] == 'concluded':
+        sys.exit(f'arh: iteration {n} passed arh gate results, so it is concluded: report --outcome concluded, and '
+                 "put what the main controller must decide in --flag 'TEXT'")
     save(directory / 'metadata/dispatch' / seq / 'summary.json', data)
     print(f'reported iteration {n}: {outcome}')
 
@@ -409,12 +615,15 @@ def status(number=None):
         for record in records(directory):
             run, summary = load(record / 'run.json'), load(record / 'summary.json')
             running = live is not None and live.get('dispatch') == record.name
-            state = ('paused' if running and run.get('state') == 'paused' else 'running') if running else (
+            state = (run['state'] if running and run.get('state') in ('paused', 'parked') else 'running') if running else (
                 f"exited {run.get('exit_code')}" if run.get('state') == 'finished' else 'interrupted')
             if running and run.get('paused_until'):
                 state += f" until {run['paused_until']}"
+            outcome = (summary.get('outcome') or '-') + ('!' if summary.get('flag') else '')
             print(f"{directory.name[9:]:<5} {record.name}  {run.get('harness', '?'):<12} {state:<11} "
-                  f"{summary.get('outcome') or '-':<12} {(summary.get('summary') or '')[:100]}")
+                  f"{outcome:<12} {(summary.get('summary') or '')[:100]}")
+            if summary.get('flag'):
+                print(f"      flag: {summary['flag'][:200]}")
             shown = True
     if not shown:
         print('no dispatches' + (f' for iteration {number}' if number else ''))
@@ -427,9 +636,13 @@ if __name__ == '__main__':
     elif cmd == 'supervise':
         sys.exit(supervise(sys.argv[2], sys.argv[3]))
     elif cmd == 'report':
-        report(sys.argv[2], sys.argv[3], sys.argv[4])
+        report(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] if len(sys.argv) > 5 else '')
     elif cmd == 'status':
         status(sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None)
+    elif cmd == 'park':
+        park(sys.argv[2], sys.argv[3])
+    elif cmd == 'message':
+        message(sys.argv[2], sys.argv[3])
     elif cmd == 'tick':
         sys.exit(tick())
     elif cmd == 'controller':

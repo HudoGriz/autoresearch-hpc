@@ -1,4 +1,4 @@
-"""Shell-free dispatch for optional external research generators (stdlib only)."""
+"""Shell-free runner for a delegated task (arh delegate): command template, timeout, output limits (stdlib only)."""
 import hashlib
 import json
 import os
