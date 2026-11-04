@@ -13,6 +13,7 @@ and the ledger alone grows with every iteration. The brief prints what a session
 
   brief.py ROOT ITERATIONS LIMIT_BYTES
 """
+import itertools
 import re
 import sys
 from pathlib import Path
@@ -63,13 +64,13 @@ def main(root, iterations, limit):
     text = ledger.read_text(errors='replace') if ledger.is_file() else ''
     state = section(text, 'Current state')
     if state and len(state.encode()) > limit // 4:      # a state is a few lines; history belongs below it
-        # Both ends, since studies add new entries at the top or at the bottom; the middle is named.
+        # Both ends, since studies add new entries at the top or at the bottom, cut between entries
+        # (a line that starts at column 0); the left-out lines are named.
         lines, half = state.splitlines(), limit // 8
-        head = tail = 0
-        while head < len(lines) and sum(len(x.encode()) + 1 for x in lines[:head + 1]) <= half:
-            head += 1
-        while tail < len(lines) - head and sum(len(x.encode()) + 1 for x in lines[len(lines) - tail - 1:]) <= half:
-            tail += 1
+        size = [0, *itertools.accumulate(len(x.encode()) + 1 for x in lines)]
+        starts = [i for i, x in enumerate(lines) if x[:1].strip()] + [len(lines)]
+        head = max((i for i in starts if size[i] <= half), default=0)
+        tail = len(lines) - min((i for i in starts if i >= head and size[-1] - size[i] <= half), default=len(lines))
         first = text[:text.index(state)].count('\n') + 1
         parts.append(f'## Current state ({ledger.name}; {len(state.encode())} bytes, more than {limit // 4})\n\n'
                      + '\n'.join(lines[:head])

@@ -23,12 +23,17 @@ ARH states what must hold and leaves the means to maintained tools.
   `arh migrate` removes the old in-repo Ponytail copy.
 - **`arh context` is about half as long** (38 kB to 17 kB in the field study). `## Current state`
   gets a quarter of `context_max_bytes` (default now 24000). When it is longer, the brief says to
-  move the history below it. Both ends are kept and the cut names the lines it left out (#170).
+  move the history below it. Both ends are kept, cut between entries, and the cut names the
+  lines it left out (#170, #176).
   The gotchas index lists headings only.
 - **Smaller fixes from the trial** (#171–#173): `arh skill` prints one line per source.
   `arh migrate` lists its changes before the notes on default settings. A run that leaves more
   than 10,000 files in `results/` gets a warning, because every gate hashes them all. The
   failed-check scan skips directories of more than 200 JSON files.
+- **Task write caches and the freeze anchor** (#177, #178): tasks get `NUMBA_CACHE_DIR` and
+  `MPLCONFIGDIR` under node-local `/tmp`, since the environments are mounted read-only and numba's
+  cached functions failed at import. A freeze without `freeze_anchor` says so. The TSA recipe is
+  indented, so only the real setting counts.
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

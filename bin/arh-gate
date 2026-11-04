@@ -197,7 +197,8 @@ case "$sub" in
     printf '\ngate PASSED. Pre-declaration frozen:\n  %s\n' "$(head -1 "$dir/PREDECLARATION.sha256")"
     [ -z "$scripts_pinned" ] || printf '  and %s script(s) already in scripts/, pinned with it\n' "$(printf '%s\n' "$scripts_pinned" | grep -c .)"
     printf 'The README hash is frozen and journalled; later edits will fail validation. Corrections go in a new iteration.\n'
-    [ -z "$anchor" ] || printf 'Anchored: %s\n' "$anchor"
+    if [ -n "$anchor" ]; then printf 'Anchored: %s\n' "$anchor"
+    elif [ -z "$anchor_cmd" ]; then printf 'No anchor: freeze_anchor in project.md is empty, so nothing outside the project dates this freeze.\n'; fi
     ;;
 
   results)

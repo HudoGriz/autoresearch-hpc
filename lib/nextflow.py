@@ -1,6 +1,7 @@
 """Delegate execution to Nextflow; keep only protocol checks and run receipts."""
 import argparse
 from datetime import datetime, timezone
+import getpass
 import gzip
 import hashlib
 import json
@@ -366,6 +367,13 @@ def run():
         options = ' '.join('--bind ' + shlex.quote(bind) for bind in binds)
         if task_prefix:
             options += ' --env ' + shlex.quote('PATH=' + task_prefix + '/bin:/usr/local/bin:/usr/bin:/bin')
+        # Environments are mounted read-only, so numba's and matplotlib's write caches go to node-local
+        # /tmp: numba's @njit(cache=True) failed at import in a task (field feedback #178). Only these
+        # two, so caches a study fills in advance (XDG_CACHE_HOME, model weights) are left alone; a
+        # task's own export wins.
+        cache = f'/tmp/arh-{getpass.getuser()}-cache'
+        options += ''.join(' --env ' + shlex.quote(f'{var}={cache}/{sub}')
+                           for var, sub in (('NUMBA_CACHE_DIR', 'numba'), ('MPLCONFIGDIR', 'matplotlib')))
         def has(label):
             return f'(task.label ?: []).contains({literal(label)})'
         container = literal(image)
