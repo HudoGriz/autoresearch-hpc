@@ -1,97 +1,84 @@
 #!/usr/bin/env bash
 # Integrations: install the pinned tools ARH turns on by default, in seconds.
 #
-# Entire CLI (agent sessions, models and tokens), gitleaks (maintained credential rules), abtop (live
-# view of running agent sessions) and uv are single release binaries, checked by sha256; basic-memory
-# (search over knowledge/) goes into a uv virtual environment; the ARIS research skills are a pinned
-# source archive under <prefix>/aris (arh skill). No conda solve and no Nextflow environment is touched. Pins come from
-# config/dependencies.json; the exact Python packages are locked in .arh/tools-pip.lock and
-# replayed from it on the next build. docs/integrations.md says what each tool does and how to
-# switch it off.
+# Entire CLI (agent sessions), gitleaks (credential rules) and abtop (live sessions) are release
+# binaries checked by sha256; basic-memory (search over knowledge/) is a pixi environment locked in
+# .arh/tools-pixi.lock; the research and coding skills (ARIS, Anti-Autoresearch, Ponytail) are pinned
+# source archives extracted under .arh/skills/, where every node and account of the project can read
+# them. Pins: config/dependencies.json. What each tool does and how to switch it off:
+# docs/integrations.md.
 #
-# Where: tools_dir in site.md (else $ARH_ENV_CACHE/tools, else .arh/envs/tools). The tools run on
-# the host where arh runs, so on a slow shared filesystem (CephFS, NFS) a node-local tools_dir such
-# as /var/tmp/arh-tools-$USER builds in ~15 s instead of many minutes.
+# Binaries and the package cache go to tools_dir in site.md (node-local on CephFS or NFS: seconds,
+# not minutes), else $ARH_ENV_CACHE/tools, else .arh/envs/tools.
 set -euo pipefail
 [ $# -eq 1 ] || { echo 'usage: scripts/setup-tools.sh PROJECT' >&2; exit 2; }
-home=${ARH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+ARH_HOME=${ARH_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}; export ARH_HOME
 project=$(cd "$1" && pwd)
 state="$project/.arh"
 [ -d "$state" ] || { echo 'run arh init first' >&2; exit 1; }
 # shellcheck source=lib/common.sh
-. "$home/lib/common.sh"
+. "$ARH_HOME/lib/common.sh"
 
-case "$(uname -s)-$(uname -m)" in
-  Linux-x86_64|Linux-amd64) platform=linux-64; triple=x86_64-unknown-linux-gnu; goarch=amd64; glarch=x64; arch=x86_64 ;;
-  Linux-aarch64|Linux-arm64) platform=linux-aarch64; triple=aarch64-unknown-linux-gnu; goarch=arm64; glarch=arm64; arch=aarch64 ;;
-  *) echo "no pinned tool builds for $(uname -s)-$(uname -m): install entire, gitleaks and basic-memory yourself" >&2; exit 1 ;;
-esac
-
-# name url sha256 per binary, then the python version, the pip specs, and the ARIS url and sha256
-mapfile -t pins < <(python3 - "$home/config/dependencies.json" "$platform" "$triple" "$goarch" "$glarch" "$arch" <<'PY'
-import json, sys
+# One line per download (kind name url sha256), then the tool environment's specs.
+mapfile -t pins < <(python3 - "$ARH_HOME/config/dependencies.json" <<'PY'
+import json, platform, sys
 t = json.load(open(sys.argv[1]))['tools']
-platform, triple, goarch, glarch, arch = sys.argv[2:7]
-for name in ('uv', 'entire', 'gitleaks', 'abtop'):
+arch = platform.machine().replace('arm64', 'aarch64')
+names = dict(goarch={'x86_64': 'amd64'}.get(arch, 'arm64'), glarch={'x86_64': 'x64'}.get(arch, 'arm64'), arch=arch)
+for name in ('entire', 'gitleaks', 'abtop'):
     b = t[name]
-    print(name, b['url'].format(version=b['version'], triple=triple, goarch=goarch, glarch=glarch, arch=arch),
-          b['sha256'][platform])
-print(t['python'])
-print(' '.join(f'{k}=={v}' for k, v in t['pip'].items()))
-print(t['aris']['url'].format(version=t['aris']['version']), t['aris']['sha256'])
+    print('bin', name, b['url'].format(version=b['version'], **names), b['sha256'].get(arch, 'none'))
+for name, s in t['skills'].items():
+    print('skills', name, s['url'].format(version=s['version']), s['sha256'])
+print('env', ' '.join(t['env']))
 PY
 )
-key=$(printf '%s\n' "$platform" "${pins[@]}" | sha256sum | cut -c1-16)
-dir=$(arh_config_get "$state/config/site.md" tools_dir "")
-dir=${dir:-${ARH_ENV_CACHE:+$ARH_ENV_CACHE/tools}}
-dir=${dir:-$state/envs/tools}
-dir=$(eval echo "$dir")           # tools_dir may name $USER
-prefix="$dir/$key"
+dir=$(arh_tools_dir "$state")
+prefix="$dir/$(printf '%s\n' "$(uname -m)" "${pins[@]}" | sha256sum | cut -c1-16)"
+fetch() {  # URL SHA256 FILE
+  curl -fsSL --retry 3 -o "$3" "$1" && [ "$(arh_sha256 "$3")" = "$2" ] \
+    || { echo "download failed or checksum mismatch: $1" >&2; return 1; }
+}
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$prefix/bin" "$state/skills"
+for line in "${pins[@]}"; do
+  read -r kind name url sha <<<"$line"
+  case "$kind" in
+    bin)
+      [ -x "$prefix/bin/$name" ] && continue
+      fetch "$url" "$sha" "$tmp/$name.tar" && mkdir -p "$tmp/$name" && tar -xf "$tmp/$name.tar" -C "$tmp/$name"
+      find "$tmp/$name" -type f -name "$name" -perm -u+x -exec cp {} "$prefix/bin/$name" \;
+      [ -x "$prefix/bin/$name" ] || { echo "no $name binary in $url" >&2; exit 1; } ;;
+    skills)
+      # Only the skill trees and the tools they call; the archive is replaced when its pin changes.
+      [ "$(cat "$state/skills/$name/.sha256" 2>/dev/null)" = "$sha" ] && continue
+      fetch "$url" "$sha" "$tmp/$name.tgz"
+      rm -rf "$state/skills/$name"; mkdir -p "$state/skills/$name"
+      tar -xzf "$tmp/$name.tgz" -C "$state/skills/$name" --strip-components=1 --exclude='.*' --wildcards \
+        '*/skills/*' '*/workflows/*' '*/tools/*' 2>/dev/null || true
+      [ -n "$(find "$state/skills/$name" -name SKILL.md -print -quit)" ] || { echo "no SKILL.md in $url" >&2; exit 1; }
+      printf '%s\n' "$sha" > "$state/skills/$name/.sha256" ;;
+  esac
+done
 
-build() {
-  mkdir -p "$prefix/bin"
-  local tmp name url sha got
-  tmp=$(mktemp -d)
-  for line in "${pins[@]:0:4}" "aris ${pins[6]}"; do
-    read -r name url sha <<<"$line"
-    curl -fsSL --retry 3 -o "$tmp/$name.archive" "$url"
-    got=$(sha256sum "$tmp/$name.archive" | cut -d' ' -f1)
-    [ "$got" = "$sha" ] || { echo "$name checksum mismatch: expected $sha, got $got" >&2; rm -rf "$tmp"; return 1; }
-    if [ "$name" = aris ]; then
-      mkdir -p "$prefix/aris"; tar -xf "$tmp/$name.archive" -C "$prefix/aris" --strip-components=1; continue
-    fi
-    mkdir -p "$tmp/$name"; tar -xf "$tmp/$name.archive" -C "$tmp/$name"
-    find "$tmp/$name" -type f -name "$name" -perm -u+x -exec cp {} "$prefix/bin/$name" \;
-    [ -x "$prefix/bin/$name" ] || { echo "no $name binary in $url" >&2; rm -rf "$tmp"; return 1; }
-  done
-  rm -rf "$tmp"
-  export UV_CACHE_DIR="$dir/uv-cache" UV_PYTHON_INSTALL_DIR="$dir/python"
-  "$prefix/bin/uv" venv -q --python "${pins[4]}" "$prefix/venv"
-  # basic-memory 0.23.2 pins a pre-release (fastmcp 4.0.0b1). With a lock from an earlier build, its
-  # exact versions are installed instead of a fresh resolution.
-  if [ -s "$state/tools-pip.lock" ]; then
-    VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip sync -q "$state/tools-pip.lock"
+# basic-memory, replayed exactly from the project's lock once one exists.
+read -r _ specs <<<"${pins[-1]}"
+if [ ! -x "$prefix/bm/.pixi/envs/default/bin/bm" ]; then
+  if [ -s "$state/tools-pixi.lock" ] && [ -f "$state/tools-pixi.toml" ]; then
+    mkdir -p "$prefix/bm"; cp "$state/tools-pixi.toml" "$prefix/bm/pixi.toml"; cp "$state/tools-pixi.lock" "$prefix/bm/pixi.lock"
+    ARH_CHANNELS=conda-forge arh_pixi_env "$state" "$prefix/bm" >/dev/null
   else
     # shellcheck disable=SC2086
-    VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip install -q --prerelease=allow ${pins[5]}
+    ARH_CHANNELS=conda-forge arh_pixi_env "$state" "$prefix/bm" $specs >/dev/null
   fi
-  ln -sf ../venv/bin/bm "$prefix/bin/bm"
-}
-if [ -n "${ARH_ENV_CACHE:-}" ]; then arh_build_once "$prefix" build || { echo "failed to build $prefix" >&2; exit 1; }
-elif [ ! -x "$prefix/bin/bm" ]; then build; fi
-
-VIRTUAL_ENV="$prefix/venv" "$prefix/bin/uv" pip freeze -q > "$state/tools-pip.lock"
+fi
+cp "$prefix/bm/pixi.toml" "$state/tools-pixi.toml"; cp "$prefix/bm/pixi.lock" "$state/tools-pixi.lock"
+ln -sf ../bm/.pixi/envs/default/bin/bm "$prefix/bin/bm"
 # basic-memory's embedding model, fetched now so that a search never reaches the network (the
 # directory enable-record.sh names in basic-memory's configuration).
-[ -d "$dir/fastembed" ] || "$prefix/venv/bin/python" -c 'import sys; from fastembed import TextEmbedding
+[ -d "$dir/fastembed" ] || "$prefix/bm/.pixi/envs/default/bin/python" -c 'import sys; from fastembed import TextEmbedding
 TextEmbedding("BAAI/bge-small-en-v1.5", cache_dir=sys.argv[1])' "$dir/fastembed" >/dev/null 2>&1 \
   || echo "warning: basic-memory's embedding model was not fetched; the first arh memory search will fetch it" >&2
-python3 - "$state/config/site.md" "$prefix" <<'PY'
-from pathlib import Path
-import re, sys
-p = Path(sys.argv[1]); text = p.read_text(); pat = r'(?m)^tools_prefix\s*=.*$'
-line = f'tools_prefix = {sys.argv[2]}'
-p.write_text(re.sub(pat, line, text) if re.search(pat, text) else text + f'\n```arh-config\n{line}\n```\n')
-PY
-printf 'Tools ready: %s/bin (entire %s, gitleaks %s, abtop, bm; ARIS skills in aris/)\n' "$prefix" \
-  "$("$prefix/bin/entire" version 2>/dev/null | head -1 | awk '{print $NF}')" "$("$prefix/bin/gitleaks" version 2>/dev/null)"
+arh_config_set "$state/config/site.md" tools_prefix "$prefix"
+printf 'Tools ready: %s/bin (entire, gitleaks, abtop, bm); skills in .arh/skills/ (%s)\n' "$prefix" \
+  "$(cd "$state/skills" && ls | paste -sd' ' -)"

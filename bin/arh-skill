@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
-# The research skills installed with the integrations (ARIS, pinned in config/dependencies.json).
+# The research and coding skills installed with the integrations (pinned sources in
+# config/dependencies.json: ARIS, Anti-Autoresearch, Ponytail), under .arh/skills/.
 #
-#   arh skill          list them
+#   arh skill          list them by source
 #   arh skill NAME     print the path of NAME's SKILL.md, for any harness to read
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 arh_load_project
-tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
-# Releases keep the skills under crates/runtime/assets/skills; the development branch under skills/.
-skills=""
-for d in "$tools/aris/skills" "$tools/aris/crates/runtime/assets/skills"; do
-  [ -z "$tools" ] || [ ! -d "$d" ] || { skills=$d; break; }
-done
-[ -n "$skills" ] || arh_die "no research skills installed: run $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT"
+skills="$ARH_STATE/skills"
+[ -n "$(find "$skills" -name SKILL.md -print -quit 2>/dev/null)" ] \
+  || arh_die "no skills installed: run $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT"
 case "${1-}" in
-  -h|--help) sed -n '2,5s/^# \{0,1\}//p' "$0"; exit 0 ;;
-  ""|list) find "$skills" -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort | paste -sd' ' - | fold -s -w 100 ;;
+  -h|--help) sed -n '2,6s/^# \{0,1\}//p' "$0"; exit 0 ;;
+  ""|list) for src in "$skills"/*/; do
+             printf '%s: %s\n' "$(basename "$src")" \
+               "$(find "$src" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort -u | paste -sd' ' -)"
+           done | fold -s -w 100 ;;
   *) case "$1" in */*|.*) arh_die "a skill name, not a path: $1" ;; esac
-     [ -f "$skills/$1/SKILL.md" ] || arh_die "no skill '$1' (arh skill lists them)"
-     printf '%s\n' "$skills/$1/SKILL.md" ;;
+     path=$(find "$skills" -path "*/$1/SKILL.md" | sort | head -1)
+     [ -n "$path" ] || arh_die "no skill '$1' (arh skill lists them)"
+     printf '%s\n' "$path" ;;
 esac

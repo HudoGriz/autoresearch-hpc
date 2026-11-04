@@ -87,8 +87,8 @@ workflow {
 - Evidence stays under the iteration: `logs/nextflow/<name>/attempt-*/`
   (`console.log`, `trace.tsv`, `run.json`) and `metadata/nextflow/<name>/work/`.
   A failed run prints the tail of its console log.
-- Scientific packages: `arh env create NAME pkg=version ...` solves them once in
-  the task image, locks them in `.arh/NAME-explicit.lock` and prints the prefix to
+- Scientific packages: `arh env create NAME pkg=version ...` solves them once
+  with pixi, locks them in `.arh/envs/NAME/pixi.lock` and prints the prefix to
   call from a process (`<prefix>/bin/python`, `<prefix>/bin/Rscript`). A different
   package set is a new NAME. Do not build environments by hand.
 - GPUs: give the process `label 'gpu'` (or `process_gpu`), or an `accelerator N`

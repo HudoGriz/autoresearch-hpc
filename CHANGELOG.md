@@ -10,6 +10,27 @@ Singularity with two producer accounts and two verifier families, and from an ex
 of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studies need
 `arh migrate --apply`, which starts the freeze journal.
 
+### Changed (outsourced plumbing and a shorter session start, 2026-11-04)
+ARH states what must hold and leaves the means to maintained tools.
+- **pixi replaces micromamba, lock-env.sh and uv/pip** for the host Nextflow, the task runtime,
+  `arh env create` and basic-memory. Environments live in `.arh/envs/NAME/` and are recorded by
+  `pixi.toml` and `pixi.lock`, with PyPI packages as `pypi:PKG==V`. On this cluster a CUDA torch
+  environment takes 132 s, where micromamba gave up after more than 29 min (#116, #125).
+  Environments built by an earlier arh keep working. `CONDA_OVERRIDE_CUDA=12` lets a GPU solve
+  run on a node without a GPU.
+- **Skills are pinned source archives, not vendored copies**: Ponytail (v5.3.3), ARIS and
+  Anti-Autoresearch are fetched by sha256 into `.arh/skills/`. `arh skill` lists them by source.
+  `arh migrate` removes the old in-repo Ponytail copy.
+- **`arh context` is about half as long** (38 kB to 17 kB in the field study). `## Current state`
+  gets a quarter of `context_max_bytes` (default now 24000). When it is longer, the brief says to
+  move the history below it. The gotchas index lists headings only.
+- **Documented modules instead of ARH code**:
+  - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
+    receipt stays, since Nextflow cannot see the plan or the image digest.
+  - An RFC 3161 `freeze_anchor` using the Sigstore TSA through `openssl ts`.
+  - apprise as a `notify` command.
+  - Anti-Autoresearch as an extra pre-review check through `arh ask --skill`.
+
 ### Changed (parked controllers, per-iteration roles, field feedback #90 and #136–#163, 2026-11-01 to 11-04)
 - **`arh dispatch park` and `arh dispatch message`** (#144, #156): after a detached submission a
   dispatched controller ends its session with a note; the supervisor waits with no model running

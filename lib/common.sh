@@ -14,6 +14,19 @@ arh_ok()   { if [ "${ARH_QUIET_OK:-0}" = 1 ]; then ARH_OK_COUNT=$(( ${ARH_OK_COU
 arh_ok_summary() { [ "${ARH_OK_COUNT:-0}" = 0 ] || printf '  OK   %s check(s) passed (-v lists them)\n' "$ARH_OK_COUNT"; }
 arh_fail() { printf '  FAIL %s\n' "$*"; }
 
+# arh_config_set FILE KEY VALUE...: set each KEY = VALUE in place, or append it in its own block.
+# Serialised, so setups running at once cannot drop each other's keys.
+arh_config_set() {
+  local file="$1"; shift
+  ( flock 9; python3 -c 'import re, sys
+from pathlib import Path
+p = Path(sys.argv[1]); text = p.read_text(); kv = sys.argv[2:]
+for key, value in zip(kv[::2], kv[1::2]):
+    pat = r"(?m)^" + re.escape(key) + r"\s*=.*$"
+    text = re.sub(pat, lambda m: f"{key} = {value}", text) if re.search(pat, text) else text + f"\n```arh-config\n{key} = {value}\n```\n"
+p.write_text(text)' "$file" "$@" ) 9<"$file"
+}
+
 # Config files are Markdown. Machine-readable settings live only in
 # fenced `arh-config` blocks as `key = value`.
 arh_config_get() {
@@ -246,31 +259,57 @@ except (OSError, ValueError, AttributeError):
   fi
 }
 
-# Build an environment prefix once: arh_build_once PREFIX COMMAND... A prefix is complete when it
-# holds .arh-complete. Concurrent builders wait on PREFIX.building; a build left behind by a dead
-# process on this host is removed and redone. COMMAND runs where `set -e` does not apply, so it must
-# return non-zero itself when a step fails.
-arh_build_once() {
-  local prefix="$1" lock="$1.building" waited=0 host pid; shift
-  mkdir -p "$(dirname "$prefix")"
-  until mkdir "$lock" 2>/dev/null; do
-    [ -f "$prefix/.arh-complete" ] && return 0
-    host=""; pid=""
-    read -r host pid 2>/dev/null < "$lock/owner" || true
-    if [ "$host" = "$(uname -n)" ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-      mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
-      continue
+# Where the tools and the package cache go: tools_dir in site.md (may name $USER), else
+# $ARH_ENV_CACHE/tools, else .arh/envs/tools. Node-local on a slow shared filesystem.
+arh_tools_dir() {
+  local d; d=$(arh_config_get "$1/config/site.md" tools_dir "")
+  d=${d:-${ARH_ENV_CACHE:+$ARH_ENV_CACHE/tools}}; d=${d:-$1/envs/tools}
+  eval echo "$d"
+}
+
+# arh_pixi STATE: the pixi binary pinned in config/dependencies.json, fetched once (ARH_PIXI overrides).
+arh_pixi() {
+  [ -z "${ARH_PIXI:-}" ] || { printf '%s\n' "$ARH_PIXI"; return 0; }
+  local url sha bin tmp
+  read -r url sha < <(python3 -c 'import json, platform, sys
+p = json.load(open(sys.argv[1]))["tools"]["pixi"]; a = platform.machine().replace("arm64", "aarch64")
+print(p["url"].format(version=p["version"], arch=a), p["sha256"].get(a, "none"))' "$ARH_HOME/config/dependencies.json")
+  bin="$(arh_tools_dir "$1")/pixi-${sha:0:12}/pixi"
+  if [ ! -x "$bin" ]; then
+    mkdir -p "${bin%/*}"; tmp=$(mktemp "${bin%/*}/download.XXXXXX")
+    if ! curl -fsSL --retry 3 -o "$tmp" "$url" || [ "$(arh_sha256 "$tmp")" != "$sha" ] \
+       || ! tar -xzf "$tmp" -C "${bin%/*}" pixi; then
+      rm -f "$tmp"; arh_warn "could not fetch the pinned pixi ($url); offline, set ARH_PIXI=/path/to/pixi"; return 1
     fi
-    [ $((waited % 300)) -ne 0 ] || arh_warn "waiting for another setup to finish building $prefix"
-    sleep 5; waited=$((waited + 5))
-  done
-  printf '%s %s\n' "$(uname -n)" "$$" > "$lock/owner"
-  if [ ! -f "$prefix/.arh-complete" ]; then
-    rm -rf "$prefix"
-    if ! "$@"; then rm -rf "$prefix" "$lock"; return 1; fi
-    touch "$prefix/.arh-complete"
+    rm -f "$tmp"
   fi
-  rm -rf "$lock"
+  printf '%s\n' "$bin"
+}
+
+# arh_pixi_env STATE DIR [SPEC...]: a locked environment in DIR (pixi.toml and pixi.lock are the record,
+# .pixi/ holds the files). With SPECs (conda specs; pypi:NAME==V for PyPI) it is solved and locked;
+# without, rebuilt exactly from DIR/pixi.lock. pixi locks and resumes its own installs. Prints the
+# prefix. Channels: ARH_CHANNELS (default conda-forge bioconda). A GPU solve on a node without a GPU
+# needs CONDA_OVERRIDE_CUDA=12, which pixi reads from the environment.
+arh_pixi_env() {
+  local state="$1" dir="$2" pixi c spec conda=() pypi=(); shift 2
+  pixi=$(arh_pixi "$state") || return 1
+  export PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-$(arh_tools_dir "$state")/pixi-cache}"
+  mkdir -p "$dir"
+  if [ $# -gt 0 ]; then
+    { printf '[workspace]\nname = "%s"\nchannels = [' "$(basename "$dir")"
+      for c in ${ARH_CHANNELS:-conda-forge bioconda}; do printf '"%s", ' "$c"; done
+      printf ']\nplatforms = ["linux-%s"]\n\n[dependencies]\n' "$(uname -m | sed 's/x86_64/64/; s/arm64/aarch64/')"
+    } > "$dir/pixi.toml"
+    rm -f "$dir/pixi.lock"
+    for spec in "$@"; do case "$spec" in pypi:*) pypi+=("${spec#pypi:}") ;; *) conda+=("$spec") ;; esac; done
+    [ ${#conda[@]} -eq 0 ] || "$pixi" add -q --manifest-path "$dir/pixi.toml" "${conda[@]}" >&2 || return 1
+    [ ${#pypi[@]} -eq 0 ] || "$pixi" add -q --manifest-path "$dir/pixi.toml" --pypi "${pypi[@]}" >&2 || return 1
+  else
+    [ -f "$dir/pixi.lock" ] || { arh_warn "no lock to rebuild from: $dir/pixi.lock"; return 1; }
+    "$pixi" install -q --frozen --manifest-path "$dir/pixi.toml" >&2 || return 1
+  fi
+  printf '%s\n' "$dir/.pixi/envs/default"
 }
 
 # SOURCE:TARGET binds that cover every existing sealed input with an empty mount. `arh run` has no

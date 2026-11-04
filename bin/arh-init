@@ -3,19 +3,17 @@
 set -euo pipefail
 . "${ARH_HOME:?}/lib/common.sh"
 
-target="$PWD"; scheduler=auto; micromamba=""; runtime=""; bootstrap=0; env_cache=""; tools=1
+target="$PWD"; scheduler=auto; runtime=""; bootstrap=0; env_cache=""; tools=1
 usage() {
   cat <<'USAGE'
 usage: arh init [dir] [options]
 
 Options:
   --scheduler auto|local|slurm|pbs  scheduler written to site.md (default: auto)
-  --micromamba PATH                 optional micromamba override for host Nextflow setup
   --runtime IMAGE.sif               task runtime image to configure
-  --bootstrap                       build the host Nextflow environment now; downloads a pinned project-local micromamba if needed
+  --bootstrap                       build the host Nextflow environment now (pixi, pinned; ARH_PIXI for an offline copy)
   --no-tools                        with --bootstrap: skip the integrations' tools (offline sites; arh doctor names them)
-  --env-cache DIR                   build the pinned Nextflow and task environments once in DIR and share them
-                                    between projects (DIR must be reachable from compute nodes at the same path)
+  --env-cache DIR                   keep the tools and the package cache in DIR, shared between projects
   -h, --help                        show this help
 
 Without flags, `arh init` discovers the scheduler/container command and creates
@@ -28,7 +26,6 @@ if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
 while [ $# -gt 0 ]; do
   case "$1" in
     --scheduler) scheduler="$2"; shift 2 ;;
-    --micromamba) micromamba="$2"; shift 2 ;;
     --runtime) runtime="$2"; shift 2 ;;
     --bootstrap) bootstrap=1; shift ;;
     --no-tools) tools=0; shift ;;
@@ -95,11 +92,7 @@ if [ -n "$env_cache" ]; then
   mkdir -p "$env_cache"; ARH_ENV_CACHE=$(cd "$env_cache" && pwd); export ARH_ENV_CACHE
 fi
 if [ "$bootstrap" = 1 ]; then
-  if [ -n "$micromamba" ]; then
-    "$ARH_HOME/scripts/setup-nextflow.sh" "$target" "$micromamba"
-  else
-    "$ARH_HOME/scripts/setup-nextflow.sh" "$target"
-  fi
+  "$ARH_HOME/scripts/setup-nextflow.sh" "$target"
 fi
 if [ -n "$runtime" ]; then "$ARH_HOME/scripts/setup-runtime.sh" "$target" "$runtime"; fi
 # The integrations ARH turns on by default (docs/integrations.md), then the git record and Entire.
@@ -116,7 +109,6 @@ printf '\nNext:\n  cd %q\n  arh doctor\n' "$target"
 if [ "$bootstrap" = 0 ]; then
   printf '\nTo prepare the pinned host Nextflow environment automatically:\n'
   printf '  %s/scripts/setup-nextflow.sh %q\n' "$ARH_HOME" "$target"
-  printf '  (a pinned standalone micromamba is cached under .arh/tools if needed)\n'
-  printf '  %s/scripts/setup-tools.sh %q && %s/scripts/enable-record.sh %q   # Entire, gitleaks, basic-memory (uv; ~15 s)\n' \
+  printf '  %s/scripts/setup-tools.sh %q && %s/scripts/enable-record.sh %q   # Entire, gitleaks, basic-memory, skills (~15 s)\n' \
     "$ARH_HOME" "$target" "$ARH_HOME" "$target"
 fi

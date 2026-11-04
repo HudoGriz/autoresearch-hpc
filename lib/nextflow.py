@@ -235,10 +235,10 @@ def run():
     if os.environ.get('APPTAINER_CONTAINER') or os.environ.get('SINGULARITY_CONTAINER'):
         parser.error('run the Nextflow controller on the host, outside Singularity')
     if not image or not prefix:
-        parser.error('configure runtime_image and nextflow_prefix for the host micromamba driver')
+        parser.error('configure runtime_image and nextflow_prefix (scripts/setup-runtime.sh, scripts/setup-nextflow.sh)')
     binary = Path(prefix) / 'bin/nextflow'
     if not binary.is_file():
-        parser.error('versioned micromamba env/bin/nextflow is missing; host fallback is disabled')
+        parser.error('nextflow_prefix has no bin/nextflow (scripts/setup-nextflow.sh); host fallback is disabled')
     pin = json.loads((home / 'config/dependencies.json').read_text())['nextflow']
     version = site.get('nextflow_version') or pin['version']
     installed = list((Path(prefix) / 'conda-meta').glob('nextflow-*.json'))
@@ -453,7 +453,8 @@ def run():
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
-                      environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
+                      environment_locks={str(p.relative_to(root / '.arh')): sha(p) for p in sorted(
+                          [*(root / '.arh').glob('*explicit.lock'), *(root / '.arh/envs').glob('*/pixi.lock')])},
                       resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat(),
                       task_project_access=access,
                       # Who launched it (S11): a project shared by several people or accounts.

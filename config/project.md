@@ -88,7 +88,16 @@ output line is recorded in the journal. Point it at something the project
 cannot rewrite: a commit pushed to a remote, an RFC 3161 timestamping service,
 or a scheduler job whose comment carries the hash (Slurm's accounting database
 timestamps it). If the command fails, nothing is frozen. Empty means no anchor:
-the journal then detects a second freeze, but proves no time.
+the journal then detects a second freeze, but proves no time. A ready-made anchor,
+Sigstore's free RFC 3161 service, keeps the signed reply beside the plan and
+journals its time (one line in the block below):
+
+```text
+freeze_anchor = openssl ts -query -digest {sha256} -sha256 -cert 2>/dev/null | curl -sSf -H 'Content-Type: application/timestamp-query' --data-binary @- https://timestamp.sigstore.dev/api/v1/timestamp -o iterations/iteration{iteration}/metadata/freeze.tsr && openssl ts -reply -in iterations/iteration{iteration}/metadata/freeze.tsr -text 2>/dev/null | grep 'Time stamp'
+```
+
+Anyone can check it later: `curl -sS https://timestamp.sigstore.dev/api/v1/timestamp/certchain > chain.pem`,
+then `openssl ts -verify -digest <sha256> -in metadata/freeze.tsr -CAfile chain.pem -untrusted chain.pem`.
 
 ```arh-config
 ledger            = PROGRESS.md
@@ -115,8 +124,9 @@ frozen_scripts    = warn
 # The operator's directives file (data locations, decisions, external findings), read by every
 # review and delegation. A study that keeps them elsewhere names that file here.
 directives        = DIRECTIVES.md
-# arh context (the session-start brief) stops at this many bytes.
-context_max_bytes = 48000
+# arh context (the session-start brief) stops at this many bytes; PROGRESS.md's Current state gets
+# a quarter of them.
+context_max_bytes = 24000
 report_numbers_files =
 freeze_anchor     =
 ```

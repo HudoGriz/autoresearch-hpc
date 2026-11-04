@@ -34,7 +34,7 @@ It is **not** a scheduler, a workflow engine or an autonomous research daemon. I
 
 ## Setup
 
-You need a login node with a scheduler (Slurm, PBS, or neither for local runs), Apptainer or Singularity, and git. Nothing else — no pre-installed Conda or micromamba, and nothing is written to your shell configuration.
+You need a login node with a scheduler (Slurm, PBS, or neither for local runs), Apptainer or Singularity, and git. Nothing else — no pre-installed Conda or pixi, and nothing is written to your shell configuration.
 
 ```bash
 git clone https://github.com/HudoGriz/autoresearch-hpc.git
@@ -78,7 +78,7 @@ For an existing project: `scripts/setup-tools.sh <study> && scripts/enable-recor
 
 The repository ships `AGENTS.md`, reusable skills and harness adapters, so the agent can follow its own setup path.
 
-Air-gapped clusters, staging micromamba or the task image yourself, and sharing environments between projects are covered in [HPC execution](docs/hpc-execution.md#fast-setup).
+Air-gapped clusters, staging pixi or the task image yourself, and sharing environments between projects are covered in [HPC execution](docs/hpc-execution.md#fast-setup).
 
 Project state lives under `.arh/`:
 
@@ -186,9 +186,8 @@ Failed attempts, nulls, killed controls and superseded conclusions stay visible.
 | **[Replicate](skills/replicate/SKILL.md)** | Reimplement from a frozen specification, blind to the original code | `arh dag ...` · `arh replicate ...` |
 | **[Ledger](skills/ledger/SKILL.md)** | Maintain and check the authoritative research record | `arh ledger render/check` |
 | **[Dispatch](skills/dispatch/SKILL.md)** | Act as main controller: give each iteration its own controller session, read their hand-backs | `arh dispatch ...` (with `orchestration = per-iteration`) |
-| **[Ponytail](skills/ponytail/SKILL.md)** | Coding, debugging, refactoring and dependency choices | coding guidance; not a protocol gate |
 
-`harness/install.sh` copies all seven into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/replicate`, `/ledger`, `/dispatch` and `/ponytail`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
+`harness/install.sh` copies all six into a project. For **Claude Code** they land in `.claude/skills/` and appear as `/iterate`, `/cross-check`, `/verify`, `/replicate`, `/ledger` and `/dispatch`; Codex and OpenCode read the same contract through their adapters. The portable source of truth remains `skills/` and `AGENTS.md`.
 
 The separation matters: an agent may choose to *use the Iterate skill*, but it is `arh gate predeclare` that refuses a late or altered pre-declaration.
 
@@ -297,12 +296,13 @@ GitHub's "Cite this repository" button and most reference managers can read.
 
 ## Built on existing work
 
-AutoResearch HPC is an independent project. Two upstream sources are vendored, pinned to an upstream commit and recorded with their licences under [`third_party/`](third_party/):
+AutoResearch HPC is an independent project. One upstream source is adapted and recorded with its licence under [`third_party/`](third_party/); the others are pinned releases that `scripts/setup-tools.sh` fetches, checked by sha256:
 
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance in [`skills/ponytail/`](skills/ponytail/SKILL.md), used unmodified. No upstream hooks, MCP server or auxiliary skills are installed.
+- **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance, named by `arh context`.
+- **[Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch)** (MIT) — report-forensics skills for `arh ask --skill`.
 - **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** (MIT) — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). Its research skills are not copied: `scripts/setup-tools.sh` installs a pinned release, read through `arh skill` and `arh ask --skill`.
 
-Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [micromamba](https://github.com/mamba-org/mamba) for the pinned host controller and task environments, and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
+Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [pixi](https://pixi.sh) for every environment it builds (host Nextflow, task runtime, `arh env`, tools), and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
 
 Access control is [Chaperone](https://github.com/HudoGriz/hpc-chaperone)'s: run a harness as its own
 Unix user (`harness_<name>_cmd = chaperone claude ...`) and `arh doctor` checks that the persona

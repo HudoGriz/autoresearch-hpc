@@ -153,7 +153,9 @@ if stale_skills:
 # are gone. The backup keeps them.
 retired = [p for p in (root / 'skills/evoke', root / 'skills/arms', root / '.claude/skills/evoke',
                        root / '.claude/skills/arms', root / 'skills/cross-check/roles/estimand-auditor.md',
-                       root / 'skills/cross-check/roles/gotcha-scanner.md', cfg / 'generators.md') if p.exists()]
+                       root / 'skills/cross-check/roles/gotcha-scanner.md', cfg / 'generators.md',
+                       # 2026-11-04: Ponytail is a pinned source under .arh/skills, no longer a copy
+                       root / 'skills/ponytail', root / '.claude/skills/ponytail', state_dir / 'tools-pip.lock') if p.exists()]
 if retired:
     changes.append('removed what the framework retired: ' + ', '.join(str(p.relative_to(root)) for p in retired))
 version = state_dir / 'VERSION'

@@ -729,7 +729,10 @@ else:
         self.assertEqual(before, after)
 
     def test_arh_context_names_the_coding_skill(self):
-        self.assertIn('skills/ponytail/SKILL.md', self.call('context').stdout)
+        skill = self.root / '.arh/skills/ponytail/skills/ponytail/SKILL.md'       # as setup-tools.sh extracts it
+        skill.parent.mkdir(parents=True); skill.write_text('# ponytail\n')
+        self.assertIn('.arh/skills/ponytail/skills/ponytail/SKILL.md', self.call('context').stdout)
+        self.assertIn(str(skill), self.call('skill', 'ponytail').stdout)
         self.configure(extra_config='coding_skill = off\n')
         self.assertNotIn('ponytail', self.call('context').stdout)
 
@@ -1430,7 +1433,9 @@ else:
         self.assertIn('## Current state', brief)
         self.assertNotIn('History line.', brief)
         self.assertIn('Gotchas index', brief)
-        self.assertIn('read ', brief)                           # the template's section is a placeholder: full read
+        progress.write_text(progress.read_text().replace('## Current state\n', '## Current state\n' + 'State line.\n' * 3000, 1))
+        self.assertIn('[cut: this section is the state', self.call('context').stdout)   # field study: 21 kB of state
+        self.assertIn('read ', brief)                          # the template's section is a placeholder: full read
         directives = self.root / 'DIRECTIVES.md'
         directives.write_text(directives.read_text().replace(
             '## Current directives\n', '## Current directives\n\n- HG002 confirms, never selects (2026-10-05 entry).\n', 1))
@@ -1629,50 +1634,6 @@ else:
         self.assertIn('to do: the study is already on the current layout', self.call('migrate', str(self.root)).stdout)
         self.assertNotIn("differ from the framework's", self.call('doctor', good=None).stderr)
 
-    def test_env_cache_builds_once_for_many_projects(self):
-        # Every study built its own ~1.5 GB of environments (2026-09-14).
-        fake = Path(self.temp.name) / 'fake'; fake.mkdir()
-        log, mm = fake / 'creates.log', fake / 'micromamba'
-        mm.write_text(f"""#!{sys.executable}
-import sys
-from pathlib import Path
-args = sys.argv[1:]
-if args[:1] == ['--version']:
-    print('2.8.1'); sys.exit()
-prefix = Path(args[args.index('-p') + 1])
-if args[0] == 'create':
-    with open({str(log)!r}, 'a') as fh:
-        fh.write(str(prefix) + '\\n')
-    (prefix / 'bin').mkdir(parents=True)
-    (prefix / 'bin/python3').symlink_to({sys.executable!r})
-    (prefix / 'bin/nextflow').write_text('#!/bin/sh\\n')
-    (prefix / 'bin/nextflow').chmod(0o755)
-elif args[0] == 'list':
-    print('https://conda.example/pkg-1.0-0.conda#' + 'a' * 32)
-""")
-        singularity = fake / 'singularity'        # `exec [options] IMAGE micromamba ARGS` runs the fake
-        singularity.write_text(f'#!/bin/sh\nwhile [ "$1" != micromamba ]; do shift; done\nshift\nexec "{mm}" "$@"\n')
-        for tool in (mm, singularity):
-            tool.chmod(0o755)
-        image, cache = fake / 'runtime.sif', Path(self.temp.name) / 'cache'
-        image.write_bytes(b'image')
-        env = dict(self.env, PATH=str(fake) + os.pathsep + self.env['PATH'])
-        prefixes = []
-        for name in ('a', 'b'):
-            project = Path(self.temp.name) / name
-            result = subprocess.run([str(ROOT / 'bin/arh'), 'init', str(project), '--bootstrap', '--no-tools', '--micromamba', str(mm),
-                                     '--runtime', str(image), '--env-cache', str(cache)],
-                                    env=env, capture_output=True, text=True, timeout=120)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            site = (project / '.arh/config/site.md').read_text()
-            prefixes.append([re.search(rf'(?m)^{key}\s*=\s*(\S+)', site).group(1) for key in ('nextflow_prefix', 'runtime_prefix')])
-            self.assertTrue((project / '.arh/nextflow-host-explicit.lock').is_file())
-        self.assertEqual(prefixes[0], prefixes[1])
-        for prefix in prefixes[0]:
-            self.assertTrue(prefix.startswith(str(cache)), prefix)
-            self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once (tools use uv)
-
     @needs_site
     def test_nextflow_reports_setting(self):
         site = self.root / '.arh/config/site.md'
@@ -1701,16 +1662,16 @@ elif args[0] == 'list':
     @needs_network
     def test_env_create_locks_and_is_immutable(self):
         prefix = self.call('env', 'create', 'tiny', 'zlib', timeout=1200).stdout.strip()
-        self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        lock = self.root / '.arh/tiny-explicit.lock'
-        self.assertEqual(lock.read_text().splitlines()[0], '@EXPLICIT')
+        self.assertTrue(Path(prefix, 'conda-meta').is_dir())
+        lock = self.root / '.arh/envs/tiny/pixi.lock'
         self.assertIn('zlib', lock.read_text())
         self.assertEqual(self.call('env', 'path', 'tiny').stdout.strip(), prefix)
-        self.assertIn('is ready', self.call('env', 'create', 'tiny', 'zlib').stderr)
         self.assertIn('different package set', self.call('env', 'create', 'tiny', 'zlib', 'xz', good=False).stderr)
+        before = lock.read_text()
         shutil.rmtree(prefix)
-        self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt from its lock, package list verified
-        self.assertTrue(Path(prefix, '.arh-complete').is_file())
+        self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt exactly from its lock
+        self.assertTrue(Path(prefix, 'conda-meta').is_dir())
+        self.assertEqual(lock.read_text(), before)
 
 
     # --- durable knowledge (field feedback #39) -------------------------------------------------

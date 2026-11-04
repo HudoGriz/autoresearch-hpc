@@ -96,8 +96,7 @@ if [ -n "$prefix" ] && [ -x "$prefix/bin/nextflow" ]; then
 else
   arh_fail "host Nextflow environment is not configured"
   arh_info "fix: $ARH_HOME/scripts/setup-nextflow.sh $ARH_ROOT"
-  arh_info "     this bootstraps a checksum-pinned project-local micromamba if needed"
-  arh_info "     offline/custom: scripts/setup-nextflow.sh PROJECT /path/to/micromamba"
+  arh_info "     (a locked pixi environment; offline: ARH_PIXI=/path/to/pixi)"
   warn=$((warn+1))
 fi
 

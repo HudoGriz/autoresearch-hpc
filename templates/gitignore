@@ -21,6 +21,12 @@
 !/.arh/VERSION
 !/.arh/freezes.tsv
 !/.arh/*.lock
+!/.arh/tools-pixi.toml
+!/.arh/envs/
+/.arh/envs/*/*
+!/.arh/envs/*/pixi.toml
+!/.arh/envs/*/pixi.lock
+!/.arh/envs/*/arh.spec
 
 !/iterations/
 /iterations/*/*

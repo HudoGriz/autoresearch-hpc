@@ -7,7 +7,7 @@ case "${1-}" in
 esac
 arh_load_project
 if [ -z "${1-}" ]; then
-  exec python3 "$ARH_HOME/lib/brief.py" "$ARH_ROOT" "$ARH_ITERS" "$(arh_config_get "$ARH_PROJ" context_max_bytes 48000)"
+  exec python3 "$ARH_HOME/lib/brief.py" "$ARH_ROOT" "$ARH_ITERS" "$(arh_config_get "$ARH_PROJ" context_max_bytes 24000)"
 fi
 [ "${1-}" = -n ] && [ -n "${2-}" ] || arh_die 'usage: arh context [-n N]'
 exec python3 "$ARH_HOME/lib/context.py" "$2"
