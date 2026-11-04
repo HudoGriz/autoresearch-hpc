@@ -49,11 +49,6 @@
         "url": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep/archive/refs/tags/v{version}.tar.gz",
         "sha256": "f13fe3b2d52c170d53cdb5b45eb53b955498187f98b550e65e668c7e8a434a76"
       },
-      "anti-autoresearch": {
-        "version": "45135aa38cbc38263d91580a2a458d6b8d4d4c28",
-        "url": "https://github.com/wanshuiyin/Anti-Autoresearch/archive/{version}.tar.gz",
-        "sha256": "f464b128ade977e72db5ad9b6d15bee6b94a16c04a8378c84b3ece33fb13a9c3"
-      },
       "ponytail": {
         "version": "5.3.3",
         "url": "https://github.com/DietrichGebert/ponytail/archive/refs/tags/v{version}.tar.gz",

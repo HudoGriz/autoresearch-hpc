@@ -232,7 +232,8 @@ def budget():
     if attempts >= int(max_rounds):
         sys.exit('review round budget exhausted; leave unresolved work recorded or deliberately revise the budget')
     if attempts and not note.strip():
-        sys.exit('a further review requires --note describing the concrete unresolved issue')
+        sys.exit(f'review {attempts + 1} of {max_rounds} requires --note naming what it is for, e.g. '
+                 "--note 'the report and results changed after the accepted findings F1-F3'")
 
 
 def cli_version(template, cwd):
@@ -463,6 +464,7 @@ if __name__ == '__main__':
                 print(path.name + ': PROVIDER ERROR (verifier unavailable; not a review round)')
             else:
                 print(path.name + ': INELIGIBLE (missing/failed metadata, invalid verdict, family or artifact '
-                      'hash, or review terms changed since the claim without a recorded reason)')
+                      'hash, or review terms changed since the claim without a recorded reason). After a '
+                      "correction to the report or results: arh ask --note 'what changed' -n N")
     else:
         sys.exit(run())

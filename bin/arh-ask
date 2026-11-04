@@ -57,6 +57,9 @@ case "$role:$harness" in *..*|*/*) arh_die "invalid role or harness" ;; esac
 # would take most of ask_max_input_bytes.
 if [ -n "$skill" ]; then
   skill_file=$("$ARH_HOME/bin/arh-skill" "$skill") || exit 1
+  # A checklist, not a pipeline: Anti-Autoresearch's 70 kB orchestrator needs its own claims ledger
+  # and reviewers, and a reviewer told to skip those could apply little of it (field feedback #181).
+  [ "$(wc -c < "$skill_file")" -le 20000 ] || arh_die "skill '$skill' is $(wc -c < "$skill_file") bytes: a pipeline, not a review checklist (at most 20000). Run it as its own audit; rubric-sized skills: experiment-audit, result-to-claim, paper-claim-audit"
   extra="${extra:+$extra
 
 }Also read and apply the checklist in $skill_file (research skill '$skill', sha256 $(arh_sha256 "$skill_file")). You are the reviewer: skip any step that calls another reviewer, an MCP tool or the web, and give your verdict in the format above."

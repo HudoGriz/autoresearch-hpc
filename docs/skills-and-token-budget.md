@@ -22,7 +22,7 @@ hook. Claude reads it through `CLAUDE.md`; other supported harnesses use
 | Source | Integration |
 |---|---|
 | Ponytail | Coding guidance as a pinned release, named by `arh context` |
-| ARIS, Anti-Autoresearch | Research and report-forensics skills as pinned releases (`arh skill`, `arh ask --skill`), not copied |
+| ARIS | Research skills as a pinned release (`arh skill`; rubric-sized ones in `arh ask --skill`), not copied |
 | This repository | iterate, verify, cross-check, replicate, ledger and dispatch skills |
 | Karpathy autoresearch | Inspiration and attribution; no imported runtime |
 | Nextflow / Singularity/Apptainer | Execution infrastructure, not skill repositories |

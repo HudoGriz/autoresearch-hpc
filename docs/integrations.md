@@ -18,7 +18,8 @@ is **on by default**, and each can be switched off in `.arh/config/harnesses.md`
 | `arh ask --wait-on-limit` | per call | — | ARH | leave the flag out |
 | Secret scan of everything sent to a provider | on | — | ARH | `secret_scan = off` (with a recorded reason) |
 | [abtop](https://github.com/graykode/abtop) 0.5.5: tokens, context and status of the live Claude Code, Codex and OpenCode sessions linked to an iteration, in `arh sessions -n N` | on | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | — |
-| Research skills: [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28 and [Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch) (report forensics), for `arh skill` and `arh ask --skill NAME` | on | — | `scripts/setup-tools.sh` (pinned archives, sha256-checked, into `.arh/skills/`) | — |
+| Research skills: [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28, for `arh skill` and `arh ask --skill NAME` (checklists up to 20 kB: experiment-audit, result-to-claim, paper-claim-audit) | on | — | `scripts/setup-tools.sh` (pinned archives, sha256-checked, into `.arh/skills/`) | — |
+| [Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch): manuscript forensics before submission | off | its own session on the manuscript | not installed: its skills are 40-71 kB pipelines with their own claims ledger and reviewers, too large for `arh ask --skill` (field trial #181) | — |
 | Notify the operator (failed run, controller ended, UNSOUND or maintained review) | off | a command, e.g. [apprise](https://github.com/caronc/apprise) for Slack, e-mail or Matrix | site.md `notify =` (`ARH_EVENT`, `ARH_ITERATION`, `ARH_MESSAGE`) | leave it empty |
 | [Chaperone](https://github.com/HudoGriz/hpc-chaperone): each agent as its own Unix user | off | Chaperone on the cluster | prefix `harness_<name>_cmd` with `chaperone` | — |
 

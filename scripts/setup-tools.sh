@@ -3,7 +3,7 @@
 #
 # Entire CLI (agent sessions), gitleaks (credential rules) and abtop (live sessions) are release
 # binaries checked by sha256; basic-memory (search over knowledge/) is a pixi environment locked in
-# .arh/tools-pixi.lock; the research and coding skills (ARIS, Anti-Autoresearch, Ponytail) are pinned
+# .arh/tools-pixi.lock; the research and coding skills (ARIS, Ponytail) are pinned
 # source archives extracted under .arh/skills/, where every node and account of the project can read
 # them. Pins: config/dependencies.json. What each tool does and how to switch it off:
 # docs/integrations.md.
@@ -34,7 +34,7 @@ print('env', ' '.join(t['env']))
 PY
 )
 dir=$(arh_tools_dir "$state")
-prefix="$dir/$(printf '%s\n' "$(uname -m)" "${pins[@]}" | sha256sum | cut -c1-16)"
+prefix="$dir/$(printf '%s\n' "$(uname -m)" "${pins[@]}" | grep -v '^skills ' | sha256sum | cut -c1-16)"  # binaries and env only
 fetch() {  # URL SHA256 FILE
   curl -fsSL --retry 3 -o "$3" "$1" && [ "$(arh_sha256 "$3")" = "$2" ] \
     || { echo "download failed or checksum mismatch: $1" >&2; return 1; }
@@ -59,6 +59,9 @@ for line in "${pins[@]}"; do
       [ -n "$(find "$state/skills/$name" -name SKILL.md -print -quit)" ] || { echo "no SKILL.md in $url" >&2; exit 1; }
       printf '%s\n' "$sha" > "$state/skills/$name/.sha256" ;;
   esac
+done
+for d in "$state/skills"/*/; do                    # a source no longer pinned goes with its pin
+  if [ -f "$d/.sha256" ] && ! printf '%s\n' "${pins[@]}" | grep -q "^skills $(basename "$d") "; then rm -rf "$d"; fi
 done
 
 # basic-memory, replayed exactly from the project's lock once one exists.

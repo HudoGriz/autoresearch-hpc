@@ -18,9 +18,11 @@ ARH states what must hold and leaves the means to maintained tools.
   environment takes 132 s, where micromamba gave up after more than 29 min (#116, #125).
   Environments built by an earlier arh keep working. `arh env create --cuda 12` records the
   CUDA version in `pixi.toml`, so a CUDA set solves and rebuilds on a node without a GPU (#167).
-- **Skills are pinned source archives, not vendored copies**: Ponytail (v5.3.3), ARIS and
-  Anti-Autoresearch are fetched by sha256 into `.arh/skills/`. `arh skill` lists them by source.
-  `arh migrate` removes the old in-repo Ponytail copy.
+- **Skills are pinned source archives, not vendored copies**: Ponytail (v5.3.3) and ARIS are
+  fetched by sha256 into `.arh/skills/`. `arh skill` lists them by source. `arh migrate` removes
+  the old in-repo Ponytail copy. `arh ask --skill` takes a checklist of at most 20 kB.
+  Anti-Autoresearch was tried and is not installed: its skills are 40–71 kB pipelines, better
+  run on their own at manuscript stage (#181).
 - **`arh context` is about half as long** (38 kB to 17 kB in the field study). `## Current state`
   gets a quarter of `context_max_bytes` (default now 24000). When it is longer, the brief says to
   move the history below it. Both ends are kept, cut between entries, and the cut names the
@@ -34,12 +36,18 @@ ARH states what must hold and leaves the means to maintained tools.
   `MPLCONFIGDIR` under node-local `/tmp`, since the environments are mounted read-only and numba's
   cached functions failed at import. A freeze without `freeze_anchor` says so. The TSA recipe is
   indented, so only the real setting counts.
+- **From the live study** (#180–#182):
+  - `arh stop -n N` never stops the dispatched controller that called it. It recognises the
+    controller by the process tree as well as `ARH_DISPATCH`, since a harness can drop the variable.
+  - `arh context -n N` says a concluded iteration is concluded.
+  - An ineligible review and a refused second round name the `--note` route.
+  - Changing a skill pin no longer rebuilds the tool binaries, and a source that is no longer
+    pinned is removed from `.arh/skills/`.
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.
   - An RFC 3161 `freeze_anchor` using the Sigstore TSA through `openssl ts`.
   - apprise as a `notify` command.
-  - Anti-Autoresearch as an extra pre-review check through `arh ask --skill`.
 
 ### Changed (parked controllers, per-iteration roles, field feedback #90 and #136–#163, 2026-11-01 to 11-04)
 - **`arh dispatch park` and `arh dispatch message`** (#144, #156): after a detached submission a

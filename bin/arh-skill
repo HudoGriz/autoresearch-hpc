@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The research and coding skills installed with the integrations (pinned sources in
-# config/dependencies.json: ARIS, Anti-Autoresearch, Ponytail), under .arh/skills/.
+# config/dependencies.json: ARIS, Ponytail), under .arh/skills/.
 #
 #   arh skill          list them by source
 #   arh skill NAME     print the path of NAME's SKILL.md, for any harness to read

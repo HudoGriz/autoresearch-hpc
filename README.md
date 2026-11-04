@@ -299,7 +299,6 @@ GitHub's "Cite this repository" button and most reference managers can read.
 AutoResearch HPC is an independent project. One upstream source is adapted and recorded with its licence under [`third_party/`](third_party/); the others are pinned releases that `scripts/setup-tools.sh` fetches, checked by sha256:
 
 - **[Ponytail](https://github.com/DietrichGebert/ponytail)** (MIT) — the default coding guidance, named by `arh context`.
-- **[Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch)** (MIT) — report-forensics skills for `arh ask --skill`.
 - **[ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** (MIT) — one review rubric, adapted into the [`adversary` cross-check role](skills/cross-check/roles/adversary.md). Its research skills are not copied: `scripts/setup-tools.sh` installs a pinned release, read through `arh skill` and `arh ask --skill`.
 
 Beyond the execution stack in [Why this layer exists](#why-this-layer-exists), it depends on rather than reimplements [pixi](https://pixi.sh) for every environment it builds (host Nextflow, task runtime, `arh env`, tools), and follows the [`AGENTS.md`](https://agents.md/) cross-harness instruction convention.
