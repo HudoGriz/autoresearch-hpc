@@ -1433,8 +1433,10 @@ else:
         self.assertIn('## Current state', brief)
         self.assertNotIn('History line.', brief)
         self.assertIn('Gotchas index', brief)
-        progress.write_text(progress.read_text().replace('## Current state\n', '## Current state\n' + 'State line.\n' * 3000, 1))
-        self.assertIn('[cut: this section is the state', self.call('context').stdout)   # field study: 21 kB of state
+        progress.write_text(progress.read_text().replace('## Current state\n', '## Current state\n' + 'State line.\n' * 3000 + 'Newest entry.\n', 1))
+        brief = self.call('context').stdout                     # field study: 21 kB of state, newest entries last
+        self.assertIn('[cut: PROGRESS.md lines', brief)
+        self.assertIn('Newest entry.', brief)                   # both ends are kept
         self.assertIn('read ', brief)                          # the template's section is a placeholder: full read
         directives = self.root / 'DIRECTIVES.md'
         directives.write_text(directives.read_text().replace(

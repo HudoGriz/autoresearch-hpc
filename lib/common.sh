@@ -289,17 +289,23 @@ print(p["url"].format(version=p["version"], arch=a), p["sha256"].get(a, "none"))
 # arh_pixi_env STATE DIR [SPEC...]: a locked environment in DIR (pixi.toml and pixi.lock are the record,
 # .pixi/ holds the files). With SPECs (conda specs; pypi:NAME==V for PyPI) it is solved and locked;
 # without, rebuilt exactly from DIR/pixi.lock. pixi locks and resumes its own installs. Prints the
-# prefix. Channels: ARH_CHANNELS (default conda-forge bioconda). A GPU solve on a node without a GPU
-# needs CONDA_OVERRIDE_CUDA=12, which pixi reads from the environment.
+# prefix. Channels: ARH_CHANNELS (default conda-forge bioconda). ARH_CUDA=12 declares the CUDA
+# version CUDA builds need ([system-requirements] in pixi.toml), so they solve and install on a node
+# without a GPU; the declaration stays in the manifest for every rebuild.
 arh_pixi_env() {
   local state="$1" dir="$2" pixi c spec conda=() pypi=(); shift 2
   pixi=$(arh_pixi "$state") || return 1
   export PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-$(arh_tools_dir "$state")/pixi-cache}"
   mkdir -p "$dir"
+  local cuda=${ARH_CUDA-}
+  [ $# -gt 0 ] || cuda=$(sed -n 's/^cuda = "\(.*\)"$/\1/p' "$dir/pixi.toml" 2>/dev/null)
+  [ -z "$cuda" ] || export CONDA_OVERRIDE_CUDA="${CONDA_OVERRIDE_CUDA:-$cuda}"
   if [ $# -gt 0 ]; then
     { printf '[workspace]\nname = "%s"\nchannels = [' "$(basename "$dir")"
       for c in ${ARH_CHANNELS:-conda-forge bioconda}; do printf '"%s", ' "$c"; done
-      printf ']\nplatforms = ["linux-%s"]\n\n[dependencies]\n' "$(uname -m | sed 's/x86_64/64/; s/arm64/aarch64/')"
+      printf ']\nplatforms = ["linux-%s"]\n' "$(uname -m | sed 's/x86_64/64/; s/arm64/aarch64/')"
+      [ -z "${ARH_CUDA-}" ] || printf '\n[system-requirements]\ncuda = "%s"\n' "$ARH_CUDA"
+      printf '\n[dependencies]\n'
     } > "$dir/pixi.toml"
     rm -f "$dir/pixi.lock"
     for spec in "$@"; do case "$spec" in pypi:*) pypi+=("${spec#pypi:}") ;; *) conda+=("$spec") ;; esac; done

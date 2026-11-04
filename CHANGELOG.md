@@ -16,14 +16,19 @@ ARH states what must hold and leaves the means to maintained tools.
   `arh env create` and basic-memory. Environments live in `.arh/envs/NAME/` and are recorded by
   `pixi.toml` and `pixi.lock`, with PyPI packages as `pypi:PKG==V`. On this cluster a CUDA torch
   environment takes 132 s, where micromamba gave up after more than 29 min (#116, #125).
-  Environments built by an earlier arh keep working. `CONDA_OVERRIDE_CUDA=12` lets a GPU solve
-  run on a node without a GPU.
+  Environments built by an earlier arh keep working. `arh env create --cuda 12` records the
+  CUDA version in `pixi.toml`, so a CUDA set solves and rebuilds on a node without a GPU (#167).
 - **Skills are pinned source archives, not vendored copies**: Ponytail (v5.3.3), ARIS and
   Anti-Autoresearch are fetched by sha256 into `.arh/skills/`. `arh skill` lists them by source.
   `arh migrate` removes the old in-repo Ponytail copy.
 - **`arh context` is about half as long** (38 kB to 17 kB in the field study). `## Current state`
   gets a quarter of `context_max_bytes` (default now 24000). When it is longer, the brief says to
-  move the history below it. The gotchas index lists headings only.
+  move the history below it. Both ends are kept and the cut names the lines it left out (#170).
+  The gotchas index lists headings only.
+- **Smaller fixes from the trial** (#171–#173): `arh skill` prints one line per source.
+  `arh migrate` lists its changes before the notes on default settings. A run that leaves more
+  than 10,000 files in `results/` gets a warning, because every gate hashes them all. The
+  failed-check scan skips directories of more than 200 JSON files.
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

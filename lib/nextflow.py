@@ -510,6 +510,15 @@ def run():
         if received:
             record['signal'] = received[0].name
             returncode = returncode or 128 + received[0].value
+        # A broad publishDir pattern once copied 57k tool temp files into results/, and the results
+        # gate, which hashes every one, took an hour (field feedback #173).
+        results = iteration / 'results'
+        published = sum(len(files) for _, _, files in os.walk(results)) if results.is_dir() else 0
+        if published > 10000:
+            record['results_files'] = published
+            print(f'arh: warning: {results.relative_to(root)} holds {published} files; every gate and review '
+                  'hashes them all. Narrow the publishDir patterns to the outputs the report reads before the next run.',
+                  file=sys.stderr)
         hook = args.on_exit or site.get('on_exit')
         if hook:
             record['on_exit'] = notify(hook, record, attempt, name, iteration, root)

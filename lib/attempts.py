@@ -22,6 +22,7 @@ README, one row per attempt; the ledger counts those rows, so a promoted result 
 variants it was chosen from.
 """
 from datetime import datetime, timezone
+import collections
 import hashlib
 import json
 from pathlib import Path
@@ -74,7 +75,8 @@ PASS_KEY = re.compile(r'(^|_)(pass|passes|passed|ok)$')
 
 def failed_checks(directory, max_bytes=2 * 2**20):
     """Keys like acceptance_pass, permuted_pass or controls_ok that a JSON file under results/ sets to
-    false: a frozen criterion or control that failed. Files over MAX_BYTES are skipped (per-row tables)."""
+    false: a frozen criterion or control that failed. Files over MAX_BYTES and directories of more than 200
+    JSON files are skipped (per-row tables, a tool's temp files)."""
     out = []
 
     def walk(value, path, rel):
@@ -90,8 +92,10 @@ def failed_checks(directory, max_bytes=2 * 2**20):
                 walk(item, f'{path}[{i}]', rel)
 
     results = Path(directory) / 'results'
-    for path in sorted(results.rglob('*.json')) if results.is_dir() else []:
-        if path.stat().st_size > max_bytes:
+    found = sorted(results.rglob('*.json')) if results.is_dir() else []
+    per_dir = collections.Counter(path.parent for path in found)
+    for path in found:
+        if path.stat().st_size > max_bytes or per_dir[path.parent] > 200:   # tables, or a tool's own temp files (#173)
             continue
         try:
             walk(json.loads(path.read_text()), '', str(path.relative_to(directory)))

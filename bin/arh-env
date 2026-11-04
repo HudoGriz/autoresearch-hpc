@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # Scientific environments for workflow tasks: solved once with pixi, locked, reused.
 #
-#   arh env create NAME SPEC... [-c CHANNEL]...  solve and lock NAME (.arh/envs/NAME/pixi.lock); pypi:PKG==V for PyPI
+#   arh env create NAME SPEC... [-c CHANNEL]... [--cuda VER]
+#                                                solve and lock NAME (.arh/envs/NAME/pixi.lock); pypi:PKG==V for PyPI
 #   arh env create NAME                          rebuild NAME exactly from its lock (fresh clone, lost files)
 #   arh env path NAME                            print the prefix; call <prefix>/bin/python or Rscript from a process
 #   arh env list                                 environments and their package counts
 #
 # Channels default to conda-forge and bioconda. An environment does not change once built: a
-# different package set is a new NAME. Every run receipt hashes the locks. A GPU solve on a node
-# without a GPU: CONDA_OVERRIDE_CUDA=12 arh env create ...
+# different package set is a new NAME. Every run receipt hashes the locks. --cuda 12 declares the CUDA
+# version CUDA builds (pytorch-gpu, ...) need, so they solve and install on a node without a GPU.
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "${ARH_HOME:?}/lib/common.sh"
 
 sub=${1-}; [ $# -eq 0 ] || shift
 case "$sub" in
-  ""|-h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  ""|-h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   create|path|list) ;;
   *) arh_die "unknown env command: $sub (create, path or list)" ;;
 esac
@@ -48,17 +49,19 @@ if [ "$sub" = path ]; then
   printf '%s\n' "$prefix"; exit 0
 fi
 
-specs=(); channels=()
+specs=(); channels=(); cuda=${CONDA_OVERRIDE_CUDA-}
 while [ $# -gt 0 ]; do
   case "$1" in
     -c|--channel) channels+=("$2"); shift 2 ;;
+    --cuda) cuda="$2"; shift 2 ;;
     -*) arh_die "unexpected option: $1" ;;
     *) specs+=("$1"); shift ;;
   esac
 done
 [ ${#channels[@]} -gt 0 ] || channels=(conda-forge bioconda)
 declared=""
-[ ${#specs[@]} -eq 0 ] || declared=$(printf 'channel %s\n' "${channels[@]}"; printf 'package %s\n' "${specs[@]}")
+[ ${#specs[@]} -eq 0 ] || declared=$(printf 'channel %s\n' "${channels[@]}"; [ -z "$cuda" ] || echo "cuda $cuda"
+                                      printf 'package %s\n' "${specs[@]}")
 [ ! -d "$dir/conda-meta" ] || arh_die "'$name' was built by an earlier arh and stays usable (arh env path $name); a new set needs a new name"
 if [ -n "$declared" ] && [ -f "$dir/arh.spec" ] && [ "$(cat "$dir/arh.spec")" != "$declared" ]; then
   arh_die "environment '$name' was declared with a different package set:
@@ -71,7 +74,7 @@ if [ -z "$declared" ] || [ -f "$dir/pixi.lock" ]; then
 fi
 arh_guard_path "$dir"
 printf 'arh env: %s %s; this blocks until it is done\n' "$([ ${#specs[@]} -gt 0 ] && echo solving || echo installing)" "$name" >&2
-prefix=$(ARH_CHANNELS="${channels[*]}" arh_pixi_env "$ARH_STATE" "$dir" "${specs[@]}") \
+prefix=$(ARH_CHANNELS="${channels[*]}" ARH_CUDA="$cuda" arh_pixi_env "$ARH_STATE" "$dir" "${specs[@]}") \
   || arh_die "could not build environment '$name' (output above)"
 [ -z "$declared" ] || [ -f "$dir/arh.spec" ] || printf '%s\n' "$declared" > "$dir/arh.spec"
 printf 'environment %s ready, lock %s\n' "$name" "${dir#"$ARH_ROOT"/}/pixi.lock" >&2

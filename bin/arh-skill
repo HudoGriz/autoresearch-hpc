@@ -13,10 +13,10 @@ skills="$ARH_STATE/skills"
   || arh_die "no skills installed: run $ARH_HOME/scripts/setup-tools.sh $ARH_ROOT"
 case "${1-}" in
   -h|--help) sed -n '2,6s/^# \{0,1\}//p' "$0"; exit 0 ;;
-  ""|list) for src in "$skills"/*/; do
-             printf '%s: %s\n' "$(basename "$src")" \
-               "$(find "$src" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort -u | paste -sd' ' -)"
-           done | fold -s -w 100 ;;
+  ""|list) for src in "$skills"/*/; do         # one line per source, so none reads as another's
+             names=$(find "$src" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort -u)
+             printf '%s (%s): %s\n' "$(basename "$src")" "$(wc -l <<<"$names")" "$(paste -sd' ' - <<<"$names")"
+           done ;;
   *) case "$1" in */*|.*) arh_die "a skill name, not a path: $1" ;; esac
      path=$(find "$skills" -path "*/$1/SKILL.md" | sort | head -1)
      [ -n "$path" ] || arh_die "no skill '$1' (arh skill lists them)"

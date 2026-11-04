@@ -216,13 +216,13 @@ if (cfg / 'harnesses.md').exists():
         notes.append('harnesses.md predates these settings, which apply by their defaults (add any to change it, '
                      'once no iteration is open):' + ''.join(f'\n        {k} = {v}' for k, v in sorted(new.items())))
 
+for change in changes:                      # what migrate does first, then what it only reports
+    print(('  change: ' if apply else '  would change: ') + change)
 for note in notes:
     print('  note: ' + note)
 if not changes:
     print('  nothing ' + ('else ' if notes else '') + 'to do: the study is already on the current layout')
     sys.exit(0)
-for change in changes:
-    print(('  change: ' if apply else '  would change: ') + change)
 if not apply:
     print('\ndry run: nothing was written. Re-run with --apply; a backup is written first.')
     sys.exit(0)

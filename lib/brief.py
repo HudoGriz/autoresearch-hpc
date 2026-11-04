@@ -63,10 +63,20 @@ def main(root, iterations, limit):
     text = ledger.read_text(errors='replace') if ledger.is_file() else ''
     state = section(text, 'Current state')
     if state and len(state.encode()) > limit // 4:      # a state is a few lines; history belongs below it
-        cut = state.encode()[:limit // 4].decode(errors='ignore').rsplit('\n', 1)[0]
-        parts.append(f'## Current state ({ledger.name}; first {len(cut.encode())} of {len(state.encode())} bytes)\n\n'
-                     f'{cut}\n\n[cut: this section is the state, not the history. Shorten it to what is concluded, '
-                     'running, blocked and next, and move the rest below it.]')
+        # Both ends, since studies add new entries at the top or at the bottom; the middle is named.
+        lines, half = state.splitlines(), limit // 8
+        head = tail = 0
+        while head < len(lines) and sum(len(x.encode()) + 1 for x in lines[:head + 1]) <= half:
+            head += 1
+        while tail < len(lines) - head and sum(len(x.encode()) + 1 for x in lines[len(lines) - tail - 1:]) <= half:
+            tail += 1
+        first = text[:text.index(state)].count('\n') + 1
+        parts.append(f'## Current state ({ledger.name}; {len(state.encode())} bytes, more than {limit // 4})\n\n'
+                     + '\n'.join(lines[:head])
+                     + f'\n\n[cut: {ledger.name} lines {first + head}-{first + len(lines) - tail - 1} '
+                     f'({len(lines) - head - tail} lines). This section is the state, not the history: shorten it '
+                     'to what is concluded, running, blocked and next, and move the rest below it.]\n\n'
+                     + '\n'.join(lines[len(lines) - tail:]))
     elif state:
         parts.append(f'## Current state ({ledger.name})\n\n{state}')
     else:

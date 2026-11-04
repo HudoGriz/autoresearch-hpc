@@ -68,8 +68,9 @@ the run receipt are always kept.
 package set once with pixi and locks it in `.arh/envs/NAME/pixi.lock`; it prints the
 prefix a process calls (`<prefix>/bin/python`). `arh env create NAME` without
 packages rebuilds it exactly from its lock. A built environment does not change: a
-different package set is a new name. Run receipts hash every lock. A GPU package set
-solved on a login node without a GPU needs `CONDA_OVERRIDE_CUDA=12`.
+different package set is a new name. Run receipts hash every lock. A CUDA package set
+(`pytorch-gpu`, ...) takes `--cuda 12`: it is recorded in `pixi.toml`, so the set solves and
+rebuilds on a node without a GPU.
 
 ### Provenance from Nextflow itself
 
