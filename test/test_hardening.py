@@ -28,7 +28,11 @@ _scheduler = re.findall(r'(?m)^[ \t]*scheduler[ \t]*=[ \t]*(\S*)', Path(_site).r
 if _scheduler and _scheduler[0] != 'local':
     sys.exit(f'ARH_TEST_SITE must set scheduler = local, not {_scheduler[0]}: {_site}')
 needs_network = unittest.skipUnless(os.environ.get('ARH_TEST_NETWORK'), 'set ARH_TEST_NETWORK=1 to solve real packages')
-needs_gitleaks = unittest.skipUnless(shutil.which('gitleaks'), 'gitleaks is not on PATH')
+# The secret scan is gitleaks's: found on PATH or in the test site's tools; without it the scan is off.
+GITLEAKS = shutil.which('gitleaks') or next((str(Path(m.group(1).strip()) / 'bin/gitleaks') for m in [re.search(
+    r'(?m)^tools_prefix\s*=(.*)$', Path(os.environ['ARH_TEST_SITE']).read_text() if os.environ.get('ARH_TEST_SITE') else '')]
+    if m and (Path(m.group(1).strip()) / 'bin/gitleaks').exists()), None)
+needs_gitleaks = unittest.skipUnless(GITLEAKS, 'gitleaks is not on PATH or in the test site')
 REFUSE = ("import sys; sys.stderr.write('This content was flagged for possible biological risk. "
           "If this seems wrong, try rephrasing your request.\\n'); raise SystemExit(1)")
 
@@ -39,6 +43,9 @@ class Protocol(unittest.TestCase):
         self.root = Path(self.temp.name) / 'project'
         self.env = dict(os.environ, ARH_HOME=str(ROOT), ARH_PROJECT=str(self.root), ARH_VERBOSE='1',
                         PATH=str(ROOT / 'bin') + os.pathsep + os.environ['PATH'])
+        if GITLEAKS:
+            (Path(self.temp.name) / 'gl').mkdir(); (Path(self.temp.name) / 'gl/gitleaks').symlink_to(GITLEAKS)
+            self.env['PATH'] = str(Path(self.temp.name) / 'gl') + os.pathsep + self.env['PATH']
         subprocess.run([str(ROOT / 'bin/arh'), 'init', str(self.root)], check=True, capture_output=True)
         if os.environ.get('ARH_TEST_SITE'):
             # The site's runtime, not its integration tools: a test sees gitleaks or basic-memory only
@@ -81,6 +88,7 @@ harness_source_family = openai
 harness_reviewer_family = {family}
 harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
 {extra}ask_timeout = {timeout}
+{'' if GITLEAKS else 'secret_scan = off'}
 {extra_config}```
 ''')
         if bind:
@@ -749,7 +757,7 @@ else:
         run = json.loads((record / 'run.json').read_text())
         self.assertEqual((run['harness'], run['state'], run['exit_code'], run['session']), ('ctl', 'finished', 0, f'dispatch-{n}-001'))
         log = (record / 'session.log').read_text()
-        self.assertIn('[REDACTED Anthropic API key]', log); self.assertNotIn('sk-ant-aaaa', log)
+        self.assertIn('[REDACTED arh-anthropic-key]', log); self.assertNotIn('sk-ant-aaaa', log)
         self.assertGreaterEqual(run['redactions'], 1)
         self.assertEqual(run['session_log_sha256'], hashlib.sha256((record / 'session.log').read_bytes()).hexdigest())
         summary = json.loads((record / 'summary.json').read_text())
@@ -836,8 +844,9 @@ else:
         self.assertIn('has not concluded', self.call('memory', 'add', '-n', '1', finding, good=False).stderr)
         self.ask(); self.gate()
         self.assertIn('state the finding', self.call('memory', 'add', '-n', '1', 'too short', good=False).stderr)
-        self.assertIn('credential', self.call('memory', 'add', '-n', '1', 'the token is ghp_' + 'a' * 40 + ' found here',
-                                              good=False).stderr)
+        if GITLEAKS:
+            self.assertIn('credential', self.call('memory', 'add', '-n', '1', 'the token is ghp_' + 'a' * 40 + ' found here',
+                                                  good=False).stderr)
         self.assertIn('recorded F1.1', self.call('memory', 'add', '-n', '1', finding).stdout)
         text = (self.root / 'knowledge/F1.1.md').read_text()
         self.assertTrue(text.startswith('---\nid: F1.1\niteration: 1\n'))
@@ -920,12 +929,10 @@ else:
     HOOK = 'https://hooks.slack.com/services/' + '/'.join(('T01ABCDEF12', 'B01ABCDEF34', 'abcdefghijklmnopqrstuvwx'))
 
     @needs_gitleaks
-    def test_gitleaks_rules_apply_on_top_of_the_built_in_patterns(self):
-        # A Slack webhook URL: no built-in pattern models it; gitleaks has a rule for it.
+    def test_gitleaks_maintained_rules_apply(self):
+        # A Slack webhook URL: none of config/gitleaks.toml's shapes; gitleaks's own rules have it.
         self.report.write_text(self.report.read_text() + f'Alerts go to {self.HOOK}.\n')
-        self.assertIn('gitleaks: slack-webhook-url', self.call('ask', '-n', '1', good=False).stderr)
-        self.configure(extra_config='secret_scanner = builtin\n')
-        self.call('ask', '-n', '1')
+        self.assertIn('slack-webhook-url', self.call('ask', '-n', '1', good=False).stderr)
 
     @needs_gitleaks
     def test_gitleaks_redacts_a_dispatched_session_log(self):
@@ -934,14 +941,15 @@ else:
         out = subprocess.run([sys.executable, str(ROOT / 'lib/secret_scan.py'), 'redact', str(log)],
                              env=self.env, capture_output=True, text=True)
         self.assertEqual(out.stdout.strip(), '1')
-        self.assertIn('[REDACTED gitleaks: slack-webhook-url]', log.read_text())
+        self.assertIn('[REDACTED slack-webhook-url]', log.read_text())
 
+    @needs_gitleaks
     def test_a_required_scanner_that_is_missing_stops_the_request(self):
         self.env['PATH'] = os.pathsep.join(p for p in self.env['PATH'].split(os.pathsep)
                                            if not (Path(p) / 'gitleaks').exists())
-        self.configure(extra_config='secret_scanner = gitleaks\n')
+        self.configure(extra_config='secret_scan = on\n')
         refused = self.call('ask', '-n', '1', good=False)
-        self.assertIn('gitleaks is not on PATH', refused.stderr)
+        self.assertIn('needs gitleaks on PATH', refused.stderr)
         self.assertIn('could not run', refused.stderr)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*')))
 
@@ -1151,52 +1159,6 @@ else:
         record=json.loads(next((self.it/'logs/nextflow/slow').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['signal'],'SIGTERM')
 
-    def legacy_study(self):
-        """A minimal 0.1-layout study built from the current templates."""
-        old = Path(self.temp.name) / 'legacy'
-        (old / '.dl/config').mkdir(parents=True); (old / 'rules').mkdir()
-        for name in ('site.md', 'project.md', 'harnesses.md'):
-            (old / '.dl/config' / name).write_text((ROOT / 'config' / name).read_text().replace('arh-config', 'dl-config'))
-        for rule in (ROOT / 'config/rules').glob('*.md'):
-            (old / 'rules' / rule.name).write_text(rule.read_text().replace('arh-config', 'dl-config'))
-        (old / '.dl/VERSION').write_text('protocol = 0.1.0\n')
-        (old / '.dl/registry.tsv').write_text('iteration\tagent\tclaimed\tstatus\ttitle\n')
-        (old / 'PROGRESS.md').write_text('# PROGRESS\n\n<!-- dl:status:begin — generated by `dl ledger render`; '
-                                         'do not edit by hand -->\n| 1 | old |\n<!-- dl:status:end -->\n\n'
-                                         'Iteration 1: `dl gate results` passed.\n')
-        (old / 'AGENTS.md').write_text('# Automated discovery loop — agent contract\n\nUse `dl claim`.\n')
-        it = old / 'iterations/iteration1'; it.mkdir(parents=True)
-        (it / 'README.md').write_text('A frozen pre-declaration that mentions dl-config.\n')
-        (it / 'CLAIM.json').write_text('{\n  "iteration": 1,\n  "declared_agent": "old",\n  "title": "legacy question"\n}\n')
-        (old / 'iterations/iteration2').mkdir()                    # an iteration folder with no claim record
-        return old
-
-    def test_migrate_legacy_study(self):
-        # Moving a real 0.1 study by hand took eight steps and missed the ledger markers (2026-09-11).
-        old = self.legacy_study(); readme = (old / 'iterations/iteration1/README.md').read_bytes()
-        env = dict(self.env, ARH_PROJECT=str(old))
-        run = lambda *a: subprocess.run([str(ROOT / 'bin/arh'), 'migrate', str(old), *a], env=env, cwd=old,  # noqa: E731
-                                        capture_output=True, text=True, timeout=120)
-        dry = run()
-        self.assertEqual(dry.returncode, 0, dry.stderr); self.assertIn('would change', dry.stdout)
-        self.assertFalse((old / '.dl').is_symlink()); self.assertFalse((old / '.arh').exists())
-        applied = run('--apply'); self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
-        self.assertTrue((old / '.arh').is_dir()); self.assertTrue((old / '.dl').is_symlink())
-        for p in [*(old / '.arh/config').glob('*.md'), *(old / 'rules').glob('*.md')]:
-            self.assertNotRegex(p.read_text(), r'(?m)^\s*```\s*dl-config', p.name)
-        ledger = (old / 'PROGRESS.md').read_text()
-        self.assertIn('arh:status:begin', ledger); self.assertNotIn('dl:status', ledger)
-        self.assertIn('`dl gate results` passed', ledger)          # the record's prose is left as written
-        protocol = re.search(r'protocol, v(\S+)', (ROOT / 'PROTOCOL.md').read_text()).group(1)
-        self.assertIn(f'protocol = {protocol}', (old / '.arh/VERSION').read_text())
-        self.assertTrue((old / 'AGENTS.md').read_text().startswith('# AutoResearch HPC'))
-        self.assertTrue((old / 'skills/iterate/SKILL.md').is_file())
-        self.assertEqual((old / 'iterations/iteration1/README.md').read_bytes(), readme)
-        self.assertTrue(list((old / '.arh').glob('migration-backup-*.tgz')))
-        subprocess.run([str(ROOT / 'bin/arh'), 'ledger', 'render'], env=env, cwd=old, check=True, capture_output=True)
-        self.assertEqual((old / 'PROGRESS.md').read_text().count('status:begin'), 1)
-        self.assertIn('to do: the study is already on the current layout', run('--apply').stdout)
-
     def test_ledger_render_refuses_a_foreign_status_block(self):
         ledger = self.root / 'PROGRESS.md'
         text = ledger.read_text().replace('arh:status:', 'old:status:'); ledger.write_text(text)
@@ -1297,34 +1259,6 @@ else:
         record['require_foreign_family'] = True               # as a strict-era review would read
         record_path.write_text(json.dumps(record))
         self.assertIn('no eligible cross-check', self.gate(good=False).stdout)
-
-    def test_delegate_records_who_did_the_work(self):
-        self.configure(extra_config='executor = reviewer\n')
-        self.assertIn('executor', self.call('delegate', 'list').stdout)
-
-        task = self.root / 'task.md'
-        task.write_text('Implement the pre-declared analysis.\n')
-        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), '--dry-run')
-        self.assertIn('Implement the pre-declared analysis.', dry.stdout)
-        self.assertFalse(list((self.it / 'metadata').glob('delegations/*')))   # a dry run writes nothing
-
-        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task))
-        run = next((self.it / 'metadata/delegations').iterdir())
-        self.assertEqual(run.name, '001-executor')
-        record = json.loads((run / 'run.json').read_text())
-        self.assertEqual((record['schema'], record['role'], record['harness']),
-                         ('arh-delegation-v1', 'executor', 'reviewer'))
-        self.assertEqual(record['exit_code'], 0)
-        self.assertIn('VERDICT: SOUND', (run / 'response.md').read_text())
-        # The frozen pre-declaration travels with the task; the response is not a result.
-        self.assertIn('pre-declaration', (run / 'request.md').read_text())
-        self.assertFalse((self.it / 'results' / 'response.md').exists())
-
-    def test_delegate_refuses_an_unconfigured_role(self):
-        self.configure()
-        failed = self.call('delegate', '--role', 'executor', '-n', '1', good=False)
-        self.assertIn('no harness configured for role', failed.stderr)
-        self.assertIn('none configured', self.call('doctor', good=None).stdout)
 
     def test_content_refusal_is_its_own_outcome(self):
         # Codex refused a public RNA-seq count table as "flagged for possible biological risk"
@@ -1701,14 +1635,6 @@ else:
         self.assertEqual(record['knowledge_sha256']['DIRECTIVES.md'],
                          hashlib.sha256(directives.read_bytes()).hexdigest())
 
-    def test_delegated_executor_receives_the_directives(self):
-        self.configure(extra_config='executor = reviewer\n')
-        directives = self.root / 'DIRECTIVES.md'
-        directives.write_text(directives.read_text() + '\n### 2026-10-05 — the ONT truth trains and scores\n')
-        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--dry-run').stdout
-        self.assertIn('the ONT truth trains and scores', dry)
-        self.assertIn('GOTCHAS.md', dry)
-
     def test_site_gotchas_are_shared_checked_and_hashed(self):
         shared = Path(self.temp.name) / 'site/GOTCHAS.md'
         shared.parent.mkdir(); shared.write_text('# Site gotchas\n\n## truvari 5.4 with pysam 0.24\n**Assertion:** pin pysam\n')
@@ -2017,17 +1943,14 @@ else:
         self.assertIn('1 note(s) of work outside arh submit', out)
         self.assertIn('no arh submit run receipt does', out)
 
+    @needs_gitleaks
     def test_requests_carrying_a_credential_are_not_sent(self):
         key = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0' * 2
         self.report.write_text(self.report.read_text() + f'\nexport ANTHROPIC_API_KEY={key}\n')
         failed = self.ask(good=False)
-        self.assertIn('Anthropic API key', failed.stderr); self.assertNotIn(key, failed.stderr)
+        self.assertIn('arh-anthropic-key', failed.stderr); self.assertNotIn(key, failed.stderr)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*')))
         self.assertIn('would refuse', self.call('ask', '-n', '1', '--dry-run').stderr)
-        self.configure(extra_config='executor = reviewer\n')
-        task = self.root / 'task.md'; task.write_text(f'password = "{key}"\n')
-        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), good=False)
-        self.assertFalse((self.it / 'metadata/delegations').exists())
         self.configure(extra_config='secret_scan = off\n')
         self.ask()
 

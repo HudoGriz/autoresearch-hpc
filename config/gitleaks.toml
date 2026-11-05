@@ -1,0 +1,45 @@
+# ARH's secret scan: gitleaks's maintained rules plus the shapes gitleaks 8.30.1 missed on
+# 2026-10-30 (Anthropic, OpenAI, AWS, Google and Hugging Face keys, assigned passwords, a lone
+# private-key header). Rules are data: add a shape here, not code. Patterns are Go RE2.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "arh-anthropic-key"
+regex = '''sk-ant-[A-Za-z0-9_\-]{20,}'''
+
+[[rules]]
+id = "arh-openai-key"
+regex = '''sk-(?:proj-|svcacct-)?[A-Za-z0-9_\-]{32,}'''
+
+[[rules]]
+id = "arh-aws-access-key"
+regex = '''\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'''
+
+[[rules]]
+id = "arh-github-token"
+regex = '''\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b'''
+
+[[rules]]
+id = "arh-google-api-key"
+regex = '''\bAIza[0-9A-Za-z_\-]{35}\b'''
+
+[[rules]]
+id = "arh-slack-token"
+regex = '''\bxox[abposr]-[A-Za-z0-9-]{10,}'''
+
+[[rules]]
+id = "arh-huggingface-token"
+regex = '''\bhf_[A-Za-z0-9]{30,}\b'''
+
+[[rules]]
+id = "arh-jwt"
+regex = '''\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'''
+
+[[rules]]
+id = "arh-private-key"
+regex = '''-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----'''
+
+[[rules]]
+id = "arh-assigned-secret"
+regex = '''(?i)\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password|passwd)\b["']?\s*[:=]\s*["'][^"'\s]{12,}["']'''

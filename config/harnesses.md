@@ -56,18 +56,17 @@ harness_gemini_cmd      = gemini -p {prompt}
 harness_gemini_family   = google
 harness_gemini_version_cmd = gemini --version
 
-# Who does what. `producer` is the agent that claims and pre-declares; `orchestrator` and
-# `executor` split that work when you want one model planning and another implementing, and
-# `arh delegate --role executor -n N` hands a bounded task to the named harness. Leave the two
-# unset to keep a single agent doing both. `arh delegate list` shows what is configured.
+# Who does what. `producer` is the agent that claims and pre-declares. `executor` names the
+# harness that writes the analysis when that is not the producer (a harness can hand work to
+# another model with its own subagents or tools; how is the harness's business): the reviewer must
+# then differ in family from it too. Leave it unset when the producer does the work.
 producer     = claude
-orchestrator =
 executor     =
 
-# How the work is driven. single: one producer session runs each iteration (arh delegate is
-# optional). per-iteration: a main controller session talks to you, claims iterations and runs
-# arh dispatch -n N, which starts a fresh controller session that owns iteration N: it
-# pre-declares, calls the executor and the verifier, and hands back a summary. The verifier must
+# How the work is driven. single: one producer session runs each iteration. per-iteration: a
+# main controller session talks to you, claims iterations and runs arh dispatch -n N, which starts
+# a fresh controller session that owns iteration N: it pre-declares, does the work, calls the
+# verifier and hands back a summary. The verifier must
 # then differ in model family from both the iteration controller and the executor.
 orchestration = single
 # The harness each dispatched iteration runs in (default: producer). Any CLI with a command
@@ -130,19 +129,14 @@ require_foreign_family = true
 # deny for a blinded study, where a producer must not look published results up:
 # harness/install.sh then turns each harness's web tools off, and arh doctor checks them.
 web_access = allow
-# arh ask and arh delegate refuse to send a plan, report or task that carries something
-# shaped like a credential (an API key, a token, a private key). off only for a recorded reason.
+# arh ask refuses to send a plan, report or note that carries something shaped like a credential
+# (an API key, a token, a private key): gitleaks's rules plus config/gitleaks.toml. Without
+# gitleaks nothing is sent. off only for a recorded reason.
 secret_scan = on
 # How arh memory search finds recorded findings: basic-memory (the default, in the tools
 # environment; its index lives in .arh/basic-memory and never rewrites a finding), or any Markdown
 # knowledge tool's command with {query} and {dir} (the knowledge/ directory) substituted.
 memory_search_cmd = basic-memory
-# auto (the default): gitleaks's maintained rules on top of ARH's built-in patterns. Both are
-# needed: gitleaks 8.30 misses several shapes the built-in patterns catch (Anthropic, OpenAI, AWS,
-# Google and Hugging Face keys, assigned passwords, a lone private-key header; tested 2026-10-30),
-# and the built-in patterns know no rule set beyond common shapes. gitleaks: refuse when it is
-# missing. builtin: never call it.
-secret_scanner = auto
 
 # Integrations on by default (docs/integrations.md; scripts/setup-tools.sh installs them).
 # git_record: the project is a git repository of its record (templates/gitignore keeps data out),
@@ -162,9 +156,6 @@ verifier_fallback =
 ask_timeout = 900
 # A slower harness can have its own bound: harness_<name>_timeout = 1800. A timeout is recorded
 # as the verifier being unavailable, spends no review round and moves on to verifier_fallback.
-# Delegations fall back to ask_timeout when delegate_timeout is unset.
-delegate_timeout =
-delegate_max_output_bytes = 262144
 # One real iteration is a frozen pre-declaration (~16 kB) plus a report (~13 kB) plus the role
 # prompt: ~30 kB. 24000 was too small to send the artefact under review (2026-09-16).
 ask_max_input_bytes = 48000

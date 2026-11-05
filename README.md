@@ -58,7 +58,7 @@ Every switch is a line in `.arh/config/harnesses.md`; [Integrations](docs/integr
 |---|---|---|---|
 | Git record: every command that changes the record is committed; data stays out (`templates/gitignore`) | on | git | `git_record = off` |
 | Entire CLI: agent, model, tokens and transcript of each session | on | git record; tools environment | `entire = off` |
-| gitleaks rules on top of the built-in credential patterns | on | tools environment | `secret_scanner = builtin` |
+| gitleaks secret scan (its rules plus `config/gitleaks.toml`) before anything is sent | on | tools environment | `secret_scan = off`, with a recorded reason |
 | Secret scan of everything sent to a model provider | on | — | `secret_scan = off` |
 | basic-memory search over recorded findings | on | tools environment | `memory_search_cmd = <other tool>` |
 | Ponytail coding guidance, named by `arh context` | on | — | `coding_skill = off` |

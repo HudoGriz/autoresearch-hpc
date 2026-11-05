@@ -43,6 +43,15 @@ ARH states what must hold and leaves the means to maintained tools.
   - An ineligible review and a refused second round name the `--note` route.
   - Changing a skill pin no longer rebuilds the tool binaries, and a source that is no longer
     pinned is removed from `.arh/skills/`.
+
+### Removed (low-risk cuts the field study agreed to, 2026-11-05)
+- **`arh delegate`** (and `lib/evoke.py`, the `orchestrator` role): it was used 0 times in 89 field
+  iterations. Handing work to another model is the harness's business. `executor` stays as the
+  harness whose family the reviewer must differ from.
+- **ARH's own secret patterns**: gitleaks does the scan, with ARH's extra key shapes as rules in
+  `config/gitleaks.toml`. Without gitleaks nothing is sent; `secret_scanner` is gone and
+  `secret_scan = off` remains for a recorded reason.
+- **The 0.1 layout migration** (`.dl/`): a 0.1 study is migrated with autoresearch-hpc 0.3 first.
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

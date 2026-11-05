@@ -66,7 +66,7 @@ constraint to keep a task off cards with too little memory for it.
 rather than to one study: a tool release that mis-handles a flag, a scheduler
 quirk, a truncated shared input. Every project on the site that points at the
 same file reads it, so a lesson costs one project instead of each of them.
-`arh ask` and `arh delegate` point reviewers and executors at it, `arh claim`
+`arh ask` points reviewers at it, `arh claim`
 records its hash, and `arh doctor` checks that it is readable. Leave it empty
 when there is no shared file.
 

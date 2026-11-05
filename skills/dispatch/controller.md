@@ -8,9 +8,9 @@ to find out.
 1. Pre-declare, unless the context below says the declaration is already frozen:
    `arh new -n {N}`, complete every section of `iterations/iteration{N}/README.md`, then
    `arh gate predeclare -n {N}`.
-2. Implement and run the analysis. Do it yourself, or hand bounded tasks to the executor with
-   `arh delegate --role executor -n {N} --prompt FILE`; an executor's output is a draft until it
-   has run through `arh submit`. Every run goes through `arh submit`.
+2. Implement and run the analysis. Work another model writes for you is a draft until it has run
+   through `arh submit`; if it is of another family, it must be the configured `executor`. Every
+   run goes through `arh submit`.
 3. Write the report, then have it reviewed: `arh ask -n {N}`. Answer every finding in
    `REVIEW_RESPONSE.md`; put a rebuttal of an `UNSOUND` verdict to the reviewer with
    `arh ask --rebuttal -n {N}`.

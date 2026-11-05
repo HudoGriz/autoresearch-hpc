@@ -19,8 +19,7 @@ arh wait -n N                                   # block until N's controller has
 
 The brief says what the iteration is to find out and anything the controller
 must know (earlier results it builds on, operator directives). The controller
-pre-declares, implements (itself or through `arh delegate --role executor`),
-has the work reviewed with `arh ask`, runs the results gate and hands back a
+pre-declares, implements, has the work reviewed with `arh ask`, runs the results gate and hands back a
 summary with `arh dispatch report`. Read that summary and the ledger, not the
 controller's transcript; the transcript is kept, with credential-shaped text
 removed, under `iterations/iterationN/metadata/dispatch/`.
@@ -31,6 +30,6 @@ and counts as an attempt at its question: dispatching several and keeping the
 one that worked shows as several attempts in the ledger.
 
 The reviewer must come from a different model family than both the iteration
-controller and the executor. `max_parallel_iterations` limits how many
+controller and any configured executor. `max_parallel_iterations` limits how many
 controllers run at once, and `dispatch_launcher` can start them under the site
 scheduler.

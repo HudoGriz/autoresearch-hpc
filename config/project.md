@@ -121,7 +121,7 @@ task_project_access = ro
 # changed: warn (reported, and recorded in the run receipt), refuse, or off.
 frozen_scripts    = warn
 # The operator's directives file (data locations, decisions, external findings), read by every
-# review and delegation. A study that keeps them elsewhere names that file here.
+# review and dispatch. A study that keeps them elsewhere names that file here.
 directives        = DIRECTIVES.md
 # arh context (the session-start brief) stops at this many bytes; PROGRESS.md's Current state gets
 # a quarter of them.

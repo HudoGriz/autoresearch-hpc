@@ -62,7 +62,7 @@ arh_iter_harn() {
 
 # Set KEY=VALUE pairs in iteration DIR's own harnesses.md (created on first use). The role names map to
 # the project keys they override: worker = iteration_controller, reviewer = verifier,
-# orchestrator = orchestrator, on-limit = dispatch_on_limit; any other KEY is used as written.
+# on-limit = dispatch_on_limit; any other KEY is used as written.
 arh_set_iter_harn() {
   local dir="$1"; shift
   python3 - "$dir/harnesses.md" "${ARH_HARN_PROJECT:-$ARH_HARN}" "$@" <<'PY' || return 1
@@ -72,8 +72,8 @@ own, project, pairs = Path(sys.argv[1]), sys.argv[2], sys.argv[3:]
 sys.path.insert(0, __import__('os').environ['ARH_HOME'] + '/lib')
 from project import config
 alias = {'worker': 'iteration_controller', 'worker-fallback': 'iteration_controller_fallback', 'reviewer': 'verifier',
-         'reviewer-fallback': 'verifier_fallback', 'orchestrator': 'orchestrator', 'on-limit': 'dispatch_on_limit'}
-roles = {'iteration_controller', 'iteration_controller_fallback', 'verifier', 'verifier_fallback', 'orchestrator'}
+         'reviewer-fallback': 'verifier_fallback', 'on-limit': 'dispatch_on_limit'}
+roles = {'iteration_controller', 'iteration_controller_fallback', 'verifier', 'verifier_fallback'}
 values, known = config(own), config(project)
 for pair in pairs:
     key, sep, value = pair.partition('=')
@@ -129,10 +129,9 @@ arh_load_project() {
   # Unset, the variables Claude Code and Codex set (feedback #129); every harness is also identified
   # by its process (agent_process), so a harness without such a variable is still linked.
   ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID")
-  # auto: gitleaks's maintained rules on top of the built-in patterns when gitleaks is installed.
-  ARH_SECRET_SCANNER=$(arh_config_get "$ARH_HARN" secret_scanner auto)
+  ARH_SECRET_SCAN=$(arh_config_get "$ARH_HARN" secret_scan on)   # lib/secret_scan.py reads it
   export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_HARN_PROJECT ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
-    ARH_SESSION_ENV ARH_SECRET_SCANNER
+    ARH_SESSION_ENV ARH_SECRET_SCAN
 }
 
 # mktemp makes files 0600 and directories 0700. Anything arh keeps in the project gets the mode the
@@ -333,11 +332,10 @@ arh_has_sealed() {
 }
 
 # arh_secret_scan NOTE FILE...: succeed unless the files, or the note text, carry something shaped like
-# a credential; the findings go to stderr, redacted. Run on what arh ask and arh delegate
-# are about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
+# a credential; the findings go to stderr, redacted. Run on what arh ask is about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
 arh_secret_scan() {
   local note="$1" tmp="" rc=0 hits; shift
-  [ "$(arh_config_get "$ARH_HARN" secret_scan on)" != off ] || return 0
+  [ "$ARH_SECRET_SCAN" != off ] || return 0
   if [ -n "$note" ]; then tmp=$(mktemp); printf '%s\n' "$note" > "$tmp"; set -- "$@" "$tmp"; fi
   hits=$(python3 "$ARH_HOME/lib/secret_scan.py" scan "$@") || rc=$?
   [ "$rc" != 2 ] || { [ -z "$tmp" ] || rm -f "$tmp"; arh_die "the secret scanner could not run (above); nothing was sent"; }
