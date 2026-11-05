@@ -97,6 +97,8 @@ dispatch_resume_tail = 30
 # after dispatch_park_max_hours regardless.
 dispatch_park_poll = 300
 dispatch_park_max_hours = 168
+# Counts controllers, not accounts: controllers on one account reach its usage limit together, so
+# with more than one, set dispatch_on_limit = fallback and a fallback harness on another account.
 max_parallel_iterations = 2
 # A prefix for the controller's command, e.g. `srun -t 08:00:00 --mem 8G` to run it as a job
 # (the compute node then needs to reach the model provider). Empty runs it here.

@@ -757,8 +757,9 @@ else:
         run = json.loads((record / 'run.json').read_text())
         self.assertEqual((run['harness'], run['state'], run['exit_code'], run['session']), ('ctl', 'finished', 0, f'dispatch-{n}-001'))
         log = (record / 'session.log').read_text()
-        self.assertIn('[REDACTED arh-anthropic-key]', log); self.assertNotIn('sk-ant-aaaa', log)
-        self.assertGreaterEqual(run['redactions'], 1)
+        if GITLEAKS:
+            self.assertIn('[REDACTED arh-anthropic-key]', log); self.assertNotIn('sk-ant-aaaa', log)
+            self.assertGreaterEqual(run['redactions'], 1)
         self.assertEqual(run['session_log_sha256'], hashlib.sha256((record / 'session.log').read_bytes()).hexdigest())
         summary = json.loads((record / 'summary.json').read_text())
         self.assertEqual((summary['outcome'], summary['state']), ('concluded', 'concluded'))

@@ -55,6 +55,12 @@ ARH states what must hold and leaves the means to maintained tools.
 - `arh migrate` names settings in `harnesses.md` that the framework no longer reads, without
   editing the file, since open iterations' review terms hash it (#184). `arh claim` no longer
   warns about a shared identity with an iteration idle for over a week (#185).
+- A dispatched controller's subagents and helpers do not wait on runs: they submit with `--detach`
+  and return, and the controller parks (`skills/dispatch/controller.md`, `reference.md`). In the
+  field study, subagents polling Slurm used 63% of a day's tokens while their controller never
+  parked (#187). `harnesses.md` notes that `max_parallel_iterations` counts controllers, not
+  accounts: controllers on one account reach its limit together, so they need a fallback harness
+  on another account (#188).
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

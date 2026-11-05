@@ -154,6 +154,9 @@ model it can call). If another model family writes the analysis, name its harnes
 as `executor` in `.arh/config/harnesses.md`: the reviewer must then differ in
 family from it too. Delegated output is a **draft** until it has gone through
 `arh submit`, the gates and a cross-check, like work you wrote yourself.
+A subagent or helper does not wait on a run (no `sleep` or queue polls: each poll is a model
+turn); it submits with `--detach` and returns, and the session that owns the iteration waits,
+by parking under dispatch.
 
 ## Per-iteration controllers
 

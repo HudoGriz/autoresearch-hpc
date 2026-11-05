@@ -30,5 +30,6 @@ or review is in progress (`arh wait -n {N}`), except by parking. A run that will
 an hour goes out with `arh submit ... --detach`; then
 `arh dispatch park -n {N} --summary "what runs, what to check when it ends, what comes next"` and end
 your session. A fresh session with that note and your last steps starts when the run ends; waiting
-in a session costs a model turn per poll. `arh wait` exits 4 with a message from the main controller:
-act on it.
+in a session costs a model turn per poll. Work you hand to a subagent or helper never waits on a
+run or review: it submits with `--detach` and returns, and you park. `arh wait` exits 4 with a message
+from the main controller: act on it.
