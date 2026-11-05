@@ -187,6 +187,13 @@ if (cfg / 'harnesses.md').exists():
     if new:
         notes.append('harnesses.md predates these settings, which apply by their defaults (add any to change it, '
                      'once no iteration is open):' + ''.join(f'\n        {k} = {v}' for k, v in sorted(new.items())))
+    code = ''.join(f.read_text(errors='ignore') for d in ('bin', 'lib') for f in (home / d).iterdir() if f.is_file())
+    read = set(config_keys(home / 'config/harnesses.md'))   # documented, or read by name in the code
+    gone = sorted(k for k in have if not k.startswith('harness_') and k not in read
+                  and not re.search(rf'[\'"]{k}[\'"]|ARH_HARN"? +"?{k}\b', code))
+    if gone:                                # left in place: open iterations' terms hash the file (#184)
+        notes.append('harnesses.md has settings this framework no longer reads (remove them once no iteration '
+                     'is open): ' + ', '.join(gone))
 
 for change in changes:                      # what migrate does first, then what it only reports
     print(('  change: ' if apply else '  would change: ') + change)

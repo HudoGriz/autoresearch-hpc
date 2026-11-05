@@ -52,6 +52,9 @@ ARH states what must hold and leaves the means to maintained tools.
   `config/gitleaks.toml`. Without gitleaks nothing is sent; `secret_scanner` is gone and
   `secret_scan = off` remains for a recorded reason.
 - **The 0.1 layout migration** (`.dl/`): a 0.1 study is migrated with autoresearch-hpc 0.3 first.
+- `arh migrate` names settings in `harnesses.md` that the framework no longer reads, without
+  editing the file, since open iterations' review terms hash it (#184). `arh claim` no longer
+  warns about a shared identity with an iteration idle for over a week (#185).
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.
