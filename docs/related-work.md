@@ -58,7 +58,7 @@ here:
 | 57% of agent users with failures repeat an identical failure across sessions; lessons are relearned per user | `DIRECTIVES.md` and `GOTCHAS.md` in the project, a site-wide `site_gotchas` file, each entry with its source and conditions (§8.4) |
 | 32.7% of agent jobs finish within a minute and 10.3% are cancelled ("trial storms") | `arh submit --lint`, `arh doctor --smoke`, an `arh-smoke` block run at the pre-declaration gate, `arh inputs check` |
 | sessions last a median of 7.5 days and are lost on disruption | `arh submit --detach`, iteration leases, `arh status --running` |
-| 127 API keys exposed in three weeks; secrets leak through model requests | `arh ask` and `arh delegate` refuse requests carrying credentials |
+| 127 API keys exposed in three weeks; secrets leak through model requests | `arh ask` refuses requests carrying credentials |
 
 [RASER](https://arxiv.org/abs/2609.03598) (Attar-Khorasani, Lieber and Ghiasvand, 2026)
 adds checkpointed, work-stealing agent job arrays to Slurm, and

@@ -1,64 +1,59 @@
 {
   "nextflow": {
     "version": "26.04.6",
-    "channel": "bioconda"
+    "channel": "bioconda",
+    "nf_prov": "1.8.0"
   },
-  "python": {
-    "version": "3.12",
-    "channel": "conda-forge"
-  },
-  "micromamba": {
-    "version": "2.8.1",
-    "release": "2.8.1-0",
-    "sha256": {
-      "linux-64": "9689782d863c05a1bf5d2d371ba527104e7a4eb4310c1637d8653b751aed9c82",
-      "linux-aarch64": "e5ba23b5945aa49dfd11022e592a510d2686a8feee810e00140b73c9fdf0ba2a",
-      "linux-ppc64le": "321c822aaf4c2922cf3e653cbe8b44a86e28cda8f81f8fac3c0804744c7baf75"
-    }
-  },
-  "runtime_image": "docker://mambaorg/micromamba:2.8.1",
+  "runtime_image": "docker://debian:bookworm-slim",
   "tools": {
-    "_comment": "Integrations on by default (scripts/setup-tools.sh, docs/integrations.md): single release binaries checked by sha256, basic-memory installed by uv, and the ARIS research skills as a pinned source archive. No conda solve.",
-    "uv": {
-      "version": "0.13.1",
-      "url": "https://github.com/astral-sh/uv/releases/download/{version}/uv-{triple}.tar.gz",
+    "_comment": "Release binaries checked by sha256, pixi environments locked by pixi, and skills as pinned source archives (scripts/setup-tools.sh, docs/integrations.md). pixi builds every environment: host Nextflow, the task runtime, arh env and the tools.",
+    "pixi": {
+      "version": "0.84.0",
+      "url": "https://github.com/prefix-dev/pixi/releases/download/v{version}/pixi-{arch}-unknown-linux-musl.tar.gz",
       "sha256": {
-        "linux-64": "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220",
-        "linux-aarch64": "9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14"
+        "x86_64": "f09fcce2b8a2a11d2db5a63863a19ce6c52822083262ea6769c2d6464588b743",
+        "aarch64": "64022dc6abbdf64d7b4d1ab76b922d62b96ff46596348c3c29df7421e20bb5e3"
       }
     },
     "entire": {
       "version": "0.11.6",
       "url": "https://github.com/entireio/cli/releases/download/v{version}/entire_linux_{goarch}.tar.gz",
       "sha256": {
-        "linux-64": "1272cf16a81d30678dd9cf2597e9298dbf6481ada9b81215dc746afb0e79cab0",
-        "linux-aarch64": "2f70f50dc9a0f519c3e5a8080218caf035d9c6442c9502bde971734373952e11"
+        "x86_64": "1272cf16a81d30678dd9cf2597e9298dbf6481ada9b81215dc746afb0e79cab0",
+        "aarch64": "2f70f50dc9a0f519c3e5a8080218caf035d9c6442c9502bde971734373952e11"
       }
     },
     "gitleaks": {
       "version": "8.30.1",
       "url": "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_linux_{glarch}.tar.gz",
       "sha256": {
-        "linux-64": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
-        "linux-aarch64": "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+        "x86_64": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+        "aarch64": "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
       }
     },
     "abtop": {
       "version": "0.5.5",
       "url": "https://github.com/graykode/abtop/releases/download/v{version}/abtop-{arch}-unknown-linux-gnu.tar.xz",
       "sha256": {
-        "linux-64": "ae2f264561c11751748b4a6fb254a1648d5951fb541cf6d8e074f2cf75bdedf8",
-        "linux-aarch64": "4820294003933717ec5e906d9bbc475f2f751c03ed079d25eda1ebcd9e2ab58c"
+        "x86_64": "ae2f264561c11751748b4a6fb254a1648d5951fb541cf6d8e074f2cf75bdedf8",
+        "aarch64": "4820294003933717ec5e906d9bbc475f2f751c03ed079d25eda1ebcd9e2ab58c"
       }
     },
-    "python": "3.12",
-    "pip": {
-      "basic-memory": "0.23.2"
-    },
-    "aris": {
-      "version": "0.4.28",
-      "url": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep/archive/refs/tags/v{version}.tar.gz",
-      "sha256": "f13fe3b2d52c170d53cdb5b45eb53b955498187f98b550e65e668c7e8a434a76"
+    "env": [
+      "python=3.12",
+      "pypi:basic-memory==0.23.2"
+    ],
+    "skills": {
+      "aris": {
+        "version": "0.4.28",
+        "url": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep/archive/refs/tags/v{version}.tar.gz",
+        "sha256": "f13fe3b2d52c170d53cdb5b45eb53b955498187f98b550e65e668c7e8a434a76"
+      },
+      "ponytail": {
+        "version": "5.3.3",
+        "url": "https://github.com/DietrichGebert/ponytail/archive/refs/tags/v{version}.tar.gz",
+        "sha256": "a1409db9ef8ba2556aed6aa3766c381cd633c9f2f9d1c4515fec44df5bb446a3"
+      }
     }
   }
 }

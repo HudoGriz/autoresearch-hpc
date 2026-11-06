@@ -1,7 +1,7 @@
 # HPC execution boundary
 
-Nextflow runs on the host from a versioned micromamba environment. It inherits
-the site's scheduler configuration and uses the native Slurm/PBS client tools.
+Nextflow runs on the host from a locked pixi environment. It inherits the site's
+scheduler configuration and uses the native Slurm/PBS client tools.
 Singularity/Apptainer runs scientific tasks on local or cluster executors. Do not
 wrap the Nextflow controller itself in the task container.
 
@@ -14,87 +14,30 @@ Compute node:                         Singularity/Apptainer → task
 ## Fast setup
 
 `arh init` discovers basic site capabilities and `arh doctor` tells you what is
-still missing:
+still missing. Any digest-pinned image with a shell is a task image; ARH installs
+nothing into it:
 
 ```bash
-arh init /shared/study
-cd /shared/study
-arh doctor
+export APPTAINER_CACHEDIR=/shared/images/.cache        # not your home quota
+singularity pull /shared/images/runtime.sif docker://debian:bookworm-slim
+arh init /shared/study --bootstrap --runtime /shared/images/runtime.sif
+cd /shared/study && arh doctor
 ```
 
-For the normal automated setup, add `--bootstrap`:
+Every environment ARH builds is a [pixi](https://pixi.sh) environment: the host
+Nextflow with its Java (`.arh/envs/nextflow-host`), the task runtime that is bound
+read-only into every task (`.arh/envs/runtime`: bash, `ps` for Nextflow's task
+metrics, python, git), each `arh env create` environment and the tools. Each
+directory's `pixi.toml` and `pixi.lock` are the record; a fresh clone rebuilds them
+exactly. The pinned pixi binary and its package cache go to `tools_dir` (node-local
+on a shared filesystem: a CUDA PyTorch environment builds in about 2 min on CephFS).
+`--env-cache DIR` (or `ARH_ENV_CACHE`) shares both between projects. Offline, stage
+pixi yourself and set `ARH_PIXI=/path/to/pixi`. The setup helpers run on their own
+too: `scripts/setup-nextflow.sh PROJECT`, `scripts/setup-runtime.sh PROJECT IMAGE`.
 
-```bash
-arh init /shared/study --bootstrap
-```
-
-You do **not** need to install micromamba system-wide. The bootstrap logic uses a
-matching micromamba already on `PATH` when possible; otherwise it downloads the
-pinned standalone binary, verifies its SHA-256 checksum, and caches it inside the
-project under `.arh/tools/micromamba/`. No shell initialization or global PATH
-change is required.
-
-The task runtime is a micromamba image. Pull it once; point `APPTAINER_CACHEDIR`
-somewhere with space so the layer cache does not land in your home quota:
-
-```bash
-export APPTAINER_CACHEDIR=/shared/images/.cache
-singularity pull /shared/images/runtime.sif docker://mambaorg/micromamba:2.8.1
-```
-
-With the task SIF staged, configure both pieces in one step:
-
-```bash
-arh init /shared/study --bootstrap \
-  --runtime /shared/images/runtime.sif
-```
-
-The setup helpers remain available independently. They serialise their edits to
-`site.md`, so they are safe to run concurrently:
-
-```bash
-# Normal path: automatically obtain/use the pinned standalone micromamba.
-scripts/setup-nextflow.sh /shared/study
-
-# Offline or explicit override: use a binary you staged yourself.
-scripts/setup-nextflow.sh /shared/study /absolute/path/to/micromamba
-
-scripts/setup-runtime.sh /shared/study /shared/images/runtime.sif
-```
-
-### Sharing environments between projects
-
-Each project otherwise builds its own host and task environments, about 1.5 GB
-together. With `--env-cache`, both are built once in a shared directory, keyed by
-their pins (and the task image digest), and reused by every project that asks for
-the same ones:
-
-```bash
-arh init /shared/study-2 --bootstrap --runtime /shared/images/runtime.sif \
-  --env-cache /shared/arh-envs
-```
-
-Concurrent setups wait for one build; a build interrupted on the same host is
-redone. Each project still records its own explicit lock under `.arh/`. The cache
-must be reachable from compute nodes at the same path. The setup scripts read the
-same directory from `ARH_ENV_CACHE`.
-
-The exact micromamba release and per-platform checksums are pinned in
-`config/dependencies.json`. The selected binary and its digest are recorded in
-`.arh/micromamba.lock`, while the explicit package list for the host Nextflow
-environment is recorded in `.arh/nextflow-host-explicit.lock`.
-
-Automatic micromamba bootstrap currently supports Linux x86-64, ARM64 and
-ppc64le. On a restricted/offline HPC, stage the binary yourself and pass its path
-as the second argument to `scripts/setup-nextflow.sh` or with
-`arh init --bootstrap --micromamba /path/to/micromamba`.
-
-`nextflow_prefix` is the host controller environment. `runtime_image` plus
-`runtime_sha256` identify the task SIF. The optional `runtime_prefix` is a task
-environment mounted read-only inside that image. Replayable `@EXPLICIT` package
-locks are recorded under `.arh/`; `scripts/lock-env.sh` writes the same kind of
-lock for any existing environment and can recreate it with a verified identical
-package list.
+`nextflow_prefix` is the host controller environment, `runtime_image` plus
+`runtime_sha256` identify the task image and `runtime_prefix` the task runtime.
+Environments built by an earlier arh with micromamba keep working.
 
 Set `scheduler = slurm` in `.arh/config/site.md` and configure partition,
 account, time, CPUs and memory there. Additional Nextflow configuration belongs
@@ -121,13 +64,32 @@ the run receipt are always kept.
 
 ### Scientific environments
 
-`arh env create NAME pkg=version ...` solves a package set once inside the task
-image, with the task image's own micromamba and the project mounted as tasks see
-it. It writes `.arh/envs/NAME` and a replayable lock `.arh/NAME-explicit.lock`, and
-prints the prefix a process calls (`<prefix>/bin/python`). `arh env create NAME`
-without packages rebuilds the environment from its lock and checks that the package
-list is identical. A built environment does not change: a different package set is
-a new name. Run receipts hash every `.arh/*-explicit.lock`.
+`arh env create NAME pkg=version ...` (`pypi:pkg==version` for PyPI) solves a
+package set once with pixi and locks it in `.arh/envs/NAME/pixi.lock`; it prints the
+prefix a process calls (`<prefix>/bin/python`). `arh env create NAME` without
+packages rebuilds it exactly from its lock. A built environment does not change: a
+different package set is a new name. Run receipts hash every lock. A CUDA package set
+(`pytorch-gpu`, ...) takes `--cuda 12`: it is recorded in `pixi.toml`, so the set solves and
+rebuilds on a node without a GPU.
+
+### Provenance from Nextflow itself
+
+`.arh/config/nextflow.config` is passed to every run, so Nextflow's own provenance
+needs no ARH code. Its data lineage records every task's code, inputs, outputs and
+container with checksums (`nextflow lineage view`), and the nf-prov plugin writes a
+Workflow Run RO-Crate next to the results, where the review binds it:
+
+```groovy
+lineage.enabled = true      // in the run directory, iterationN/metadata/nextflow/NAME/.lineage
+plugins { id 'nf-prov@1.8.0' }
+prov { formats { wrroc { file = "${params.outdir}/ro-crate-metadata.json"; overwrite = true } } }
+```
+
+Runs are offline, so install the plugin once:
+`NXF_HOME=.arh/nextflow .arh/envs/nextflow-host/.pixi/envs/default/bin/nextflow plugin install nf-prov@1.8.0`.
+Lineage is experimental in Nextflow and checksums every output, which costs time
+on large results; ARH's own run receipt is kept either way, because Nextflow does
+not see the plan, the frozen scripts a workflow calls by path, or the image digest.
 
 ### GPUs
 

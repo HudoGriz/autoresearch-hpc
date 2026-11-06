@@ -87,8 +87,8 @@ workflow {
 - Evidence stays under the iteration: `logs/nextflow/<name>/attempt-*/`
   (`console.log`, `trace.tsv`, `run.json`) and `metadata/nextflow/<name>/work/`.
   A failed run prints the tail of its console log.
-- Scientific packages: `arh env create NAME pkg=version ...` solves them once in
-  the task image, locks them in `.arh/NAME-explicit.lock` and prints the prefix to
+- Scientific packages: `arh env create NAME pkg=version ...` solves them once
+  with pixi, locks them in `.arh/envs/NAME/pixi.lock` and prints the prefix to
   call from a process (`<prefix>/bin/python`, `<prefix>/bin/Rscript`). A different
   package set is a new NAME. Do not build environments by hand.
 - GPUs: give the process `label 'gpu'` (or `process_gpu`), or an `accelerator N`
@@ -135,7 +135,7 @@ notices, and it ends as soon as its reply ends.
   was spent. The reset time it prints is an upper bound, not a schedule: run the
   same command again after a bounded wait (for example 30 minutes) instead of
   sleeping until then.
-- `arh ask` and `arh delegate` refuse to send a request that carries
+- `arh ask` refuses to send a request that carries
   something shaped like a credential. Remove it from the file; never paste keys or
   tokens into a pre-declaration, report, task or note.
 - `arh ask` exit 77: the provider refused the content. No round was spent, and
@@ -147,27 +147,16 @@ notices, and it ends as soon as its reply ends.
   takes the configured producer, records what the session reported as `inferred_agent`,
   and warns when the two disagree. Only set `ARH_AGENT` if no producer is configured.
 
-## Delegating implementation to another model
+## Handing work to another model
 
-A project may name two agents instead of one: `orchestrator` plans, claims and
-pre-declares; `executor` writes and runs the analysis. Both are harnesses in
-`.arh/config/harnesses.md`. Run `arh delegate list` to see what is configured;
-nothing is delegated unless a role is set.
-
-```bash
-arh delegate --role executor -n 4 --prompt task.md --dry-run   # inspect the request first
-arh delegate --role executor -n 4 --prompt task.md
-```
-
-The request carries the frozen pre-declaration and your task. The response lands
-in `iterations/iterationN/metadata/delegations/NNN-<role>/` with `request.md`,
-`response.md` and a `run.json` recording the harness, model version, command and
-hashes. A delegated response is a **draft**: it is not evidence until it has gone
-through pinned execution, the gates and a cross-check, exactly like work you
-wrote yourself. Delegation carries no family requirement — it is a division of
-labour, not a second opinion. Review is still governed by `arh ask`, and with
-`orchestration = per-iteration` the verifier must differ in family from the
-executor too.
+How you split the work is your harness's business (its subagents, or another
+model it can call). If another model family writes the analysis, name its harness
+as `executor` in `.arh/config/harnesses.md`: the reviewer must then differ in
+family from it too. Delegated output is a **draft** until it has gone through
+`arh submit`, the gates and a cross-check, like work you wrote yourself.
+A subagent or helper does not wait on a run (no `sleep` or queue polls: each poll is a model
+turn); it submits with `--detach` and returns, and the session that owns the iteration waits,
+by parking under dispatch.
 
 ## Per-iteration controllers
 

@@ -66,7 +66,7 @@ constraint to keep a task off cards with too little memory for it.
 rather than to one study: a tool release that mis-handles a flag, a scheduler
 quirk, a truncated shared input. Every project on the site that points at the
 same file reads it, so a lesson costs one project instead of each of them.
-`arh ask` and `arh delegate` point reviewers and executors at it, `arh claim`
+`arh ask` points reviewers at it, `arh claim`
 records its hash, and `arh doctor` checks that it is readable. Leave it empty
 when there is no shared file.
 
@@ -89,7 +89,8 @@ nextflow_reports = html
 on_exit =
 # Tell the operator when a run fails, a controller ends, or a review says UNSOUND (or maintains it):
 # a shell command run with ARH_EVENT (run-failed, controller-ended, review-unsound), ARH_ITERATION and
-# ARH_MESSAGE set, e.g. curl -s -d "$ARH_MESSAGE" ntfy.sh/<topic>, or mail. Empty: nothing.
+# ARH_MESSAGE set, e.g. curl -s -d "$ARH_MESSAGE" ntfy.sh/<topic>, mail, or apprise (one CLI for
+# Slack, e-mail, Matrix and 100+ services): apprise -b "$ARH_MESSAGE" slack://... Empty: nothing.
 notify =
 # Retry a failed task up to this many times (0: the first failure stops the run). For sites where
 # tasks fail on cluster events; every retry stays in trace.tsv and the receipt records the setting.

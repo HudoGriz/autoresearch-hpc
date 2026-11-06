@@ -96,8 +96,7 @@ if [ -n "$prefix" ] && [ -x "$prefix/bin/nextflow" ]; then
 else
   arh_fail "host Nextflow environment is not configured"
   arh_info "fix: $ARH_HOME/scripts/setup-nextflow.sh $ARH_ROOT"
-  arh_info "     this bootstraps a checksum-pinned project-local micromamba if needed"
-  arh_info "     offline/custom: scripts/setup-nextflow.sh PROJECT /path/to/micromamba"
+  arh_info "     (a locked pixi environment; offline: ARH_PIXI=/path/to/pixi)"
   warn=$((warn+1))
 fi
 
@@ -107,7 +106,7 @@ tools=$(arh_config_get "$ARH_SITE" tools_prefix "")
 missing=""
 [ "$(arh_config_get "$ARH_HARN" git_record on)" = on ] && [ ! -d "$ARH_ROOT/.git" ] && missing="$missing git-record"
 [ "$(arh_config_get "$ARH_HARN" entire on)" = on ] && ! command -v entire >/dev/null 2>&1 && missing="$missing entire"
-[ "$(arh_config_get "$ARH_HARN" secret_scanner auto)" != builtin ] && ! command -v gitleaks >/dev/null 2>&1 && missing="$missing gitleaks"
+[ "$(arh_config_get "$ARH_HARN" secret_scan on)" != off ] && ! command -v gitleaks >/dev/null 2>&1 && missing="$missing gitleaks"
 [ "$(arh_config_get "$ARH_HARN" memory_search_cmd basic-memory)" = basic-memory ] && ! command -v bm >/dev/null 2>&1 && missing="$missing basic-memory"
 if [ -z "$missing" ]; then
   arh_ok "integrations: git record, Entire, gitleaks, basic-memory"
@@ -192,17 +191,9 @@ else
   arh_info "fix: $ARH_HOME/harness/install.sh $ARH_ROOT <harness> writes these entries"
 fi
 
-printf '\ndelegation roles (optional):\n'
-if [ -z "$(arh_config_get "$ARH_HARN" orchestrator "")$(arh_config_get "$ARH_HARN" executor "")" ]; then
-  printf '  none configured; one agent does both planning and implementation\n'
-else
-  for r in orchestrator executor; do
-    rh=$(arh_config_get "$ARH_HARN" "$r" "")
-    if [ -z "$rh" ]; then arh_warn "$r unset while the other role is configured"
-    elif [ -z "$(arh_config_get "$ARH_HARN" "harness_${rh}_cmd" "")" ]; then
-      arh_fail "$r = $rh has no harness_${rh}_cmd"; warn=$((warn+1))
-    else arh_ok "$r $rh ($(arh_config_get "$ARH_HARN" "harness_${rh}_family" unknown))"; fi
-  done
+rh=$(arh_config_get "$ARH_HARN" executor "")
+if [ -n "$rh" ] && [ -z "$(arh_config_get "$ARH_HARN" "harness_${rh}_family" "")" ]; then
+  arh_fail "executor = $rh has no harness_${rh}_family (the review family check needs it)"; warn=$((warn+1))
 fi
 
 printf '\nknowledge:\n'

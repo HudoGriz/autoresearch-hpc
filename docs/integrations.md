@@ -10,16 +10,17 @@ is **on by default**, and each can be switched off in `.arh/config/harnesses.md`
 |---|---|---|---|---|
 | Git record: the project is a git repository of its record, and every command that changes the record is committed | on | git | the system | `git_record = off` |
 | [Entire CLI](https://github.com/entireio/cli) 0.11.6: agent, model, tokens and transcript of each session behind those commits | on | git record | `scripts/setup-tools.sh` (release binary, sha256-checked) | `entire = off` |
-| [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1: maintained credential rules on top of ARH's built-in patterns | on (`auto`) | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | `secret_scanner = builtin` |
-| [basic-memory](https://github.com/basicmachines-co/basic-memory) 0.23.2: `arh memory search` over `knowledge/` | on | — | `scripts/setup-tools.sh` (PyPI, with uv) | `memory_search_cmd = <another tool's command>` |
-| [Ponytail](https://github.com/DietrichGebert/ponytail): coding guidance, named by `arh context` | on | — | vendored in `skills/ponytail/` | `coding_skill = off` |
+| [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1: the secret scan, its maintained rules plus `config/gitleaks.toml`; without it nothing is sent | on | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | `secret_scan = off` |
+| [basic-memory](https://github.com/basicmachines-co/basic-memory) 0.23.2: `arh memory search` over `knowledge/` | on | — | `scripts/setup-tools.sh` (PyPI, with pixi) | `memory_search_cmd = <another tool's command>` |
+| [Ponytail](https://github.com/DietrichGebert/ponytail) 5.3.3: coding guidance, named by `arh context` | on | — | `scripts/setup-tools.sh` (release archive, sha256-checked, into `.arh/skills/`) | `coding_skill = off` |
 | Resume after a usage limit (`arh dispatch`) | `fallback` | `orchestration = per-iteration` | ARH | `dispatch_on_limit = stop` |
 | Restart after a reboot (`arh dispatch tick`) | when cron runs it | cron or `scrontab` | ARH | do not schedule it |
 | `arh ask --wait-on-limit` | per call | — | ARH | leave the flag out |
 | Secret scan of everything sent to a provider | on | — | ARH | `secret_scan = off` (with a recorded reason) |
 | [abtop](https://github.com/graykode/abtop) 0.5.5: tokens, context and status of the live Claude Code, Codex and OpenCode sessions linked to an iteration, in `arh sessions -n N` | on | — | `scripts/setup-tools.sh` (release binary, sha256-checked) | — |
-| [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28 research skills: `arh skill`, `arh ask --skill NAME` | on | — | `scripts/setup-tools.sh` (release archive, sha256-checked) | — |
-| Notify the operator (failed run, controller ended, UNSOUND or maintained review) | off | a command | site.md `notify =` (`ARH_EVENT`, `ARH_ITERATION`, `ARH_MESSAGE`) | leave it empty |
+| Research skills: [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) 0.4.28, for `arh skill` and `arh ask --skill NAME` (checklists up to 20 kB: experiment-audit, result-to-claim, paper-claim-audit) | on | — | `scripts/setup-tools.sh` (pinned archives, sha256-checked, into `.arh/skills/`) | — |
+| [Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch): manuscript forensics before submission | off | its own session on the manuscript | not installed: its skills are 40-71 kB pipelines with their own claims ledger and reviewers, too large for `arh ask --skill` (field trial #181) | — |
+| Notify the operator (failed run, controller ended, UNSOUND or maintained review) | off | a command, e.g. [apprise](https://github.com/caronc/apprise) for Slack, e-mail or Matrix | site.md `notify =` (`ARH_EVENT`, `ARH_ITERATION`, `ARH_MESSAGE`) | leave it empty |
 | [Chaperone](https://github.com/HudoGriz/hpc-chaperone): each agent as its own Unix user | off | Chaperone on the cluster | prefix `harness_<name>_cmd` with `chaperone` | — |
 
 External research generators (AI Scientist v2, Biomni, Agent Laboratory) are not wrapped; ARH's
@@ -46,30 +47,18 @@ arh init /shared/my-study --bootstrap
 For an existing project:
 
 ```bash
-scripts/setup-tools.sh <study>        # Entire, gitleaks, uv, basic-memory: <tools_dir>/<key>, locked
+scripts/setup-tools.sh <study>        # Entire, gitleaks, abtop, basic-memory, skills (~15 s)
 scripts/enable-record.sh <study>      # git init + templates/gitignore, Entire hooks, basic-memory index
 ```
 
-The tools are separate from the host Nextflow environment, so adding or upgrading one never
-touches the environment that runs workflows. There is no conda solve: Entire, gitleaks and
-[uv](https://github.com/astral-sh/uv) are single release binaries checked against the sha256 in
-`config/dependencies.json`, and uv installs basic-memory into a virtual environment with a
-uv-managed Python. The build writes `.arh/tools-pip.lock` (`uv pip freeze`) and later builds
-install exactly that lock; it also writes `tools_prefix` in `site.md`. `arh` puts the tools
-**last** on PATH, so a site's own copy of a tool wins.
-
-Where they go: `tools_dir` in `site.md`, else `$ARH_ENV_CACHE/tools` (built once and shared
-between projects), else `.arh/envs/tools`. The tools run where `arh` runs, never in a job, so on a
-slow shared filesystem (CephFS, NFS) point `tools_dir` at a node-local disk:
-
-```text
-tools_dir = /var/tmp/arh-tools-$USER
-```
-
-A cold build there takes about 15 s (about 6 min on CephFS; the earlier micromamba build took over
-25 min). If the tools are missing (a new login node, a cleaned `/var/tmp`), `arh doctor` says so; rerun
-`scripts/setup-tools.sh`. On a platform with no pinned builds (not Linux x86-64 or arm64), install
-the tools yourself or switch them off.
+Entire, gitleaks and abtop are release binaries checked against the sha256 in
+`config/dependencies.json`; basic-memory is a pixi environment locked in `.arh/tools-pixi.lock`,
+which later builds install exactly. The binaries and the package cache go to `tools_dir` in
+`site.md` (else `$ARH_ENV_CACHE/tools`, else `.arh/envs/tools`); on a slow shared filesystem make it
+node-local, `tools_dir = /var/tmp/arh-tools-$USER`. The skills go into the project, `.arh/skills/`,
+so reviewers on other nodes and other accounts of the project can read them. `arh` puts the tools
+**last** on PATH, so a site's own copy wins. If they are missing (a new login node, a cleaned
+`/var/tmp`), `arh doctor` says so; rerun `scripts/setup-tools.sh`.
 
 ## Git record
 
@@ -107,14 +96,14 @@ The conclusion receipt (`metadata/conclusions.jsonl`) records the checkpoint ids
 each session ran: evidence the harness configuration alone does not give. Transcripts can hold host
 paths and data excerpts, so check them before you publish a repository.
 
-## gitleaks: credential rules ARH does not maintain
+## gitleaks: the secret scan
 
-`secret_scanner = auto` applies gitleaks's rules on top of the built-in patterns, for `arh ask`,
-`arh delegate`, dispatch briefs and session logs, and `arh memory add`. **Both are
-needed.** On 2026-10-30, gitleaks 8.30.1 missed Anthropic, OpenAI, AWS, Google and Hugging Face key
-shapes, assigned passwords and a lone private-key header that the built-in patterns catch, while it
-alone caught a Slack webhook URL. `secret_scanner = gitleaks` refuses to run without gitleaks;
-`builtin` never calls it.
+ARH's rule is that nothing shaped like a credential is sent to a provider or kept in a session
+log; gitleaks does the scanning, for `arh ask`, dispatch briefs and session logs, and
+`arh memory add`. Its maintained rules are extended by `config/gitleaks.toml` with the shapes
+gitleaks 8.30.1 missed on 2026-10-30 (Anthropic, OpenAI, AWS, Google and Hugging Face keys,
+assigned passwords, a lone private-key header): a new shape is a rule there, not code. Without
+gitleaks nothing is sent; `secret_scan = off` (harnesses.md) is for a recorded reason.
 
 ## basic-memory: searching findings
 
@@ -151,7 +140,7 @@ no submission or review of N runs, when a message arrives, or after `dispatch_pa
 `arh dispatch message -n N TEXT` is the main controller's way in: it wakes a parked controller, and a
 running one's next `arh wait` prints it and exits 4. Wakes do not count against `dispatch_max_resumes`.
 
-**Per iteration.** `arh claim --worker H --reviewer H --orchestrator H --on-limit fallback|wait|stop`
+**Per iteration.** `arh claim --worker H --reviewer H --on-limit fallback|wait|stop`
 (also `--worker-fallback`, `--reviewer-fallback`, `--set KEY=VALUE`) writes `iterationN/harnesses.md`,
 whose keys override `.arh/config/harnesses.md` for that iteration only; unset roles use the project's.
 `arh roles -n N` shows each role and where it comes from, and changes it later. The iteration's
@@ -177,9 +166,9 @@ before its controller handed back. It calls no model. Run it from cron:
 */15 * * * * ARH_PROJECT=<study> <arh>/bin/arh dispatch tick >/dev/null 2>&1
 ```
 
-**Reviews and delegations.** `arh ask --wait-on-limit` probes again every `ask_limit_backoff`
+**Reviews.** `arh ask --wait-on-limit` probes again every `ask_limit_backoff`
 (30 min) for up to `ask_limit_max_wait` (6 h) when no verifier is available, and a failed probe
-spends no round. `arh delegate` exits 75 when the delegated harness is at its limit.
+spends no round.
 
 ## Harness logins under a fresh home
 

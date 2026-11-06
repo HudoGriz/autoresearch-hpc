@@ -11,8 +11,7 @@ Entries are dated and append-only. A directive that changes gets a new entry
 naming the one it supersedes. Each entry says where it came from and under which
 conditions it holds, so a later session can tell whether it is still current.
 
-`arh claim` records this file's hash, `arh delegate` hands it to an executor,
-and `arh ask` points the reviewer at it, so a review checks the work against the
+`arh claim` records this file's hash and `arh ask` points the reviewer at it, so a review checks the work against the
 same directives the producer followed.
 
 ## Current directives

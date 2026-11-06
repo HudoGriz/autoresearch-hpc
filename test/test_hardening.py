@@ -28,7 +28,11 @@ _scheduler = re.findall(r'(?m)^[ \t]*scheduler[ \t]*=[ \t]*(\S*)', Path(_site).r
 if _scheduler and _scheduler[0] != 'local':
     sys.exit(f'ARH_TEST_SITE must set scheduler = local, not {_scheduler[0]}: {_site}')
 needs_network = unittest.skipUnless(os.environ.get('ARH_TEST_NETWORK'), 'set ARH_TEST_NETWORK=1 to solve real packages')
-needs_gitleaks = unittest.skipUnless(shutil.which('gitleaks'), 'gitleaks is not on PATH')
+# The secret scan is gitleaks's: found on PATH or in the test site's tools; without it the scan is off.
+GITLEAKS = shutil.which('gitleaks') or next((str(Path(m.group(1).strip()) / 'bin/gitleaks') for m in [re.search(
+    r'(?m)^tools_prefix\s*=(.*)$', Path(os.environ['ARH_TEST_SITE']).read_text() if os.environ.get('ARH_TEST_SITE') else '')]
+    if m and (Path(m.group(1).strip()) / 'bin/gitleaks').exists()), None)
+needs_gitleaks = unittest.skipUnless(GITLEAKS, 'gitleaks is not on PATH or in the test site')
 REFUSE = ("import sys; sys.stderr.write('This content was flagged for possible biological risk. "
           "If this seems wrong, try rephrasing your request.\\n'); raise SystemExit(1)")
 
@@ -39,6 +43,9 @@ class Protocol(unittest.TestCase):
         self.root = Path(self.temp.name) / 'project'
         self.env = dict(os.environ, ARH_HOME=str(ROOT), ARH_PROJECT=str(self.root), ARH_VERBOSE='1',
                         PATH=str(ROOT / 'bin') + os.pathsep + os.environ['PATH'])
+        if GITLEAKS:
+            (Path(self.temp.name) / 'gl').mkdir(); (Path(self.temp.name) / 'gl/gitleaks').symlink_to(GITLEAKS)
+            self.env['PATH'] = str(Path(self.temp.name) / 'gl') + os.pathsep + self.env['PATH']
         subprocess.run([str(ROOT / 'bin/arh'), 'init', str(self.root)], check=True, capture_output=True)
         if os.environ.get('ARH_TEST_SITE'):
             # The site's runtime, not its integration tools: a test sees gitleaks or basic-memory only
@@ -81,6 +88,7 @@ harness_source_family = openai
 harness_reviewer_family = {family}
 harness_reviewer_cmd = python3 "{self.mock}" {{prompt}}{cmd_extra}
 {extra}ask_timeout = {timeout}
+{'' if GITLEAKS else 'secret_scan = off'}
 {extra_config}```
 ''')
         if bind:
@@ -636,7 +644,9 @@ sys.exit(r.returncode)
         # A false *_pass in a results JSON is the result, not a gate failure, and is recorded (#150, #151).
         out = self.it / 'results/gather'; out.mkdir(parents=True, exist_ok=True)
         (out / 'results.json').write_text(json.dumps({'controls': {'permuted_pass': False, 'shift_pass': True},
-                                                       'acceptance_pass': True}))
+                                                       'acceptance_pass': True,
+                                                       # an earlier iteration's check, kept for the record (#192)
+                                                       'control_it0': {'pass': False, 'superseded': 'by controls'}}))
         self.call('ask', '--role', 'adversary', '-n', '1')
         self.assertIn('controls.permuted_pass = false', self.call('gate', 'results', '-n', '1').stdout)
         receipt = json.loads((self.it / 'metadata/conclusions.jsonl').read_text().splitlines()[-1])
@@ -729,7 +739,10 @@ else:
         self.assertEqual(before, after)
 
     def test_arh_context_names_the_coding_skill(self):
-        self.assertIn('skills/ponytail/SKILL.md', self.call('context').stdout)
+        skill = self.root / '.arh/skills/ponytail/skills/ponytail/SKILL.md'       # as setup-tools.sh extracts it
+        skill.parent.mkdir(parents=True); skill.write_text('# ponytail\n')
+        self.assertIn('.arh/skills/ponytail/skills/ponytail/SKILL.md', self.call('context').stdout)
+        self.assertIn(str(skill), self.call('skill', 'ponytail').stdout)
         self.configure(extra_config='coding_skill = off\n')
         self.assertNotIn('ponytail', self.call('context').stdout)
 
@@ -746,8 +759,9 @@ else:
         run = json.loads((record / 'run.json').read_text())
         self.assertEqual((run['harness'], run['state'], run['exit_code'], run['session']), ('ctl', 'finished', 0, f'dispatch-{n}-001'))
         log = (record / 'session.log').read_text()
-        self.assertIn('[REDACTED Anthropic API key]', log); self.assertNotIn('sk-ant-aaaa', log)
-        self.assertGreaterEqual(run['redactions'], 1)
+        if GITLEAKS:
+            self.assertIn('[REDACTED arh-anthropic-key]', log); self.assertNotIn('sk-ant-aaaa', log)
+            self.assertGreaterEqual(run['redactions'], 1)
         self.assertEqual(run['session_log_sha256'], hashlib.sha256((record / 'session.log').read_bytes()).hexdigest())
         summary = json.loads((record / 'summary.json').read_text())
         self.assertEqual((summary['outcome'], summary['state']), ('concluded', 'concluded'))
@@ -833,8 +847,9 @@ else:
         self.assertIn('has not concluded', self.call('memory', 'add', '-n', '1', finding, good=False).stderr)
         self.ask(); self.gate()
         self.assertIn('state the finding', self.call('memory', 'add', '-n', '1', 'too short', good=False).stderr)
-        self.assertIn('credential', self.call('memory', 'add', '-n', '1', 'the token is ghp_' + 'a' * 40 + ' found here',
-                                              good=False).stderr)
+        if GITLEAKS:
+            self.assertIn('credential', self.call('memory', 'add', '-n', '1', 'the token is ghp_' + 'a' * 40 + ' found here',
+                                                  good=False).stderr)
         self.assertIn('recorded F1.1', self.call('memory', 'add', '-n', '1', finding).stdout)
         text = (self.root / 'knowledge/F1.1.md').read_text()
         self.assertTrue(text.startswith('---\nid: F1.1\niteration: 1\n'))
@@ -917,12 +932,10 @@ else:
     HOOK = 'https://hooks.slack.com/services/' + '/'.join(('T01ABCDEF12', 'B01ABCDEF34', 'abcdefghijklmnopqrstuvwx'))
 
     @needs_gitleaks
-    def test_gitleaks_rules_apply_on_top_of_the_built_in_patterns(self):
-        # A Slack webhook URL: no built-in pattern models it; gitleaks has a rule for it.
+    def test_gitleaks_maintained_rules_apply(self):
+        # A Slack webhook URL: none of config/gitleaks.toml's shapes; gitleaks's own rules have it.
         self.report.write_text(self.report.read_text() + f'Alerts go to {self.HOOK}.\n')
-        self.assertIn('gitleaks: slack-webhook-url', self.call('ask', '-n', '1', good=False).stderr)
-        self.configure(extra_config='secret_scanner = builtin\n')
-        self.call('ask', '-n', '1')
+        self.assertIn('slack-webhook-url', self.call('ask', '-n', '1', good=False).stderr)
 
     @needs_gitleaks
     def test_gitleaks_redacts_a_dispatched_session_log(self):
@@ -931,14 +944,15 @@ else:
         out = subprocess.run([sys.executable, str(ROOT / 'lib/secret_scan.py'), 'redact', str(log)],
                              env=self.env, capture_output=True, text=True)
         self.assertEqual(out.stdout.strip(), '1')
-        self.assertIn('[REDACTED gitleaks: slack-webhook-url]', log.read_text())
+        self.assertIn('[REDACTED slack-webhook-url]', log.read_text())
 
+    @needs_gitleaks
     def test_a_required_scanner_that_is_missing_stops_the_request(self):
         self.env['PATH'] = os.pathsep.join(p for p in self.env['PATH'].split(os.pathsep)
                                            if not (Path(p) / 'gitleaks').exists())
-        self.configure(extra_config='secret_scanner = gitleaks\n')
+        self.configure(extra_config='secret_scan = on\n')
         refused = self.call('ask', '-n', '1', good=False)
-        self.assertIn('gitleaks is not on PATH', refused.stderr)
+        self.assertIn('needs gitleaks on PATH', refused.stderr)
         self.assertIn('could not run', refused.stderr)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*')))
 
@@ -1148,52 +1162,6 @@ else:
         record=json.loads(next((self.it/'logs/nextflow/slow').glob('attempt-*/run.json')).read_text())
         self.assertEqual(record['signal'],'SIGTERM')
 
-    def legacy_study(self):
-        """A minimal 0.1-layout study built from the current templates."""
-        old = Path(self.temp.name) / 'legacy'
-        (old / '.dl/config').mkdir(parents=True); (old / 'rules').mkdir()
-        for name in ('site.md', 'project.md', 'harnesses.md'):
-            (old / '.dl/config' / name).write_text((ROOT / 'config' / name).read_text().replace('arh-config', 'dl-config'))
-        for rule in (ROOT / 'config/rules').glob('*.md'):
-            (old / 'rules' / rule.name).write_text(rule.read_text().replace('arh-config', 'dl-config'))
-        (old / '.dl/VERSION').write_text('protocol = 0.1.0\n')
-        (old / '.dl/registry.tsv').write_text('iteration\tagent\tclaimed\tstatus\ttitle\n')
-        (old / 'PROGRESS.md').write_text('# PROGRESS\n\n<!-- dl:status:begin — generated by `dl ledger render`; '
-                                         'do not edit by hand -->\n| 1 | old |\n<!-- dl:status:end -->\n\n'
-                                         'Iteration 1: `dl gate results` passed.\n')
-        (old / 'AGENTS.md').write_text('# Automated discovery loop — agent contract\n\nUse `dl claim`.\n')
-        it = old / 'iterations/iteration1'; it.mkdir(parents=True)
-        (it / 'README.md').write_text('A frozen pre-declaration that mentions dl-config.\n')
-        (it / 'CLAIM.json').write_text('{\n  "iteration": 1,\n  "declared_agent": "old",\n  "title": "legacy question"\n}\n')
-        (old / 'iterations/iteration2').mkdir()                    # an iteration folder with no claim record
-        return old
-
-    def test_migrate_legacy_study(self):
-        # Moving a real 0.1 study by hand took eight steps and missed the ledger markers (2026-09-11).
-        old = self.legacy_study(); readme = (old / 'iterations/iteration1/README.md').read_bytes()
-        env = dict(self.env, ARH_PROJECT=str(old))
-        run = lambda *a: subprocess.run([str(ROOT / 'bin/arh'), 'migrate', str(old), *a], env=env, cwd=old,  # noqa: E731
-                                        capture_output=True, text=True, timeout=120)
-        dry = run()
-        self.assertEqual(dry.returncode, 0, dry.stderr); self.assertIn('would change', dry.stdout)
-        self.assertFalse((old / '.dl').is_symlink()); self.assertFalse((old / '.arh').exists())
-        applied = run('--apply'); self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
-        self.assertTrue((old / '.arh').is_dir()); self.assertTrue((old / '.dl').is_symlink())
-        for p in [*(old / '.arh/config').glob('*.md'), *(old / 'rules').glob('*.md')]:
-            self.assertNotRegex(p.read_text(), r'(?m)^\s*```\s*dl-config', p.name)
-        ledger = (old / 'PROGRESS.md').read_text()
-        self.assertIn('arh:status:begin', ledger); self.assertNotIn('dl:status', ledger)
-        self.assertIn('`dl gate results` passed', ledger)          # the record's prose is left as written
-        protocol = re.search(r'protocol, v(\S+)', (ROOT / 'PROTOCOL.md').read_text()).group(1)
-        self.assertIn(f'protocol = {protocol}', (old / '.arh/VERSION').read_text())
-        self.assertTrue((old / 'AGENTS.md').read_text().startswith('# AutoResearch HPC'))
-        self.assertTrue((old / 'skills/iterate/SKILL.md').is_file())
-        self.assertEqual((old / 'iterations/iteration1/README.md').read_bytes(), readme)
-        self.assertTrue(list((old / '.arh').glob('migration-backup-*.tgz')))
-        subprocess.run([str(ROOT / 'bin/arh'), 'ledger', 'render'], env=env, cwd=old, check=True, capture_output=True)
-        self.assertEqual((old / 'PROGRESS.md').read_text().count('status:begin'), 1)
-        self.assertIn('to do: the study is already on the current layout', run('--apply').stdout)
-
     def test_ledger_render_refuses_a_foreign_status_block(self):
         ledger = self.root / 'PROGRESS.md'
         text = ledger.read_text().replace('arh:status:', 'old:status:'); ledger.write_text(text)
@@ -1213,6 +1181,11 @@ else:
         self.ask()
         record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
         self.assertEqual(record['verifier_version'], 'mock-cli 1.2.3')
+        # ... nor whether the request was scanned for credentials, and by what (#190).
+        if GITLEAKS:
+            self.assertEqual(record['secret_scan']['tool'], 'gitleaks'); self.assertIn('8.', record['secret_scan']['version'])
+        else:
+            self.assertIsNone(record['secret_scan'])
         self.gate()
 
     def test_doctor_names_a_protocol_mismatch(self):
@@ -1294,34 +1267,6 @@ else:
         record['require_foreign_family'] = True               # as a strict-era review would read
         record_path.write_text(json.dumps(record))
         self.assertIn('no eligible cross-check', self.gate(good=False).stdout)
-
-    def test_delegate_records_who_did_the_work(self):
-        self.configure(extra_config='executor = reviewer\n')
-        self.assertIn('executor', self.call('delegate', 'list').stdout)
-
-        task = self.root / 'task.md'
-        task.write_text('Implement the pre-declared analysis.\n')
-        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), '--dry-run')
-        self.assertIn('Implement the pre-declared analysis.', dry.stdout)
-        self.assertFalse(list((self.it / 'metadata').glob('delegations/*')))   # a dry run writes nothing
-
-        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task))
-        run = next((self.it / 'metadata/delegations').iterdir())
-        self.assertEqual(run.name, '001-executor')
-        record = json.loads((run / 'run.json').read_text())
-        self.assertEqual((record['schema'], record['role'], record['harness']),
-                         ('arh-delegation-v1', 'executor', 'reviewer'))
-        self.assertEqual(record['exit_code'], 0)
-        self.assertIn('VERDICT: SOUND', (run / 'response.md').read_text())
-        # The frozen pre-declaration travels with the task; the response is not a result.
-        self.assertIn('pre-declaration', (run / 'request.md').read_text())
-        self.assertFalse((self.it / 'results' / 'response.md').exists())
-
-    def test_delegate_refuses_an_unconfigured_role(self):
-        self.configure()
-        failed = self.call('delegate', '--role', 'executor', '-n', '1', good=False)
-        self.assertIn('no harness configured for role', failed.stderr)
-        self.assertIn('none configured', self.call('doctor', good=None).stdout)
 
     def test_content_refusal_is_its_own_outcome(self):
         # Codex refused a public RNA-seq count table as "flagged for possible biological risk"
@@ -1430,7 +1375,11 @@ else:
         self.assertIn('## Current state', brief)
         self.assertNotIn('History line.', brief)
         self.assertIn('Gotchas index', brief)
-        self.assertIn('read ', brief)                           # the template's section is a placeholder: full read
+        progress.write_text(progress.read_text().replace('## Current state\n', '## Current state\n' + 'State line.\n' * 3000 + 'Newest entry.\n', 1))
+        brief = self.call('context').stdout                     # field study: 21 kB of state, newest entries last
+        self.assertIn('[cut: PROGRESS.md lines', brief)
+        self.assertIn('Newest entry.', brief)                   # both ends are kept
+        self.assertIn('read ', brief)                          # the template's section is a placeholder: full read
         directives = self.root / 'DIRECTIVES.md'
         directives.write_text(directives.read_text().replace(
             '## Current directives\n', '## Current directives\n\n- HG002 confirms, never selects (2026-10-05 entry).\n', 1))
@@ -1629,50 +1578,6 @@ else:
         self.assertIn('to do: the study is already on the current layout', self.call('migrate', str(self.root)).stdout)
         self.assertNotIn("differ from the framework's", self.call('doctor', good=None).stderr)
 
-    def test_env_cache_builds_once_for_many_projects(self):
-        # Every study built its own ~1.5 GB of environments (2026-09-14).
-        fake = Path(self.temp.name) / 'fake'; fake.mkdir()
-        log, mm = fake / 'creates.log', fake / 'micromamba'
-        mm.write_text(f"""#!{sys.executable}
-import sys
-from pathlib import Path
-args = sys.argv[1:]
-if args[:1] == ['--version']:
-    print('2.8.1'); sys.exit()
-prefix = Path(args[args.index('-p') + 1])
-if args[0] == 'create':
-    with open({str(log)!r}, 'a') as fh:
-        fh.write(str(prefix) + '\\n')
-    (prefix / 'bin').mkdir(parents=True)
-    (prefix / 'bin/python3').symlink_to({sys.executable!r})
-    (prefix / 'bin/nextflow').write_text('#!/bin/sh\\n')
-    (prefix / 'bin/nextflow').chmod(0o755)
-elif args[0] == 'list':
-    print('https://conda.example/pkg-1.0-0.conda#' + 'a' * 32)
-""")
-        singularity = fake / 'singularity'        # `exec [options] IMAGE micromamba ARGS` runs the fake
-        singularity.write_text(f'#!/bin/sh\nwhile [ "$1" != micromamba ]; do shift; done\nshift\nexec "{mm}" "$@"\n')
-        for tool in (mm, singularity):
-            tool.chmod(0o755)
-        image, cache = fake / 'runtime.sif', Path(self.temp.name) / 'cache'
-        image.write_bytes(b'image')
-        env = dict(self.env, PATH=str(fake) + os.pathsep + self.env['PATH'])
-        prefixes = []
-        for name in ('a', 'b'):
-            project = Path(self.temp.name) / name
-            result = subprocess.run([str(ROOT / 'bin/arh'), 'init', str(project), '--bootstrap', '--no-tools', '--micromamba', str(mm),
-                                     '--runtime', str(image), '--env-cache', str(cache)],
-                                    env=env, capture_output=True, text=True, timeout=120)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            site = (project / '.arh/config/site.md').read_text()
-            prefixes.append([re.search(rf'(?m)^{key}\s*=\s*(\S+)', site).group(1) for key in ('nextflow_prefix', 'runtime_prefix')])
-            self.assertTrue((project / '.arh/nextflow-host-explicit.lock').is_file())
-        self.assertEqual(prefixes[0], prefixes[1])
-        for prefix in prefixes[0]:
-            self.assertTrue(prefix.startswith(str(cache)), prefix)
-            self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        self.assertEqual(len(log.read_text().splitlines()), 2)       # host and task environment, each built once (tools use uv)
-
     @needs_site
     def test_nextflow_reports_setting(self):
         site = self.root / '.arh/config/site.md'
@@ -1701,16 +1606,16 @@ elif args[0] == 'list':
     @needs_network
     def test_env_create_locks_and_is_immutable(self):
         prefix = self.call('env', 'create', 'tiny', 'zlib', timeout=1200).stdout.strip()
-        self.assertTrue(Path(prefix, '.arh-complete').is_file())
-        lock = self.root / '.arh/tiny-explicit.lock'
-        self.assertEqual(lock.read_text().splitlines()[0], '@EXPLICIT')
+        self.assertTrue(Path(prefix, 'conda-meta').is_dir())
+        lock = self.root / '.arh/envs/tiny/pixi.lock'
         self.assertIn('zlib', lock.read_text())
         self.assertEqual(self.call('env', 'path', 'tiny').stdout.strip(), prefix)
-        self.assertIn('is ready', self.call('env', 'create', 'tiny', 'zlib').stderr)
         self.assertIn('different package set', self.call('env', 'create', 'tiny', 'zlib', 'xz', good=False).stderr)
+        before = lock.read_text()
         shutil.rmtree(prefix)
-        self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt from its lock, package list verified
-        self.assertTrue(Path(prefix, '.arh-complete').is_file())
+        self.call('env', 'create', 'tiny', timeout=1200)             # rebuilt exactly from its lock
+        self.assertTrue(Path(prefix, 'conda-meta').is_dir())
+        self.assertEqual(lock.read_text(), before)
 
 
     # --- durable knowledge (field feedback #39) -------------------------------------------------
@@ -1737,14 +1642,6 @@ elif args[0] == 'list':
         record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
         self.assertEqual(record['knowledge_sha256']['DIRECTIVES.md'],
                          hashlib.sha256(directives.read_bytes()).hexdigest())
-
-    def test_delegated_executor_receives_the_directives(self):
-        self.configure(extra_config='executor = reviewer\n')
-        directives = self.root / 'DIRECTIVES.md'
-        directives.write_text(directives.read_text() + '\n### 2026-10-05 — the ONT truth trains and scores\n')
-        dry = self.call('delegate', '--role', 'executor', '-n', '1', '--dry-run').stdout
-        self.assertIn('the ONT truth trains and scores', dry)
-        self.assertIn('GOTCHAS.md', dry)
 
     def test_site_gotchas_are_shared_checked_and_hashed(self):
         shared = Path(self.temp.name) / 'site/GOTCHAS.md'
@@ -2054,17 +1951,14 @@ elif args[0] == 'list':
         self.assertIn('1 note(s) of work outside arh submit', out)
         self.assertIn('no arh submit run receipt does', out)
 
+    @needs_gitleaks
     def test_requests_carrying_a_credential_are_not_sent(self):
         key = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0' * 2
         self.report.write_text(self.report.read_text() + f'\nexport ANTHROPIC_API_KEY={key}\n')
         failed = self.ask(good=False)
-        self.assertIn('Anthropic API key', failed.stderr); self.assertNotIn(key, failed.stderr)
+        self.assertIn('arh-anthropic-key', failed.stderr); self.assertNotIn(key, failed.stderr)
         self.assertFalse(list(self.it.glob('CROSSCHECK_*')))
         self.assertIn('would refuse', self.call('ask', '-n', '1', '--dry-run').stderr)
-        self.configure(extra_config='executor = reviewer\n')
-        task = self.root / 'task.md'; task.write_text(f'password = "{key}"\n')
-        self.call('delegate', '--role', 'executor', '-n', '1', '--prompt', str(task), good=False)
-        self.assertFalse((self.it / 'metadata/delegations').exists())
         self.configure(extra_config='secret_scan = off\n')
         self.ask()
 

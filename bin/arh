@@ -40,8 +40,7 @@ arh — AutoResearch HPC
   arh sign   -n N | list         the operator's sign-off on a concluded finding (not from an agent)
   arh freeze -n N PATH...        freeze the decisions a confirmation applies; unseals sealed inputs for it
   arh ask    --role R -n N       cross-check with a foreign harness
-  arh delegate --role R -n N     hand a bounded task to the configured orchestrator/executor harness
-  arh roles -n N [--worker H ...] show or set this iteration's worker, reviewer and orchestrator harnesses
+  arh roles -n N [--worker H ...] show or set this iteration's worker and reviewer harnesses
   arh dispatch -n N --brief F    give iteration N its own controller session (orchestration = per-iteration)
   arh verify {new|gate|run|conclude|list}  re-examine an object an iteration produced
   arh note   -n N [--job ID] TEXT record work that ran outside arh submit
@@ -87,7 +86,7 @@ case "$cmd" in
     for a in "$@"; do [ "$prev" = -n ] && scope=$a; prev=$a; done
     [ "$rc" -ne 0 ] || [ -z "${ARH_ROOT:-}" ] || arh_git_record "arh $cmd $*" "$scope"
     exit "$rc" ;;
-  init|delegate|skill|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
+  init|skill|dag|replicate|run|submit|wait|inputs|lease|sessions|env|guard|status|doctor|site|next|context|stop)
     exec "$ARH_HOME/bin/arh-$cmd" "$@" ;;
   *) printf 'arh: unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
 esac
