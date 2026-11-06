@@ -1179,6 +1179,11 @@ else:
         self.ask()
         record = json.loads(next(self.it.glob('CROSSCHECK_*.md.json')).read_text())
         self.assertEqual(record['verifier_version'], 'mock-cli 1.2.3')
+        # ... nor whether the request was scanned for credentials, and by what (#190).
+        if GITLEAKS:
+            self.assertEqual(record['secret_scan']['tool'], 'gitleaks'); self.assertIn('8.', record['secret_scan']['version'])
+        else:
+            self.assertIsNone(record['secret_scan'])
         self.gate()
 
     def test_doctor_names_a_protocol_mismatch(self):

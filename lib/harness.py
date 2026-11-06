@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 
+import secret_scan
 from project import cache_path, cached_digests, config as project_config, knowledge_hashes
 
 
@@ -389,7 +390,8 @@ def run():
                 usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None,
                 harness_config_sha256=terms, knowledge_sha256=knowledge_hashes(cwd),
                 terms_changed=(terms_reason or None) if changed else None,
-                terms_changed_keys=changed_terms(directory, config) if changed else None)
+                terms_changed_keys=changed_terms(directory, config) if changed else None,
+                secret_scan=secret_scan.scanner())
     if judging:
         data.update(kind='adjudication', adjudication=adjudication, adjudicates=judging['adjudicates'],
                     adjudicated_review_sha256=judging['review_sha256'],

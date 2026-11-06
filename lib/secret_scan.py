@@ -10,6 +10,7 @@ its maintained rules plus the shapes in config/gitleaks.toml. Without gitleaks n
   secret_scan.py scan FILE...     one line per finding (file:line: rule: redacted match); exit 1 if any
   secret_scan.py redact FILE...   replace every finding in place with [REDACTED rule]; print the count
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,19 @@ def findings(path):
             key = (f.get('StartLine'), f['Secret'])
             found[key] = min(found.get(key, '~'), f.get('RuleID', 'gitleaks'))
     return sorted(((line, rule, secret) for (line, secret), rule in found.items()), key=lambda f: f[0] or 0)
+
+
+def scanner():
+    """What scanned a review request, for its receipt: None with secret_scan = off, else gitleaks's
+    version and the rules' digest. A receipt exists only when the scan found nothing."""
+    if os.environ.get('ARH_SECRET_SCAN') == 'off' or not shutil.which('gitleaks'):
+        return None
+    try:
+        version = subprocess.run(['gitleaks', 'version'], capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        version = ''
+    return dict(tool='gitleaks', version=version or None,
+                config_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest())
 
 
 def redact_file(path):

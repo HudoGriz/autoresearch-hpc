@@ -61,6 +61,9 @@ ARH states what must hold and leaves the means to maintained tools.
   parked (#187). `harnesses.md` notes that `max_parallel_iterations` counts controllers, not
   accounts: controllers on one account reach its limit together, so they need a fallback harness
   on another account (#188).
+- A review's receipt (`CROSSCHECK_*.md.json`) records `secret_scan`: gitleaks's version and the
+  digest of the rules the request was scanned with, or null with `secret_scan = off`. A receipt
+  exists only when the scan found nothing (#190).
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.
