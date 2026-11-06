@@ -64,6 +64,9 @@ ARH states what must hold and leaves the means to maintained tools.
 - A review's receipt (`CROSSCHECK_*.md.json`) records `secret_scan`: gitleaks's version and the
   digest of the rules the request was scanned with, or null with `secret_scan = off`. A receipt
   exists only when the scan found nothing (#190).
+- A JSON block under `results/` that marks itself `"superseded"` or `"record_only"` (an earlier
+  iteration's check carried along for the record) is not listed among the failed checks at
+  conclusion (#192).
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

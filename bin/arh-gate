@@ -328,8 +328,9 @@ print(len(attempts.journal(sys.argv[2])))' "$ARH_HOME/lib" "$dir")
     # A failed frozen criterion or control is the iteration's result, so it does not fail the gate; it is
     # named here and in the conclusion receipt, so "concluded" never hides it (field feedback #150, #151).
     failed=$(python3 "$ARH_HOME/lib/attempts.py" failed-checks "$dir")
-    [ -z "$failed" ] || printf '  NOTE a frozen check reported false (the result, not a gate failure):\n%s\n' \
-      "$(printf '%s\n' "$failed" | head -12 | sed 's/^/       /')"
+    [ -z "$failed" ] || printf '  NOTE a frozen check reported false (the result, not a gate failure):\n%s\n%s\n' \
+      "$(printf '%s\n' "$failed" | head -12 | sed 's/^/       /')" \
+      '       (a block carried from another iteration for the record says so with "superseded": "why")'
 
     [ "$fails" -gt 0 ] && { printf '\ngate FAILED (%s).\n' "$fails" >&2; exit 1; }
     # The conclusion receipt: the hashes this pass rested on, so the ledger can say which iterations

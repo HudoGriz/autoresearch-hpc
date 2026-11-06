@@ -76,11 +76,12 @@ PASS_KEY = re.compile(r'(^|_)(pass|passes|passed|ok)$')
 def failed_checks(directory, max_bytes=2 * 2**20):
     """Keys like acceptance_pass, permuted_pass or controls_ok that a JSON file under results/ sets to
     false: a frozen criterion or control that failed. Files over MAX_BYTES and directories of more than 200
-    JSON files are skipped (per-row tables, a tool's temp files)."""
+    JSON files are skipped (per-row tables, a tool's temp files), and so is a block that marks itself
+    "superseded" or "record_only": an earlier iteration's check carried along for the record."""
     out = []
 
     def walk(value, path, rel):
-        if isinstance(value, dict):
+        if isinstance(value, dict) and not (value.get('superseded') or value.get('record_only')):
             for key, item in value.items():
                 where = f'{path}.{key}' if path else str(key)
                 if item is False and PASS_KEY.search(str(key).lower()):

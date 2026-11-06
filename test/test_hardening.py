@@ -644,7 +644,9 @@ sys.exit(r.returncode)
         # A false *_pass in a results JSON is the result, not a gate failure, and is recorded (#150, #151).
         out = self.it / 'results/gather'; out.mkdir(parents=True, exist_ok=True)
         (out / 'results.json').write_text(json.dumps({'controls': {'permuted_pass': False, 'shift_pass': True},
-                                                       'acceptance_pass': True}))
+                                                       'acceptance_pass': True,
+                                                       # an earlier iteration's check, kept for the record (#192)
+                                                       'control_it0': {'pass': False, 'superseded': 'by controls'}}))
         self.call('ask', '--role', 'adversary', '-n', '1')
         self.assertIn('controls.permuted_pass = false', self.call('gate', 'results', '-n', '1').stdout)
         receipt = json.loads((self.it / 'metadata/conclusions.jsonl').read_text().splitlines()[-1])
