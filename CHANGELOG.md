@@ -67,6 +67,11 @@ ARH states what must hold and leaves the means to maintained tools.
 - A JSON block under `results/` that marks itself `"superseded"` or `"record_only"` (an earlier
   iteration's check carried along for the record) is not listed among the failed checks at
   conclusion (#192).
+- Result files not yet in the hash cache are hashed 32 at a time. On CephFS a file's latency, not
+  its size, bounded the serial pass: `arh ask` spent about 90 minutes hashing a 137k-file
+  `results/` before the reviewer started. Measured on that tree, 33 files/s serially, 886 with 32
+  threads, which makes it about 3 minutes (field feedback, 2026-11-09). The same applies to
+  `arh freeze`.
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

@@ -1,4 +1,5 @@
 """Small file/config helpers for deterministic AutoResearch HPC adapters."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -57,18 +58,24 @@ def cache_path(directory, kind):
 def cached_digests(files, cache_file):
     """{key: SHA-256} of FILES ({key: path}, existing files only). Each hash is kept in CACHE_FILE with
     the file's size, mtime, ctime and inode and reused only while all four match: ctime cannot be set
-    by a user (even `touch` moves it), so any write is hashed again (field feedback #102, #136)."""
+    by a user (even `touch` moves it), so any write is hashed again (field feedback #102, #136).
+    Files not in the cache are hashed 32 at a time: on CephFS a file's latency, not its size, bounds a
+    serial pass (33 files/s; 886 with 32 threads over 137k result files, field feedback 2026-11-09)."""
     try:
         cached = json.loads(cache_file.read_text()) if cache_file else {}
     except (OSError, ValueError):
         cached = {}
-    out, fresh = {}, {}
+    fresh = {}
     for key, path in files.items():
         st = Path(path).stat()
         sig = [st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino]
         hit = cached.get(key)
-        out[key] = hit[4] if isinstance(hit, list) and hit[:4] == sig else sha256_file(path)
-        fresh[key] = sig + [out[key]]
+        fresh[key] = hit if isinstance(hit, list) and hit[:4] == sig else sig
+    missing = [key for key, sig in fresh.items() if len(sig) == 4]
+    with ThreadPoolExecutor(32) as pool:
+        for key, digest in zip(missing, pool.map(sha256_file, (files[k] for k in missing))):
+            fresh[key] = fresh[key] + [digest]
+    out = {key: sig[4] for key, sig in fresh.items()}
     if cache_file and fresh != cached:
         try:                     # a lost race or an unwritable cache only costs a re-hash next time
             cache_file.parent.mkdir(parents=True, exist_ok=True)
