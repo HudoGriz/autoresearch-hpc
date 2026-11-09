@@ -31,6 +31,7 @@ import sys
 
 from findings import summary as verdicts
 from harness import result_artifacts, valid_adjudications, valid_records
+from project import read_many
 import sessions
 
 QUESTION_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
@@ -95,12 +96,12 @@ def failed_checks(directory, max_bytes=2 * 2**20):
     results = Path(directory) / 'results'
     found = sorted(results.rglob('*.json')) if results.is_dir() else []
     per_dir = collections.Counter(path.parent for path in found)
-    for path in found:
-        if path.stat().st_size > max_bytes or per_dir[path.parent] > 200:   # tables, or a tool's own temp files (#173)
-            continue
+    found = [path for path in found if per_dir[path.parent] <= 200    # tables, or a tool's own temp files (#173)
+             and path.stat().st_size <= max_bytes]
+    for path, data in zip(found, read_many(found)):
         try:
-            walk(json.loads(path.read_text()), '', str(path.relative_to(directory)))
-        except (OSError, ValueError, RecursionError):
+            walk(json.loads(data), '', str(path.relative_to(directory)))
+        except (ValueError, RecursionError):
             continue
     return out
 

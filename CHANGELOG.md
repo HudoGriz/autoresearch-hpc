@@ -72,6 +72,10 @@ ARH states what must hold and leaves the means to maintained tools.
   `results/` before the reviewer started. Measured on that tree, 33 files/s serially, 886 with 32
   threads, which makes it about 3 minutes (field feedback, 2026-11-09). The same applies to
   `arh freeze`.
+- The gates' number check and failed-check scan read results files 32 at a time, and the number
+  check stats each file once instead of three times. On iteration 94 (549k files), measured
+  read-only: the number check went from 35 minutes to 2.3, the JSON scan from 22 minutes to 37
+  seconds, with the same output (field feedback, 2026-11-10).
 - **Documented modules instead of ARH code**:
   - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
     receipt stays, since Nextflow cannot see the plan or the image digest.

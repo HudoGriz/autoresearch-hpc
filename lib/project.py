@@ -87,6 +87,21 @@ def cached_digests(files, cache_file):
     return out
 
 
+def read_many(paths):
+    """The bytes of each of PATHS in order (b'' for one that cannot be read), read 32 at a time and at
+    most 128 ahead: on CephFS a file's latency, not its size, bounds a serial pass. Iteration 94's
+    gates spent 33 and 22 minutes reading small results files one at a time (field feedback
+    2026-11-10)."""
+    def read(path):
+        try:
+            return Path(path).read_bytes()
+        except OSError:
+            return b''
+    with ThreadPoolExecutor(32) as pool:
+        for i in range(0, len(paths), 128):
+            yield from pool.map(read, paths[i:i + 128])
+
+
 def notify(root, event, iteration, message):
     """Tell the operator: run site.md's notify command (mail, ntfy, a chat webhook) with ARH_EVENT,
     ARH_ITERATION and ARH_MESSAGE set. Best effort: a failing command never fails the caller."""

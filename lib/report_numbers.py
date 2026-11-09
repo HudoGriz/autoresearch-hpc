@@ -14,7 +14,10 @@ is a prompt to put it in a results file, not proof of an error.
 """
 from pathlib import Path
 import re
+import stat
 import sys
+
+from project import read_many
 
 NUMBER = re.compile(r'(?<![\w.\-/])[-+−]?(\d+\.\d+|\d{1,3}(?:,\d{3})+\.\d+)(%?)(?![\w.]*\d)(?!\.\d)')
 TOKEN = re.compile(r'-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?')
@@ -45,31 +48,38 @@ def reading_order(directory, report, first=()):
     report names, then the rest smallest first. Reading in path order spent the whole byte budget on
     89 MB of per-sample tables and never reached the summary that held every reported number (field
     feedback #70)."""
-    results = Path(directory) / 'results'
-    files = [p for p in results.rglob('*') if p.is_file() and p.resolve() != Path(report).resolve()
-             and p.suffix.lower() in TEXT_SUFFIXES]
-    text = Path(report).read_text(errors='replace')
+    results = Path(directory).resolve() / 'results'
+    own = Path(report).resolve()
+    text = own.read_text(errors='replace')
     chosen = {p for pattern in first for p in results.glob(pattern) if p.is_file()}
-
-    def rank(path):
-        named = str(path.relative_to(results)) in text or path.name in text
-        return (0 if path in chosen else 1 if named else 2, path.stat().st_size, str(path))
-    return sorted(files, key=rank)
+    files = []
+    for path in results.rglob('*'):
+        if path.suffix.lower() in TEXT_SUFFIXES and path != own:
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                named = str(path.relative_to(results)) in text or path.name in text
+                files.append((0 if path in chosen else 1 if named else 2, st.st_size, str(path), path))
+    return [(path, size) for _, size, _, path in sorted(files)]
 
 
 def results_values(directory, report, first=()):
-    values, size = set(), 0
-    files = reading_order(directory, report, first)
-    for i, path in enumerate(files):
-        size += path.stat().st_size
-        if size > MAX_BYTES:
-            total = sum(p.stat().st_size for p in files)
-            print(f'arh: the number check read {(size - path.stat().st_size) / 2**20:.0f} of {total / 2**20:.0f} MB '
-                  f'of results and stopped at {path.relative_to(directory)} ({len(files) - i} file(s) unread). '
-                  'Name the summary files in project.md as report_numbers_files = <glob> to read them first.',
-                  file=sys.stderr)
+    """The numbers in the results files, read in reading_order up to MAX_BYTES."""
+    values, size, files = set(), 0, reading_order(directory, report, first)
+    budget = len(files)
+    for i, (path, bytes_) in enumerate(files):
+        if size + bytes_ > MAX_BYTES:
+            budget = i
+            print(f'arh: the number check read {size / 2**20:.0f} of {sum(b for _, b in files) / 2**20:.0f} MB '
+                  f'of results and stopped at {path.relative_to(Path(directory).resolve())} ({len(files) - i} '
+                  'file(s) unread). Name the summary files in project.md as report_numbers_files = <glob> to read '
+                  'them first.', file=sys.stderr)
             break
-        for token in TOKEN.findall(path.read_text(errors='replace')):
+        size += bytes_
+    for data in read_many([path for path, _ in files[:budget]]):
+        for token in TOKEN.findall(data.decode(errors='replace')):
             try:
                 values.add(abs(float(token)))
             except ValueError:
