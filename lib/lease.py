@@ -135,7 +135,11 @@ def shared_session_warning(directory, who):
             continue
         lease = load(other)
         holder = (lease or {}).get('holder') or {}
-        if holder and not holder.get('session') and same(holder, who) and not concluded(other):
+        idle = age((lease or {}).get('last', {}).get('time'))
+        # An iteration idle for over a week is not a concurrent agent: most concluded before conclusion
+        # receipts existed (field feedback #185).
+        if (holder and not holder.get('session') and same(holder, who) and not concluded(other)
+                and not (idle is not None and idle > RECENT_HOURS)):
             print(f"arh: iteration {other.name[9:]} is open and held by {name(holder)} too, and neither has a session id, "
                   "so the lease cannot tell these agents apart. Give each concurrent agent its own "
                   "ARH_SESSION=<name> before it runs arh.", file=sys.stderr)

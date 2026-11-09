@@ -55,7 +55,10 @@ notes = directory / 'metadata/notes.jsonl'
 state['notes'] = [json.loads(line) for line in (notes.read_text().splitlines() if notes.is_file() else [])
                   if line.strip()][-5:]
 state['tier'] = tier(directory)
-if state['tier'] == 'exploratory':
+concluded = directory / 'metadata/conclusions.jsonl'
+if concluded.is_file() and concluded.read_text().strip():      # the results gate passed (#182)
+    state['next'] = 'concluded: nothing to do here; a follow-up is a new iteration (arh claim --continues ' + n + ')'
+elif state['tier'] == 'exploratory':
     state['next'] = 'run attempts, one journal row each' if not report.exists() else 'arh gate results, then arh claim --promotes ' + n
     # A session restarted after a limit lost the attempts its predecessor had run but not journalled (85).
     missing = unjournalled(directory)

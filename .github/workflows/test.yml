@@ -24,9 +24,8 @@ jobs:
           echo "$PWD/.ci/bin" >> "$GITHUB_PATH"
           echo "$PWD/bin" >> "$GITHUB_PATH"
           bin/arh init "$PWD/.ci/study" --bootstrap
-          test -x "$PWD/.ci/study/.arh/tools/micromamba/2.8.1-0/linux-64/micromamba"
-          grep -q '^source=downloaded$' "$PWD/.ci/study/.arh/micromamba.lock"
-          singularity pull "$PWD/.ci/runtime.sif" docker://mambaorg/micromamba:2.8.1
+          test -s "$PWD/.ci/study/.arh/envs/nextflow-host/pixi.lock"
+          singularity pull "$PWD/.ci/runtime.sif" docker://debian:bookworm-slim
           scripts/setup-runtime.sh "$PWD/.ci/study" "$PWD/.ci/runtime.sif"
           bin/arh --version
           bin/arh --help >/dev/null
@@ -68,7 +67,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck --severity=warning --shell=bash \
-            bin/arh bin/arh-* lib/*.sh harness/install.sh scripts/setup-nextflow.sh \
+            bin/arh bin/arh-* lib/*.sh harness/install.sh scripts/*.sh \
             test/run_tests.sh examples/mean-shift/check.sh
 
   schemas:

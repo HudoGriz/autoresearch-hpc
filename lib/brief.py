@@ -4,14 +4,16 @@ The contract used to send every session to PROGRESS.md, DIRECTIVES.md and GOTCHA
 63-iteration field study that was 329 kB (about 80k tokens by a bytes/4 estimate) before any work,
 and the ledger alone grows with every iteration. The brief prints what a session needs to start:
 
-  1. PROGRESS.md's `## Current state` section (kept by the agents), or its heading index if absent;
+  1. PROGRESS.md's `## Current state` section (kept by the agents; its first quarter of the limit),
+     or its heading index if absent;
   2. the iterations still open, with their holders;
   3. the directives: binding, so in full, unless the file has a `## Current directives` section
      (then that section in full, and an index of the rest);
-  4. an index of GOTCHAS.md: each entry's heading and its Assertion line, opened on demand.
+  4. an index of GOTCHAS.md: one heading per entry, opened on demand.
 
   brief.py ROOT ITERATIONS LIMIT_BYTES
 """
+import itertools
 import re
 import sys
 from pathlib import Path
@@ -61,7 +63,22 @@ def main(root, iterations, limit):
     ledger = root / config(root / '.arh/config/project.md').get('ledger', 'PROGRESS.md')
     text = ledger.read_text(errors='replace') if ledger.is_file() else ''
     state = section(text, 'Current state')
-    if state:
+    if state and len(state.encode()) > limit // 4:      # a state is a few lines; history belongs below it
+        # Both ends, since studies add new entries at the top or at the bottom, cut between entries
+        # (a line that starts at column 0); the left-out lines are named.
+        lines, half = state.splitlines(), limit // 8
+        size = [0, *itertools.accumulate(len(x.encode()) + 1 for x in lines)]
+        starts = [i for i, x in enumerate(lines) if x[:1].strip()] + [len(lines)]
+        head = max((i for i in starts if size[i] <= half), default=0)
+        tail = len(lines) - min((i for i in starts if i >= head and size[-1] - size[i] <= half), default=len(lines))
+        first = text[:text.index(state)].count('\n') + 1
+        parts.append(f'## Current state ({ledger.name}; {len(state.encode())} bytes, more than {limit // 4})\n\n'
+                     + '\n'.join(lines[:head])
+                     + f'\n\n[cut: {ledger.name} lines {first + head}-{first + len(lines) - tail - 1} '
+                     f'({len(lines) - head - tail} lines). This section is the state, not the history: shorten it '
+                     'to what is concluded, running, blocked and next, and move the rest below it.]\n\n'
+                     + '\n'.join(lines[len(lines) - tail:]))
+    elif state:
         parts.append(f'## Current state ({ledger.name})\n\n{state}')
     else:
         parts.append(f'## {ledger.name} has no "## Current state" section\n\nAdd one and keep it current: '
@@ -96,12 +113,13 @@ def main(root, iterations, limit):
     if gotchas:
         body = gotchas.read_text(errors='replace')
         parts.append(f'## Gotchas index ({gotchas.name}: open every entry about a tool, input or step your task '
-                     'uses)\n\n' + '\n'.join(headings(body, '##', ('Assertion', 'Symptom'))))
+                     'uses)\n\n' + '\n'.join(h[:90] for h in headings(body, '##')))
 
     # The coding skill (coding_skill in harnesses.md; Ponytail by default, `off` for none).
     skill = config(root / '.arh/config/harnesses.md').get('coding_skill', 'ponytail') or 'off'
-    if skill != 'off' and (root / 'skills' / skill / 'SKILL.md').is_file():
-        parts.append(f'## Writing or debugging code: follow skills/{skill}/SKILL.md')
+    found = sorted((root / '.arh/skills').glob(f'*/**/{skill}/SKILL.md')) if skill != 'off' else []
+    if found:
+        parts.append(f'## Writing or debugging code: follow {found[0].relative_to(root)}')
 
     out = '\n\n'.join(parts) + '\n'
     if len(out.encode()) > limit:          # never inside the current directives: they come before the indexes

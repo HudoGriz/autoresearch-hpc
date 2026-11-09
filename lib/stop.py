@@ -12,7 +12,7 @@ import socket
 import subprocess
 import sys
 
-from locks import owner, state
+from locks import held_by_caller, owner, state
 
 
 def owners(iterations, verifications, only):
@@ -63,7 +63,7 @@ def main(iterations, verifications, scheduler, jobs, only=None):
             if said:
                 done.append(said)
         # A controller stopping its own runs must not stop itself (field feedback #147).
-        if (d / '.dispatch-lock').is_dir() and os.environ.get('ARH_DISPATCH') != d.name[9:]:
+        if (d / '.dispatch-lock').is_dir() and not held_by_caller(d / '.dispatch-lock', d):
             said = signal_lock(d / '.dispatch-lock', f'{label}: dispatched controller')
             if said:
                 done.append(said)

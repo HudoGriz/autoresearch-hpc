@@ -7,7 +7,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 usage: arh roles -n N [--worker H] [--worker-fallback H] [--reviewer H] [--reviewer-fallback H]
-                      [--orchestrator H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
+                      [--on-limit fallback|wait|stop] [--set KEY=VALUE]
 
 Without a setting, prints each role's harness for iteration N and where it comes from. A setting is
 written to iterationN/harnesses.md and applies to this iteration only. After the claim it is a change
@@ -20,7 +20,7 @@ n=""; pairs=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -n) n="$2"; shift 2 ;;
-    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--orchestrator|--on-limit)
+    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--on-limit)
         pairs+=("${1#--}=$2"); shift 2 ;;
     --set) pairs+=("$2"); shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -35,7 +35,7 @@ dir="$ARH_ITERS/iteration$n"
 
 printf '%-18s %-30s %s\n' ROLE HARNESS FROM
 for pair in worker:iteration_controller worker-fallback:iteration_controller_fallback reviewer:verifier \
-            reviewer-fallback:verifier_fallback orchestrator:orchestrator executor:executor on-limit:dispatch_on_limit; do
+            reviewer-fallback:verifier_fallback executor:executor on-limit:dispatch_on_limit; do
   role=${pair%%:*}; key=${pair#*:}
   own=$(arh_config_get "$dir/harnesses.md" "$key" "")
   if [ -n "$own" ]; then printf '%-18s %-30s %s\n' "$role" "$own" "iteration$n/harnesses.md"

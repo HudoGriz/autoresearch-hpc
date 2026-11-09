@@ -10,6 +10,78 @@ Singularity with two producer accounts and two verifier families, and from an ex
 of v0.3.0 (2026-10-13) that probed the gates directly. **Protocol 0.3.0**: studies need
 `arh migrate --apply`, which starts the freeze journal.
 
+### Changed (outsourced plumbing and a shorter session start, 2026-11-04)
+ARH states what must hold and leaves the means to maintained tools.
+- **pixi replaces micromamba, lock-env.sh and uv/pip** for the host Nextflow, the task runtime,
+  `arh env create` and basic-memory. Environments live in `.arh/envs/NAME/` and are recorded by
+  `pixi.toml` and `pixi.lock`, with PyPI packages as `pypi:PKG==V`. On this cluster a CUDA torch
+  environment takes 132 s, where micromamba gave up after more than 29 min (#116, #125).
+  Environments built by an earlier arh keep working. `arh env create --cuda 12` records the
+  CUDA version in `pixi.toml`, so a CUDA set solves and rebuilds on a node without a GPU (#167).
+- **Skills are pinned source archives, not vendored copies**: Ponytail (v5.3.3) and ARIS are
+  fetched by sha256 into `.arh/skills/`. `arh skill` lists them by source. `arh migrate` removes
+  the old in-repo Ponytail copy. `arh ask --skill` takes a checklist of at most 20 kB.
+  Anti-Autoresearch was tried and is not installed: its skills are 40–71 kB pipelines, better
+  run on their own at manuscript stage (#181).
+- **`arh context` is about half as long** (38 kB to 17 kB in the field study). `## Current state`
+  gets a quarter of `context_max_bytes` (default now 24000). When it is longer, the brief says to
+  move the history below it. Both ends are kept, cut between entries, and the cut names the
+  lines it left out (#170, #176).
+  The gotchas index lists headings only.
+- **Smaller fixes from the trial** (#171–#173): `arh skill` prints one line per source.
+  `arh migrate` lists its changes before the notes on default settings. A run that leaves more
+  than 10,000 files in `results/` gets a warning, because every gate hashes them all. The
+  failed-check scan skips directories of more than 200 JSON files.
+- **Task write caches and the freeze anchor** (#177, #178): tasks get `NUMBA_CACHE_DIR` and
+  `MPLCONFIGDIR` under node-local `/tmp`, since the environments are mounted read-only and numba's
+  cached functions failed at import. A freeze without `freeze_anchor` says so. The TSA recipe is
+  indented, so only the real setting counts.
+- **From the live study** (#180–#182):
+  - `arh stop -n N` never stops the dispatched controller that called it. It recognises the
+    controller by the process tree as well as `ARH_DISPATCH`, since a harness can drop the variable.
+  - `arh context -n N` says a concluded iteration is concluded.
+  - An ineligible review and a refused second round name the `--note` route.
+  - Changing a skill pin no longer rebuilds the tool binaries, and a source that is no longer
+    pinned is removed from `.arh/skills/`.
+
+### Removed (low-risk cuts the field study agreed to, 2026-11-05)
+- **`arh delegate`** (and `lib/evoke.py`, the `orchestrator` role): it was used 0 times in 89 field
+  iterations. Handing work to another model is the harness's business. `executor` stays as the
+  harness whose family the reviewer must differ from.
+- **ARH's own secret patterns**: gitleaks does the scan, with ARH's extra key shapes as rules in
+  `config/gitleaks.toml`. Without gitleaks nothing is sent; `secret_scanner` is gone and
+  `secret_scan = off` remains for a recorded reason.
+- **The 0.1 layout migration** (`.dl/`): a 0.1 study is migrated with autoresearch-hpc 0.3 first.
+- `arh migrate` names settings in `harnesses.md` that the framework no longer reads, without
+  editing the file, since open iterations' review terms hash it (#184). `arh claim` no longer
+  warns about a shared identity with an iteration idle for over a week (#185).
+- A dispatched controller's subagents and helpers do not wait on runs: they submit with `--detach`
+  and return, and the controller parks (`skills/dispatch/controller.md`, `reference.md`). In the
+  field study, subagents polling Slurm used 63% of a day's tokens while their controller never
+  parked (#187). `harnesses.md` notes that `max_parallel_iterations` counts controllers, not
+  accounts: controllers on one account reach its limit together, so they need a fallback harness
+  on another account (#188).
+- A review's receipt (`CROSSCHECK_*.md.json`) records `secret_scan`: gitleaks's version and the
+  digest of the rules the request was scanned with, or null with `secret_scan = off`. A receipt
+  exists only when the scan found nothing (#190).
+- A JSON block under `results/` that marks itself `"superseded"` or `"record_only"` (an earlier
+  iteration's check carried along for the record) is not listed among the failed checks at
+  conclusion (#192).
+- Result files not yet in the hash cache are hashed 32 at a time. On CephFS a file's latency, not
+  its size, bounded the serial pass: `arh ask` spent about 90 minutes hashing a 137k-file
+  `results/` before the reviewer started. Measured on that tree, 33 files/s serially, 886 with 32
+  threads, which makes it about 3 minutes (field feedback, 2026-11-09). The same applies to
+  `arh freeze`.
+- The gates' number check and failed-check scan read results files 32 at a time, and the number
+  check stats each file once instead of three times. On iteration 94 (549k files), measured
+  read-only: the number check went from 35 minutes to 2.3, the JSON scan from 22 minutes to 37
+  seconds, with the same output (field feedback, 2026-11-10).
+- **Documented modules instead of ARH code**:
+  - Nextflow lineage and nf-prov RO-Crate receipts, as a `nextflow.config` snippet. The ARH
+    receipt stays, since Nextflow cannot see the plan or the image digest.
+  - An RFC 3161 `freeze_anchor` using the Sigstore TSA through `openssl ts`.
+  - apprise as a `notify` command.
+
 ### Changed (parked controllers, per-iteration roles, field feedback #90 and #136–#163, 2026-11-01 to 11-04)
 - **`arh dispatch park` and `arh dispatch message`** (#144, #156): after a detached submission a
   dispatched controller ends its session with a note; the supervisor waits with no model running

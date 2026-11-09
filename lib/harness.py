@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 
+import secret_scan
 from project import cache_path, cached_digests, config as project_config, knowledge_hashes
 
 
@@ -232,7 +233,8 @@ def budget():
     if attempts >= int(max_rounds):
         sys.exit('review round budget exhausted; leave unresolved work recorded or deliberately revise the budget')
     if attempts and not note.strip():
-        sys.exit('a further review requires --note describing the concrete unresolved issue')
+        sys.exit(f'review {attempts + 1} of {max_rounds} requires --note naming what it is for, e.g. '
+                 "--note 'the report and results changed after the accepted findings F1-F3'")
 
 
 def cli_version(template, cwd):
@@ -388,7 +390,8 @@ def run():
                 usage=usage, verifier_version=version, verifier_version_cmd=version_cmd or None,
                 harness_config_sha256=terms, knowledge_sha256=knowledge_hashes(cwd),
                 terms_changed=(terms_reason or None) if changed else None,
-                terms_changed_keys=changed_terms(directory, config) if changed else None)
+                terms_changed_keys=changed_terms(directory, config) if changed else None,
+                secret_scan=secret_scan.scanner())
     if judging:
         data.update(kind='adjudication', adjudication=adjudication, adjudicates=judging['adjudicates'],
                     adjudicated_review_sha256=judging['review_sha256'],
@@ -463,6 +466,7 @@ if __name__ == '__main__':
                 print(path.name + ': PROVIDER ERROR (verifier unavailable; not a review round)')
             else:
                 print(path.name + ': INELIGIBLE (missing/failed metadata, invalid verdict, family or artifact '
-                      'hash, or review terms changed since the claim without a recorded reason)')
+                      'hash, or review terms changed since the claim without a recorded reason). After a '
+                      "correction to the report or results: arh ask --note 'what changed' -n N")
     else:
         sys.exit(run())

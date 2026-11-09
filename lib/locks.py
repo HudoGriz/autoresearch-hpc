@@ -50,6 +50,26 @@ def state(lock):
     return 'live' if alive(record.get('pid')) or (record.get('controller_pid') is not None and alive(record['controller_pid'])) else 'stale'
 
 
+def held_by_caller(lock, directory):
+    """The dispatched controller of DIRECTORY is the one asking: ARH_DISPATCH names it, or the lock's
+    supervisor or controller is an ancestor of this process. A harness can drop the variable from a
+    tool's environment; the process tree it cannot (field feedback #147, 2026-11-04)."""
+    if os.environ.get('ARH_DISPATCH') == Path(directory).name[9:]:
+        return True
+    record = owner(lock) or {}
+    if record.get('host') != socket.gethostname():
+        return False
+    mine, pid = {record.get('pid'), record.get('controller_pid')} - {None}, os.getppid()
+    while pid > 1:
+        if pid in mine:
+            return True
+        try:
+            pid = int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
 def describe(record):
     return f" (owner pid {record.get('pid')} on {record.get('host')})" if record else ''
 
@@ -100,7 +120,7 @@ def running(iterations, number=None):
         if (d / '.review-lock').is_dir():
             found.append((f'{d.name}: review', d / '.review-lock'))
         # A dispatched controller (arh dispatch); not when the controller itself waits on its iteration.
-        if (d / '.dispatch-lock').is_dir() and os.environ.get('ARH_DISPATCH') != d.name[9:]:
+        if (d / '.dispatch-lock').is_dir() and not held_by_caller(d / '.dispatch-lock', d):
             found.append((f'{d.name}: controller', d / '.dispatch-lock'))
     return found
 

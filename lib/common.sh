@@ -14,6 +14,19 @@ arh_ok()   { if [ "${ARH_QUIET_OK:-0}" = 1 ]; then ARH_OK_COUNT=$(( ${ARH_OK_COU
 arh_ok_summary() { [ "${ARH_OK_COUNT:-0}" = 0 ] || printf '  OK   %s check(s) passed (-v lists them)\n' "$ARH_OK_COUNT"; }
 arh_fail() { printf '  FAIL %s\n' "$*"; }
 
+# arh_config_set FILE KEY VALUE...: set each KEY = VALUE in place, or append it in its own block.
+# Serialised, so setups running at once cannot drop each other's keys.
+arh_config_set() {
+  local file="$1"; shift
+  ( flock 9; python3 -c 'import re, sys
+from pathlib import Path
+p = Path(sys.argv[1]); text = p.read_text(); kv = sys.argv[2:]
+for key, value in zip(kv[::2], kv[1::2]):
+    pat = r"(?m)^" + re.escape(key) + r"\s*=.*$"
+    text = re.sub(pat, lambda m: f"{key} = {value}", text) if re.search(pat, text) else text + f"\n```arh-config\n{key} = {value}\n```\n"
+p.write_text(text)' "$file" "$@" ) 9<"$file"
+}
+
 # Config files are Markdown. Machine-readable settings live only in
 # fenced `arh-config` blocks as `key = value`.
 arh_config_get() {
@@ -49,7 +62,7 @@ arh_iter_harn() {
 
 # Set KEY=VALUE pairs in iteration DIR's own harnesses.md (created on first use). The role names map to
 # the project keys they override: worker = iteration_controller, reviewer = verifier,
-# orchestrator = orchestrator, on-limit = dispatch_on_limit; any other KEY is used as written.
+# on-limit = dispatch_on_limit; any other KEY is used as written.
 arh_set_iter_harn() {
   local dir="$1"; shift
   python3 - "$dir/harnesses.md" "${ARH_HARN_PROJECT:-$ARH_HARN}" "$@" <<'PY' || return 1
@@ -59,8 +72,8 @@ own, project, pairs = Path(sys.argv[1]), sys.argv[2], sys.argv[3:]
 sys.path.insert(0, __import__('os').environ['ARH_HOME'] + '/lib')
 from project import config
 alias = {'worker': 'iteration_controller', 'worker-fallback': 'iteration_controller_fallback', 'reviewer': 'verifier',
-         'reviewer-fallback': 'verifier_fallback', 'orchestrator': 'orchestrator', 'on-limit': 'dispatch_on_limit'}
-roles = {'iteration_controller', 'iteration_controller_fallback', 'verifier', 'verifier_fallback', 'orchestrator'}
+         'reviewer-fallback': 'verifier_fallback', 'on-limit': 'dispatch_on_limit'}
+roles = {'iteration_controller', 'iteration_controller_fallback', 'verifier', 'verifier_fallback'}
 values, known = config(own), config(project)
 for pair in pairs:
     key, sep, value = pair.partition('=')
@@ -116,10 +129,9 @@ arh_load_project() {
   # Unset, the variables Claude Code and Codex set (feedback #129); every harness is also identified
   # by its process (agent_process), so a harness without such a variable is still linked.
   ARH_SESSION_ENV=$(arh_config_get "$ARH_HARN" session_env "CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID")
-  # auto: gitleaks's maintained rules on top of the built-in patterns when gitleaks is installed.
-  ARH_SECRET_SCANNER=$(arh_config_get "$ARH_HARN" secret_scanner auto)
+  ARH_SECRET_SCAN=$(arh_config_get "$ARH_HARN" secret_scan on)   # lib/secret_scan.py reads it
   export ARH_ROOT ARH_STATE ARH_CONF ARH_SITE ARH_PROJ ARH_HARN ARH_HARN_PROJECT ARH_ITERS ARH_VERIFY ARH_LEDGER ARH_REGISTRY ARH_DIRECTIVES \
-    ARH_SESSION_ENV ARH_SECRET_SCANNER
+    ARH_SESSION_ENV ARH_SECRET_SCAN
 }
 
 # mktemp makes files 0600 and directories 0700. Anything arh keeps in the project gets the mode the
@@ -246,31 +258,63 @@ except (OSError, ValueError, AttributeError):
   fi
 }
 
-# Build an environment prefix once: arh_build_once PREFIX COMMAND... A prefix is complete when it
-# holds .arh-complete. Concurrent builders wait on PREFIX.building; a build left behind by a dead
-# process on this host is removed and redone. COMMAND runs where `set -e` does not apply, so it must
-# return non-zero itself when a step fails.
-arh_build_once() {
-  local prefix="$1" lock="$1.building" waited=0 host pid; shift
-  mkdir -p "$(dirname "$prefix")"
-  until mkdir "$lock" 2>/dev/null; do
-    [ -f "$prefix/.arh-complete" ] && return 0
-    host=""; pid=""
-    read -r host pid 2>/dev/null < "$lock/owner" || true
-    if [ "$host" = "$(uname -n)" ] && [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-      mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
-      continue
+# Where the tools and the package cache go: tools_dir in site.md (may name $USER), else
+# $ARH_ENV_CACHE/tools, else .arh/envs/tools. Node-local on a slow shared filesystem.
+arh_tools_dir() {
+  local d; d=$(arh_config_get "$1/config/site.md" tools_dir "")
+  d=${d:-${ARH_ENV_CACHE:+$ARH_ENV_CACHE/tools}}; d=${d:-$1/envs/tools}
+  eval echo "$d"
+}
+
+# arh_pixi STATE: the pixi binary pinned in config/dependencies.json, fetched once (ARH_PIXI overrides).
+arh_pixi() {
+  [ -z "${ARH_PIXI:-}" ] || { printf '%s\n' "$ARH_PIXI"; return 0; }
+  local url sha bin tmp
+  read -r url sha < <(python3 -c 'import json, platform, sys
+p = json.load(open(sys.argv[1]))["tools"]["pixi"]; a = platform.machine().replace("arm64", "aarch64")
+print(p["url"].format(version=p["version"], arch=a), p["sha256"].get(a, "none"))' "$ARH_HOME/config/dependencies.json")
+  bin="$(arh_tools_dir "$1")/pixi-${sha:0:12}/pixi"
+  if [ ! -x "$bin" ]; then
+    mkdir -p "${bin%/*}"; tmp=$(mktemp "${bin%/*}/download.XXXXXX")
+    if ! curl -fsSL --retry 3 -o "$tmp" "$url" || [ "$(arh_sha256 "$tmp")" != "$sha" ] \
+       || ! tar -xzf "$tmp" -C "${bin%/*}" pixi; then
+      rm -f "$tmp"; arh_warn "could not fetch the pinned pixi ($url); offline, set ARH_PIXI=/path/to/pixi"; return 1
     fi
-    [ $((waited % 300)) -ne 0 ] || arh_warn "waiting for another setup to finish building $prefix"
-    sleep 5; waited=$((waited + 5))
-  done
-  printf '%s %s\n' "$(uname -n)" "$$" > "$lock/owner"
-  if [ ! -f "$prefix/.arh-complete" ]; then
-    rm -rf "$prefix"
-    if ! "$@"; then rm -rf "$prefix" "$lock"; return 1; fi
-    touch "$prefix/.arh-complete"
+    rm -f "$tmp"
   fi
-  rm -rf "$lock"
+  printf '%s\n' "$bin"
+}
+
+# arh_pixi_env STATE DIR [SPEC...]: a locked environment in DIR (pixi.toml and pixi.lock are the record,
+# .pixi/ holds the files). With SPECs (conda specs; pypi:NAME==V for PyPI) it is solved and locked;
+# without, rebuilt exactly from DIR/pixi.lock. pixi locks and resumes its own installs. Prints the
+# prefix. Channels: ARH_CHANNELS (default conda-forge bioconda). ARH_CUDA=12 declares the CUDA
+# version CUDA builds need ([system-requirements] in pixi.toml), so they solve and install on a node
+# without a GPU; the declaration stays in the manifest for every rebuild.
+arh_pixi_env() {
+  local state="$1" dir="$2" pixi c spec conda=() pypi=(); shift 2
+  pixi=$(arh_pixi "$state") || return 1
+  export PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-$(arh_tools_dir "$state")/pixi-cache}"
+  mkdir -p "$dir"
+  local cuda=${ARH_CUDA-}
+  [ $# -gt 0 ] || cuda=$(sed -n 's/^cuda = "\(.*\)"$/\1/p' "$dir/pixi.toml" 2>/dev/null)
+  [ -z "$cuda" ] || export CONDA_OVERRIDE_CUDA="${CONDA_OVERRIDE_CUDA:-$cuda}"
+  if [ $# -gt 0 ]; then
+    { printf '[workspace]\nname = "%s"\nchannels = [' "$(basename "$dir")"
+      for c in ${ARH_CHANNELS:-conda-forge bioconda}; do printf '"%s", ' "$c"; done
+      printf ']\nplatforms = ["linux-%s"]\n' "$(uname -m | sed 's/x86_64/64/; s/arm64/aarch64/')"
+      [ -z "${ARH_CUDA-}" ] || printf '\n[system-requirements]\ncuda = "%s"\n' "$ARH_CUDA"
+      printf '\n[dependencies]\n'
+    } > "$dir/pixi.toml"
+    rm -f "$dir/pixi.lock"
+    for spec in "$@"; do case "$spec" in pypi:*) pypi+=("${spec#pypi:}") ;; *) conda+=("$spec") ;; esac; done
+    [ ${#conda[@]} -eq 0 ] || "$pixi" add -q --manifest-path "$dir/pixi.toml" "${conda[@]}" >&2 || return 1
+    [ ${#pypi[@]} -eq 0 ] || "$pixi" add -q --manifest-path "$dir/pixi.toml" --pypi "${pypi[@]}" >&2 || return 1
+  else
+    [ -f "$dir/pixi.lock" ] || { arh_warn "no lock to rebuild from: $dir/pixi.lock"; return 1; }
+    "$pixi" install -q --frozen --manifest-path "$dir/pixi.toml" >&2 || return 1
+  fi
+  printf '%s\n' "$dir/.pixi/envs/default"
 }
 
 # SOURCE:TARGET binds that cover every existing sealed input with an empty mount. `arh run` has no
@@ -288,11 +332,10 @@ arh_has_sealed() {
 }
 
 # arh_secret_scan NOTE FILE...: succeed unless the files, or the note text, carry something shaped like
-# a credential; the findings go to stderr, redacted. Run on what arh ask and arh delegate
-# are about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
+# a credential; the findings go to stderr, redacted. Run on what arh ask is about to send to an outside model service. `secret_scan = off` in harnesses.md disables it.
 arh_secret_scan() {
   local note="$1" tmp="" rc=0 hits; shift
-  [ "$(arh_config_get "$ARH_HARN" secret_scan on)" != off ] || return 0
+  [ "$ARH_SECRET_SCAN" != off ] || return 0
   if [ -n "$note" ]; then tmp=$(mktemp); printf '%s\n' "$note" > "$tmp"; set -- "$@" "$tmp"; fi
   hits=$(python3 "$ARH_HOME/lib/secret_scan.py" scan "$@") || rc=$?
   [ "$rc" != 2 ] || { [ -z "$tmp" ] || rm -f "$tmp"; arh_die "the secret scanner could not run (above); nothing was sent"; }

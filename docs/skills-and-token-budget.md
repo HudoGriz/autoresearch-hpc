@@ -3,9 +3,10 @@
 ## Default: Ponytail for coding
 
 [Ponytail](https://github.com/DietrichGebert/ponytail) is enabled by default in
-full mode for coding, debugging, refactoring and dependency decisions. Its core
-skill is pinned in `skills/ponytail/SKILL.md`; attribution and hashes live under
-`third_party/ponytail/`.
+full mode for coding, debugging, refactoring and dependency decisions. It is a
+pinned release (`config/dependencies.json`) that `scripts/setup-tools.sh` extracts
+into `.arh/skills/ponytail/`, not a copy in this repository; `arh context` names
+its path.
 
 `arh init` supplies the shared skills and default agent policy. For an older
 study, run `harness/install.sh /path/to/study` after migrating it to the `.arh/`
@@ -20,8 +21,8 @@ hook. Claude reads it through `CLAUDE.md`; other supported harnesses use
 
 | Source | Integration |
 |---|---|
-| Ponytail | Pinned core coding guidance and default activation policy |
-| ARIS | Adapted adversarial-review guidance; its research skills as a pinned release (`arh skill`, `arh ask --skill`), not copied |
+| Ponytail | Coding guidance as a pinned release, named by `arh context` |
+| ARIS | Research skills as a pinned release (`arh skill`; rubric-sized ones in `arh ask --skill`), not copied |
 | This repository | iterate, verify, cross-check, replicate, ledger and dispatch skills |
 | Karpathy autoresearch | Inspiration and attribution; no imported runtime |
 | Nextflow / Singularity/Apptainer | Execution infrastructure, not skill repositories |

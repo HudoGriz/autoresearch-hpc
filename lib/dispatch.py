@@ -3,8 +3,7 @@
 
 With `orchestration = per-iteration` in harnesses.md, the operator talks to a main controller that
 plans questions and reads summaries, and each iteration gets a fresh controller session that
-pre-declares, calls executors (arh delegate) and validators (arh ask), and reports back. The
-controller is started through the configured harness command template, so any agent CLI (Claude
+pre-declares, does the work, has it reviewed (arh ask) and reports back. The controller is started through the configured harness command template, so any agent CLI (Claude
 Code, Codex, OpenCode or any other) can be one; `dispatch_launcher` can put it
 under the site scheduler. ARH keeps only what is protocol-specific:
 

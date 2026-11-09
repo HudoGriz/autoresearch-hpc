@@ -1,6 +1,7 @@
 """Delegate execution to Nextflow; keep only protocol checks and run receipts."""
 import argparse
 from datetime import datetime, timezone
+import getpass
 import gzip
 import hashlib
 import json
@@ -235,10 +236,10 @@ def run():
     if os.environ.get('APPTAINER_CONTAINER') or os.environ.get('SINGULARITY_CONTAINER'):
         parser.error('run the Nextflow controller on the host, outside Singularity')
     if not image or not prefix:
-        parser.error('configure runtime_image and nextflow_prefix for the host micromamba driver')
+        parser.error('configure runtime_image and nextflow_prefix (scripts/setup-runtime.sh, scripts/setup-nextflow.sh)')
     binary = Path(prefix) / 'bin/nextflow'
     if not binary.is_file():
-        parser.error('versioned micromamba env/bin/nextflow is missing; host fallback is disabled')
+        parser.error('nextflow_prefix has no bin/nextflow (scripts/setup-nextflow.sh); host fallback is disabled')
     pin = json.loads((home / 'config/dependencies.json').read_text())['nextflow']
     version = site.get('nextflow_version') or pin['version']
     installed = list((Path(prefix) / 'conda-meta').glob('nextflow-*.json'))
@@ -366,6 +367,13 @@ def run():
         options = ' '.join('--bind ' + shlex.quote(bind) for bind in binds)
         if task_prefix:
             options += ' --env ' + shlex.quote('PATH=' + task_prefix + '/bin:/usr/local/bin:/usr/bin:/bin')
+        # Environments are mounted read-only, so numba's and matplotlib's write caches go to node-local
+        # /tmp: numba's @njit(cache=True) failed at import in a task (field feedback #178). Only these
+        # two, so caches a study fills in advance (XDG_CACHE_HOME, model weights) are left alone; a
+        # task's own export wins.
+        cache = f'/tmp/arh-{getpass.getuser()}-cache'
+        options += ''.join(' --env ' + shlex.quote(f'{var}={cache}/{sub}')
+                           for var, sub in (('NUMBA_CACHE_DIR', 'numba'), ('MPLCONFIGDIR', 'matplotlib')))
         def has(label):
             return f'(task.label ?: []).contains({literal(label)})'
         container = literal(image)
@@ -453,7 +461,8 @@ def run():
                       config_sha256={str(p): sha(p) for p in map(Path, configs)},
                       executor=executor, runtime=runtime, image=image or None, image_sha256=sha(image),
                       driver_package_sha256=sha(installed[0]),
-                      environment_locks={p.name: sha(p) for p in (root / '.arh').glob('*explicit.lock')},
+                      environment_locks={str(p.relative_to(root / '.arh')): sha(p) for p in sorted(
+                          [*(root / '.arh').glob('*explicit.lock'), *(root / '.arh/envs').glob('*/pixi.lock')])},
                       resume=args.resume, reports=reports, command=cmd, started=datetime.now(timezone.utc).isoformat(),
                       task_project_access=access,
                       # Who launched it (S11): a project shared by several people or accounts.
@@ -509,6 +518,15 @@ def run():
         if received:
             record['signal'] = received[0].name
             returncode = returncode or 128 + received[0].value
+        # A broad publishDir pattern once copied 57k tool temp files into results/, and the results
+        # gate, which hashes every one, took an hour (field feedback #173).
+        results = iteration / 'results'
+        published = sum(len(files) for _, _, files in os.walk(results)) if results.is_dir() else 0
+        if published > 10000:
+            record['results_files'] = published
+            print(f'arh: warning: {results.relative_to(root)} holds {published} files; every gate and review '
+                  'hashes them all. Narrow the publishDir patterns to the outputs the report reads before the next run.',
+                  file=sys.stderr)
         hook = args.on_exit or site.get('on_exit')
         if hook:
             record['on_exit'] = notify(hook, record, attempt, name, iteration, root)

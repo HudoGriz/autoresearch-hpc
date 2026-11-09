@@ -13,11 +13,11 @@ while [ $# -gt 0 ]; do
     --continues) continues="$2"; shift 2 ;;
     --explore) tier=exploratory; shift ;;
     --promotes) promotes="$2"; shift 2 ;;
-    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--orchestrator|--on-limit)
+    --worker|--worker-fallback|--reviewer|--reviewer-fallback|--on-limit)
                 roles+=("${1#--}=$2"); shift 2 ;;
     --set)      roles+=("$2"); shift 2 ;;
     -h|--help)  echo 'usage: arh claim -t TITLE [-a AGENT] [--question ID | --continues N] [--explore | --promotes N]
-                 [--worker H] [--reviewer H] [--orchestrator H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
+                 [--worker H] [--reviewer H] [--on-limit fallback|wait|stop] [--set KEY=VALUE]
 --question ID: the question this iteration addresses (letters, digits, . _ -); iterations that share
   one are counted as attempts at it in the ledger. --continues N: the question iteration N addressed.
   Without either, the iteration is its own question (qN).
@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
   and its numbers are not findings. Record every attempt in its README journal.
 --promotes N: a confirmatory iteration that re-measures the variant exploratory iteration N chose,
   on data the choice was not made on. It takes the question of iteration N.
---worker, --reviewer, --orchestrator (and --worker-fallback, --reviewer-fallback): the harness for that
+--worker, --reviewer (and --worker-fallback, --reviewer-fallback): the harness for that
   role in this iteration only; unset roles use .arh/config/harnesses.md. --on-limit: what a dispatched
   worker does at its usage limit. --set KEY=VALUE: any other harnesses.md key, for this iteration only.
   They are written to iterationN/harnesses.md and are part of the review terms; arh roles changes them later.'; exit 0 ;;
